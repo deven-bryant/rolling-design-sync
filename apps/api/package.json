@@ -13,7 +13,7 @@
   "dependencies": {
     "@electric-sql/pglite": "0.5.8",
     "@fastify/cors": "^10.1.0",
-    "@fastify/swagger": "9.8.2",
+    "@fastify/swagger": "9.9.0",
     "@rolling-design-sync/core": "*",
     "fastify": "5.12.5",
     "pg": "^8.13.0"
@@ -22,6 +22,6 @@
     "node": ">=20"
   },
   "devDependencies": {
-    "@seriousme/openapi-schema-validator": "2.10.0"
+    "@seriousme/openapi-schema-validator": "2.11.0"
   }
 }
