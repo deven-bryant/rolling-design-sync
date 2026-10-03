@@ -7,6 +7,13 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      # Node typings follow the Node major we run (22); move them deliberately.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # TypeScript 7 (the native compiler) is its own migration task.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-minor-patch:
         patterns:
