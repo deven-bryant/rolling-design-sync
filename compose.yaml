@@ -1,0 +1,26 @@
+# Local mode (RDS_STORE=local), hardened: reachable only from this machine's
+# loopback, read-only root filesystem, no capabilities, data in a named volume.
+# Tokens are generated into the volume on first start: `docker compose logs api`.
+services:
+  api:
+    build: .
+    environment:
+      RDS_STORE: local
+      RDS_DATA_DIR: /data
+      HOST: 0.0.0.0
+      PORT: "8787"
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - rds-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
+    restart: unless-stopped
+
+volumes:
+  rds-data:

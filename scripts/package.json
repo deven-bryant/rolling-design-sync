@@ -1,0 +1,44 @@
+{
+  "name": "@rolling-design-sync/agent-cli",
+  "version": "0.12.0",
+  "license": "Apache-2.0",
+  "description": "Thin zero-dependency CLI over the v3 agent API; commands generated from its OpenAPI document.",
+  "keywords": [
+    "figma",
+    "design-sync",
+    "cli",
+    "agent",
+    "design-to-code"
+  ],
+  "homepage": "https://github.com/deven-bryant/rolling-design-sync/tree/main/scripts#readme",
+  "bugs": {
+    "url": "https://github.com/deven-bryant/rolling-design-sync/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deven-bryant/rolling-design-sync.git",
+    "directory": "scripts"
+  },
+  "bin": {
+    "rds-agent": "rds-agent.js"
+  },
+  "files": [
+    "rds-agent.js",
+    "commands.generated.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "build": "node --check rds-agent.js && node --check gen-commands.js",
+    "gen": "node gen-commands.js",
+    "gen:check": "node gen-commands.js --check"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

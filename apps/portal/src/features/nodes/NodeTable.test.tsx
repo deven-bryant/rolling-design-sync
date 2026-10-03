@@ -1,0 +1,203 @@
+import { act, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FakeEventSource } from '../../test/fake-event-source';
+import { NodeTable, type NodeTableProps } from './NodeTable';
+import { claimC1, FILE, mockApi, renderWithClient, treeRoutes, type Route } from './test-fixtures';
+
+const pagePath = `/v3/files/${FILE}/nodes`;
+
+function renderTable(props: Partial<NodeTableProps> = {}, routes: Route = treeRoutes()) {
+  const api = mockApi(routes);
+  const onFiltersChange = vi.fn();
+  const onOpenNode = vi.fn();
+  const utils = renderWithClient(
+    <NodeTable fileKey={FILE} scopeId="1:1" filters={{}} onFiltersChange={onFiltersChange} onOpenNode={onOpenNode} {...props} />,
+  );
+  return { api, onFiltersChange, onOpenNode, ...utils };
+}
+
+const rowIds = () => [...document.querySelectorAll('tr[data-node-id]')].map(r => r.getAttribute('data-node-id'));
+const row = (nodeId: string) => {
+  const el = document.querySelector<HTMLElement>(`tr[data-node-id="${nodeId}"]`);
+  if (!el) throw new Error(`No row for ${nodeId}`);
+  return el;
+};
+const sprite = (nodeId: string) => row(nodeId).querySelector('[data-state]')?.getAttribute('data-state');
+const indent = (nodeId: string) => row(nodeId).querySelector<HTMLElement>('[data-slot="indent"]')?.style.width;
+const stream = () => {
+  const source = FakeEventSource.instances.find(s => s.url === `/v3/files/${FILE}/events`);
+  if (!source) throw new Error('No file stream');
+  return source;
+};
+const emit = (type: string, data: unknown, actor = 'devin') =>
+  act(() => stream().emit(type, { id: 1, fileKey: FILE, type, actor, data, createdAt: new Date().toISOString() }));
+
+describe('NodeTable', () => {
+  beforeEach(() => {
+    FakeEventSource.reset();
+    vi.stubGlobal('EventSource', FakeEventSource);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the first page in document order with counts, changes and agents', async () => {
+    const { api } = renderTable();
+    await screen.findByText('Breadcrumbs');
+    expect(rowIds()).toEqual(['1:1', '1:2', '1:3']);
+    const [call] = api.find('GET', pagePath);
+    expect(Object.fromEntries(call?.query ?? [])).toEqual({
+      under: '1:1',
+      depth: '1',
+      include: 'counts',
+      sort: 'document',
+      limit: '25',
+      state: 'all',
+    });
+    expect(await screen.findByText('281 dirty')).toBeTruthy();
+    expect(indent('1:1')).toBe('calc(var(--spacing-2xl) * 0)');
+    expect(indent('1:3')).toBe('calc(var(--spacing-2xl) * 1)');
+    const crumbs = within(row('1:3'));
+    expect(crumbs.getByText('FRAME · 1:3')).toBeTruthy();
+    expect(crumbs.getByText('Dirty')).toBeTruthy();
+    expect(crumbs.getByText('Modified')).toBeTruthy();
+    expect(crumbs.getByText('layout')).toBeTruthy();
+    expect(crumbs.getByText('itemSpacing')).toBeTruthy();
+    expect(crumbs.getByText('spacing-md → spacing-lg')).toBeTruthy();
+    expect(crumbs.getByText('devin')).toBeTruthy();
+    expect(await crumbs.findByText('claimed 2m ago')).toBeTruthy();
+    const header = within(row('1:2'));
+    expect(header.getByText('INSTANCE · 1:2 → 1:50')).toBeTruthy();
+    expect(header.getByText('3 properties')).toBeTruthy();
+    expect(header.getByText('new since last clear')).toBeTruthy();
+    expect(header.getByText('unclaimed')).toBeTruthy();
+  });
+
+  it('loads a row’s children when it expands', async () => {
+    const user = userEvent.setup();
+    const { api, onOpenNode } = renderTable();
+    await user.click(await screen.findByRole('button', { name: 'Expand Page header' }));
+    await screen.findByText('Logo');
+    expect(rowIds()).toEqual(['1:1', '1:2', '1:20', '1:3']);
+    expect(indent('1:20')).toBe('calc(var(--spacing-2xl) * 2)');
+    const child = api.find('GET', pagePath).find(c => c.query.get('under') === '1:2');
+    expect(child?.query.get('depth')).toBe('1');
+    expect(child?.query.get('include')).toBe('counts');
+    expect(child?.query.get('sort')).toBe('document');
+    expect(onOpenNode).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Collapse Page header' }));
+    expect(rowIds()).toEqual(['1:1', '1:2', '1:3']);
+  });
+
+  it('expands an instance into its main component with Expand instances on', async () => {
+    const user = userEvent.setup();
+    const { api } = renderTable({ filters: { expandInstances: true } });
+    await user.click(await screen.findByRole('button', { name: 'Expand Page header' }));
+    await screen.findByText('Style=Simple');
+    expect(rowIds()).toEqual(['1:1', '1:2', '1:50', '1:51', '1:3']);
+    expect(within(row('1:50')).getByText('COMPONENT · 1:50 · via 1:2')).toBeTruthy();
+    const unders = api.find('GET', pagePath).map(c => c.query.get('under'));
+    expect(unders).toContain('1:50');
+    expect(unders).not.toContain('1:2');
+    expect(api.find('GET', pagePath).every(c => !c.query.has('expand'))).toBe(true);
+  });
+
+  it('sends the filters with every page request', async () => {
+    const { api } = renderTable({
+      filters: { q: 'Button', state: 'dirty', changeType: 'modified', category: 'color', type: 'FRAME' },
+    });
+    await waitFor(() => expect(api.find('GET', pagePath)).toHaveLength(1));
+    const query = api.find('GET', pagePath)[0]?.query;
+    expect(query?.get('state')).toBe('dirty');
+    expect(query?.get('changeType')).toBe('modified');
+    expect(query?.get('category')).toBe('color');
+    expect(query?.get('type')).toBe('FRAME');
+    expect(query?.get('name')).toBe('*Button*');
+  });
+
+  it('reports filter changes from the filter row', async () => {
+    const user = userEvent.setup();
+    const { onFiltersChange } = renderTable({ filters: { state: 'all' } });
+    await user.click(screen.getByRole('button', { name: /State/ }));
+    await user.click(await screen.findByRole('option', { name: /Dirty/ }));
+    expect(onFiltersChange).toHaveBeenLastCalledWith({ state: 'dirty' });
+    await user.click(screen.getByRole('switch', { name: 'Expand instances' }));
+    expect(onFiltersChange).toHaveBeenLastCalledWith({ state: 'all', expandInstances: true });
+    await user.type(screen.getByRole('searchbox', { name: 'Search nodes' }), 'Bread');
+    await waitFor(() => expect(onFiltersChange).toHaveBeenLastCalledWith({ state: 'all', q: 'Bread' }));
+  });
+
+  it('pages by cursor', async () => {
+    const user = userEvent.setup();
+    const { api } = renderTable();
+    await screen.findByText('Breadcrumbs');
+    await user.click(screen.getByRole('button', { name: /Next/ }));
+    await screen.findByText('Divider');
+    expect(rowIds()).toEqual(['1:4']);
+    expect(api.find('GET', pagePath).at(-1)?.query.get('cursor')).toBe('cur2');
+    expect(within(row('1:4')).getByText('blocked: Needs a border token')).toBeTruthy();
+    expect((screen.getByRole('button', { name: /Next/ }) as HTMLButtonElement).disabled).toBe(true);
+    await user.click(screen.getByRole('button', { name: /Previous/ }));
+    await screen.findByText('Breadcrumbs');
+    expect(rowIds()).toEqual(['1:1', '1:2', '1:3']);
+  });
+
+  it('opens a node when its row is activated', async () => {
+    const user = userEvent.setup();
+    const { onOpenNode } = renderTable({ selectedNodeId: '1:2' });
+    await user.click(await screen.findByText('Breadcrumbs'));
+    expect(onOpenNode).toHaveBeenCalledWith('1:3');
+    expect(row('1:2').getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('patches rows in place for blocks, unblocks and clears', async () => {
+    const { api } = renderTable();
+    await screen.findByText('Breadcrumbs');
+    const fetches = api.calls.length;
+    emit('node.blocked', { nodeId: '1:3', reason: 'Waiting on tokens', by: 'agent-c' }, 'agent-c');
+    await waitFor(() => expect(within(row('1:3')).getByText('Blocked')).toBeTruthy());
+    emit('node.unblocked', { nodeId: '1:3', reason: 'Waiting on tokens', by: 'agent-c' }, 'agent-c');
+    await waitFor(() => expect(within(row('1:3')).getByText('Dirty')).toBeTruthy());
+    emit('nodes.cleared', { nodeIds: ['1:3'], commitRef: 'abc1234', worker: 'devin' });
+    await waitFor(() => expect(within(row('1:3')).getByText('Clean')).toBeTruthy());
+    expect(sprite('1:3')).toBe('poof');
+    await waitFor(() => expect(within(row('1:3')).getByText('unclaimed')).toBeTruthy());
+    expect(api.calls.slice(fetches).filter(c => c.path === pagePath)).toHaveLength(0);
+  });
+
+  it('drives agent sprites from claims: enter on create, fade on release', async () => {
+    renderTable();
+    await screen.findByText('Breadcrumbs');
+    expect(sprite('1:3')).toBe('idle');
+    emit('claim.created', { claimId: 'c2', worker: 'agent-c', label: null, expiresAt: claimC1.expiresAt, nodeIds: ['1:2'], nodeCount: 1 }, 'agent-c');
+    await waitFor(() => expect(within(row('1:2')).getByText('agent-c')).toBeTruthy());
+    expect(sprite('1:2')).toBe('enter');
+    await waitFor(() => expect(sprite('1:2')).toBe('idle'));
+    emit('claim.released', { claimId: 'c1', worker: 'devin', nodeIds: ['1:3'], nodeCount: 3 });
+    expect(sprite('1:3')).toBe('fade');
+    await waitFor(() => expect(within(row('1:3')).getByText('unclaimed')).toBeTruthy());
+  });
+
+  it('fades a claim when its lease expires', async () => {
+    const soon = new Date(Date.now() + 150).toISOString();
+    renderTable(
+      {},
+      treeRoutes(({ path }) => (path === `/v3/files/${FILE}/claims` ? { fileKey: FILE, claims: [{ ...claimC1, expiresAt: soon }] } : undefined)),
+    );
+    await screen.findByText('Breadcrumbs');
+    await waitFor(() => expect(sprite('1:3')).toBe('fade'));
+    await waitFor(() => expect(within(row('1:3')).getByText('unclaimed')).toBeTruthy());
+  });
+
+  it('refetches visible pages on sync.completed and on reset', async () => {
+    const { api } = renderTable();
+    await screen.findByText('Breadcrumbs');
+    const pages = () => api.find('GET', pagePath).length;
+    expect(pages()).toBe(1);
+    emit('sync.completed', { scopeId: '1:1' }, 'plugin');
+    await waitFor(() => expect(pages()).toBe(2));
+    act(() => stream().emit('reset', { fileKey: FILE, lastEventId: 9 }));
+    await waitFor(() => expect(pages()).toBe(3));
+  });
+});

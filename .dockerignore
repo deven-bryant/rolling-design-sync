@@ -1,0 +1,14 @@
+**/node_modules
+.git
+.github
+**/.env*
+**/data
+docs
+apps/figma-plugin
+apps/mcp
+scripts
+tests
+apps/api/tests
+packages/core/tests
+apps/portal/dist
+*.log

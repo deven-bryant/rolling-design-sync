@@ -1,0 +1,14 @@
+@import "@fontsource-variable/inter";
+@import "tailwindcss";
+@import "./tokens.css";
+
+@layer base {
+    html,
+    body {
+        font-family: var(--font-body);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        font-variant-ligatures: contextual;
+        font-kerning: normal;
+    }
+}

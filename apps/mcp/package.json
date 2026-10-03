@@ -1,0 +1,53 @@
+{
+  "name": "@rolling-design-sync/mcp",
+  "version": "0.12.0",
+  "license": "Apache-2.0",
+  "description": "Local (stdio) MCP server for rolling-design-sync: its tools are generated at startup from the API's /v3/openapi.json (one per x-rds-mcp operation).",
+  "keywords": [
+    "figma",
+    "design-sync",
+    "mcp",
+    "model-context-protocol",
+    "agent",
+    "design-to-code"
+  ],
+  "homepage": "https://github.com/deven-bryant/rolling-design-sync/tree/main/apps/mcp#readme",
+  "bugs": {
+    "url": "https://github.com/deven-bryant/rolling-design-sync/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deven-bryant/rolling-design-sync.git",
+    "directory": "apps/mcp"
+  },
+  "main": "src/server.js",
+  "bin": {
+    "rds-mcp": "bin/rds-mcp.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node bin/rds-mcp.js",
+    "test": "node --test tests/env-fallback.test.js tests/mcp.test.js",
+    "build": "node --check bin/rds-mcp.js && node --check src/server.js && node --check src/config.js && node --check src/client.js && node --check src/tools.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@rolling-design-sync/core": "^0.12.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@rolling-design-sync/api": "*"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

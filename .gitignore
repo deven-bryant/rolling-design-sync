@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# supabase local
+supabase/.branches/
+supabase/.temp/
+
+# RDS_STORE=local default data directory (./data under the working directory, e.g. apps/api/data)
+data/

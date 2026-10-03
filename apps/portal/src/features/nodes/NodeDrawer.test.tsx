@@ -1,0 +1,237 @@
+import { QueryClientProvider } from '@tanstack/react-query';
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { NodeDrawer, type NodeDrawerProps } from './NodeDrawer';
+import { breadcrumbs, claimC1, divider, FILE, mockApi, renderWithClient, treeRoutes, type Route } from './test-fixtures';
+
+const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+const detail = {
+  ...breadcrumbs,
+  changesKnown: true,
+  history: { implementedCommit: '3f2a9c1e5d7b', implementedAt: daysAgo(2) },
+};
+const events = [
+  {
+    id: 7,
+    fileKey: FILE,
+    type: 'claim.created',
+    actor: 'devin',
+    data: { claimId: 'c1', nodeCount: 3, expiresAt: claimC1.expiresAt, nodeIds: claimC1.nodeIds },
+    createdAt: claimC1.createdAt,
+  },
+];
+
+function drawerRoutes(extra?: Route): Route {
+  return treeRoutes(call => {
+    const custom = extra?.(call);
+    if (custom !== undefined) return custom;
+    if (call.method === 'GET' && call.path === `/v3/files/${FILE}/nodes/1:3`) return detail;
+    if (call.method === 'GET' && call.path === `/v3/files/${FILE}/nodes/1:4`) return divider;
+    if (call.method === 'GET' && call.path === `/v3/files/${FILE}/events`) return { fileKey: FILE, events, nextAfter: 7 };
+    return undefined;
+  });
+}
+
+function renderDrawer(props: Partial<NodeDrawerProps> = {}, routes = drawerRoutes()) {
+  const api = mockApi(routes);
+  const onClose = vi.fn();
+  const utils = renderWithClient(<NodeDrawer fileKey={FILE} nodeId="1:3" onClose={onClose} role="agent" {...props} />);
+  return { api, onClose, ...utils };
+}
+
+describe('NodeDrawer', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the node’s status, claim and Change List from changes=diff', async () => {
+    const { api } = renderDrawer();
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(await dialog.findByRole('heading', { name: 'Breadcrumbs' })).toBeTruthy();
+    expect(dialog.getByText('FRAME · 1:3')).toBeTruthy();
+    const status = within(dialog.getByRole('group', { name: 'Status' }));
+    expect(status.getByText('Dirty')).toBeTruthy();
+    expect(status.getByText('Modified')).toBeTruthy();
+    expect(status.getByText('layout')).toBeTruthy();
+    expect(dialog.getByRole('tab', { name: 'Change History' }).getAttribute('aria-selected')).toBe('true');
+    await userEvent.setup().click(dialog.getByRole('tab', { name: 'Change List' }));
+    expect(dialog.getByText(/Since it was last cleared at 3f2a9c1 \(2 days ago\)/)).toBeTruthy();
+    const row = within(dialog.getByRole('table', { name: 'Change list' })).getAllByRole('row')[1] as HTMLElement;
+    expect(within(row).getAllByRole('cell').map(c => c.textContent)).toEqual(['itemSpacing', 'spacing-md12', 'spacing-lg16']);
+    const claim = within(dialog.getByRole('group', { name: 'Claim Holder' }));
+    expect(await claim.findByText('devin · claimed 2 min ago · lease expires in 15 min')).toBeTruthy();
+    expect(claim.getByText('covers 2 other nodes too')).toBeTruthy();
+    expect(dialog.getByRole('link', { name: 'Open in Figma' }).getAttribute('href')).toBe(breadcrumbs.figmaUrl);
+    expect(api.find('GET', `/v3/files/${FILE}/nodes/1:3`)[0]?.query.get('changes')).toBe('diff');
+  });
+
+  it('switches to Change History: the node’s events, newest first (order=desc), keeping the actions', async () => {
+    const user = userEvent.setup();
+    const older = { id: 3, fileKey: FILE, type: 'node.unblocked', actor: 'cursor', data: {}, createdAt: daysAgo(3) };
+    const { api } = renderDrawer(
+      {},
+      drawerRoutes(call =>
+        call.method === 'GET' && call.path === `/v3/files/${FILE}/events` ? { fileKey: FILE, events: [...events, older], nextAfter: 7 } : undefined,
+      ),
+    );
+    const dialog = within(await screen.findByRole('dialog'));
+    expect((await dialog.findByRole('tab', { name: 'Change History' })).getAttribute('aria-selected')).toBe('true');
+    const feed = within(dialog.getByRole('list', { name: 'Change history' }));
+    expect(feed.getAllByRole('listitem').map(i => i.textContent)).toEqual([
+      expect.stringContaining('Claimed this node with 2 others (lease 17 min).'),
+      expect.stringContaining('Unblocked it.'),
+    ]);
+    expect(dialog.queryByRole('table')).toBeNull();
+    const query = api.find('GET', `/v3/files/${FILE}/events`)[0]?.query;
+    expect(query?.get('nodeId')).toBe('1:3');
+    expect(query?.get('order')).toBe('desc');
+    expect(dialog.getByRole('button', { name: 'Release claim' })).toBeTruthy();
+    expect(dialog.getByRole('button', { name: 'Block…' })).toBeTruthy();
+    await user.click(dialog.getByRole('tab', { name: 'Change List' }));
+    expect(dialog.getByRole('table', { name: 'Change list' })).toBeTruthy();
+    expect(dialog.getByRole('heading', { name: 'Breadcrumbs' })).toBeTruthy();
+  });
+
+  it('opens narrow on Change History, widens for Change List and narrows again', async () => {
+    const user = userEvent.setup();
+    renderDrawer();
+    const dialog = await screen.findByRole('dialog');
+    const classes = () => dialog.parentElement?.getAttribute('class')?.split(' ') ?? [];
+    expect(classes()).toEqual(expect.arrayContaining(['w-126.25', 'max-w-full']));
+    await user.click(await within(dialog).findByRole('tab', { name: 'Change List' }));
+    expect(classes()).toEqual(expect.arrayContaining(['w-275', 'max-w-full']));
+    expect(classes()).not.toContain('w-126.25');
+    await user.click(within(dialog).getByRole('tab', { name: 'Change History' }));
+    expect(classes()).toContain('w-126.25');
+  });
+
+  it('opens each node on Change History', async () => {
+    const user = userEvent.setup();
+    const { client, rerender } = renderDrawer();
+    await user.click(await screen.findByRole('tab', { name: 'Change List' }));
+    rerender(
+      <QueryClientProvider client={client}>
+        <NodeDrawer fileKey={FILE} nodeId="1:4" onClose={() => {}} role="agent" />
+      </QueryClientProvider>,
+    );
+    expect((await screen.findByRole('tab', { name: 'Change History' })).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('dialog').parentElement?.getAttribute('class')?.split(' ')).toContain('w-126.25');
+  });
+
+  it('shows viewers the same content without claim or block actions', async () => {
+    renderDrawer({ role: 'viewer' });
+    const dialog = within(await screen.findByRole('dialog'));
+    await dialog.findByText('devin · claimed 2 min ago · lease expires in 15 min');
+    expect(dialog.queryByRole('button', { name: 'Release claim' })).toBeNull();
+    expect(dialog.queryByRole('button', { name: 'Block…' })).toBeNull();
+    expect(dialog.getByRole('button', { name: 'Copy node prompt' })).toBeTruthy();
+    expect(dialog.getByRole('link', { name: 'Open in Figma' })).toBeTruthy();
+  });
+
+  it('takes the role from the session when none is given', async () => {
+    renderDrawer({ role: undefined });
+    expect(await screen.findByRole('button', { name: 'Release claim' })).toBeTruthy();
+  });
+
+  it('confirms before releasing a claim that covers other nodes', async () => {
+    const user = userEvent.setup();
+    const { api } = renderDrawer(
+      {},
+      drawerRoutes(call => (call.method === 'DELETE' ? { fileKey: FILE, claimId: 'c1', released: 3 } : undefined)),
+    );
+    await screen.findByText(/covers 2 other nodes too/);
+    await user.click(screen.getByRole('button', { name: 'Release claim' }));
+    const confirm = within(screen.getByRole('alertdialog', { name: 'Release the whole claim?' }));
+    expect(confirm.getByText(/also covers 2 other nodes/)).toBeTruthy();
+    expect(api.find('DELETE', `/v3/files/${FILE}/claims/c1`)).toHaveLength(0);
+    await user.click(confirm.getByRole('button', { name: 'Release 3 nodes' }));
+    await waitFor(() => expect(api.find('DELETE', `/v3/files/${FILE}/claims/c1`)).toHaveLength(1));
+    expect(await screen.findByText(/Not claimed/)).toBeTruthy();
+  });
+
+  it('releases a single-node claim without confirming', async () => {
+    const user = userEvent.setup();
+    const { api } = renderDrawer(
+      {},
+      drawerRoutes(call => {
+        if (call.method === 'DELETE') return { fileKey: FILE, claimId: 'c1', released: 1 };
+        if (call.path === `/v3/files/${FILE}/claims`) return { fileKey: FILE, claims: [{ ...claimC1, nodeCount: 1, nodeIds: ['1:3'] }] };
+        return undefined;
+      }),
+    );
+    await screen.findByText('devin · claimed 2 min ago · lease expires in 15 min');
+    await user.click(screen.getByRole('button', { name: 'Release claim' }));
+    await waitFor(() => expect(api.find('DELETE', `/v3/files/${FILE}/claims/c1`)).toHaveLength(1));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('requires a 1–500 character reason to block', async () => {
+    const user = userEvent.setup();
+    const blockPath = `/v3/files/${FILE}/nodes/1:3/block`;
+    const { api } = renderDrawer(
+      {},
+      drawerRoutes(call =>
+        call.method === 'POST' && call.path === blockPath
+          ? { fileKey: FILE, node: { ...breadcrumbs, state: 'blocked', blocked: { reason: 'Waiting on a token', by: 'devin', at: new Date().toISOString() } } }
+          : undefined,
+      ),
+    );
+    await user.click(await screen.findByRole('button', { name: 'Block…' }));
+    await user.click(screen.getByRole('button', { name: 'Block node' }));
+    expect(screen.getByText('Enter why this node can’t be implemented.')).toBeTruthy();
+    const reason = screen.getByRole('textbox', { name: /Reason/ });
+    await user.click(reason);
+    await user.paste('x'.repeat(501));
+    await user.click(screen.getByRole('button', { name: 'Block node' }));
+    expect(screen.getByText(/Keep the reason to 500 characters/)).toBeTruthy();
+    expect(api.find('POST', blockPath)).toHaveLength(0);
+    await user.clear(reason);
+    await user.type(reason, 'Waiting on a token');
+    await user.click(screen.getByRole('button', { name: 'Block node' }));
+    await waitFor(() => expect(api.find('POST', blockPath)).toHaveLength(1));
+    expect(api.find('POST', blockPath)[0]?.body).toEqual({ reason: 'Waiting on a token' });
+    expect(await screen.findByRole('button', { name: 'Unblock' })).toBeTruthy();
+    expect(screen.getByText(/Blocked by devin/)).toBeTruthy();
+  });
+
+  it('unblocks a blocked node', async () => {
+    const user = userEvent.setup();
+    const unblockPath = `/v3/files/${FILE}/nodes/1:4/unblock`;
+    const { api } = renderDrawer(
+      { nodeId: '1:4' },
+      drawerRoutes(call =>
+        call.method === 'POST' && call.path === unblockPath ? { fileKey: FILE, node: { ...divider, state: 'dirty', blocked: null } } : undefined,
+      ),
+    );
+    expect(await screen.findByText(/Blocked by agent-c/)).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Unblock' }));
+    await waitFor(() => expect(api.find('POST', unblockPath)).toHaveLength(1));
+    expect(await screen.findByRole('button', { name: 'Block…' })).toBeTruthy();
+  });
+
+  it('copies a node prompt with the file key, node id and CLI / MCP calls', async () => {
+    const user = userEvent.setup();
+    renderDrawer({ role: 'viewer' });
+    await user.click(await screen.findByRole('button', { name: 'Copy node prompt' }));
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeTruthy();
+    const text = await navigator.clipboard.readText();
+    expect(text).toContain(FILE);
+    expect(text).toContain('1:3');
+    expect(text).toContain('node scripts/rds-agent.js');
+    expect(text).toContain('get_node');
+  });
+
+  it('closes on Escape', async () => {
+    const user = userEvent.setup();
+    const { onClose } = renderDrawer();
+    await screen.findByRole('dialog');
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('renders nothing without a node', () => {
+    renderDrawer({ nodeId: null });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});

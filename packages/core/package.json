@@ -1,0 +1,38 @@
+{
+  "name": "@rolling-design-sync/core",
+  "version": "0.12.0",
+  "license": "Apache-2.0",
+  "description": "Pure diff core (normalize/diff/link/markdown/contentHash) shared by the Figma plugin and the API. No Figma, browser, or Node runtime dependencies (node:crypto used when available, pure-JS sha256 otherwise).",
+  "keywords": [
+    "figma",
+    "design-sync",
+    "diff",
+    "snapshot",
+    "design-to-code"
+  ],
+  "homepage": "https://github.com/deven-bryant/rolling-design-sync/tree/main/packages/core#readme",
+  "bugs": {
+    "url": "https://github.com/deven-bryant/rolling-design-sync/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deven-bryant/rolling-design-sync.git",
+    "directory": "packages/core"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "files": [
+    "index.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

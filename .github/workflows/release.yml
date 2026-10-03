@@ -1,0 +1,114 @@
+name: Release
+
+# On a v* tag: test and build, publish the npm packages with trusted publishing
+# (OIDC, no stored token) and create the GitHub Release from CHANGELOG.md.
+# The container image is built by docker.yml. See RELEASING.md.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Tag matches every package version
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          for f in package.json apps/*/package.json packages/*/package.json scripts/package.json; do
+            v=$(node -p 'require(process.argv[1]).version' "./$f")
+            if [ "$v" != "$version" ]; then
+              echo "::error file=$f::version $v does not match tag $TAG"
+              exit 1
+            fi
+          done
+          case "$version" in
+            *-*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+      - name: CHANGELOG has a section for this version
+        run: bash .github/scripts/changelog-section.sh "${{ steps.version.outputs.version }}" > /dev/null
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Agent CLI tests
+        run: npm test
+        working-directory: scripts
+      - name: npm package contents
+        run: node .github/scripts/check-pack.mjs
+
+  npm:
+    needs: verify
+    # Trusted publishing (and provenance) needs the public repository.
+    if: github.event.repository.private == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: npm with trusted publishing (>= 11.5.1)
+        run: npm install -g npm@11.20.0
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Publish core, agent-cli, mcp (skips versions already published)
+        run: bash .github/scripts/npm-publish.sh packages/core scripts apps/mcp
+
+  npm-skipped:
+    needs: verify
+    if: github.event.repository.private == true
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "::notice::npm publish skipped — trusted publishing only runs from the public repository."
+
+  github-release:
+    needs: [verify, npm]
+    if: >-
+      always() && needs.verify.result == 'success' &&
+      (needs.npm.result == 'success' || needs.npm.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the GitHub Release from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists"
+            exit 0
+          fi
+          bash .github/scripts/changelog-section.sh "$VERSION" > "$RUNNER_TEMP/notes.md"
+          args=(--title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag)
+          if [ "$PRERELEASE" = true ]; then args+=(--prerelease); fi
+          gh release create "$TAG" "${args[@]}"

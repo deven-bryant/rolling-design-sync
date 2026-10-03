@@ -1,0 +1,14 @@
+{
+  "name": "@rolling-design-sync/e2e-portal",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Browser end-to-end tests for the portal, run against a running API that serves the built portal at /ui.",
+  "scripts": {
+    "test": "playwright test",
+    "screenshots": "playwright test -c screenshots.config.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

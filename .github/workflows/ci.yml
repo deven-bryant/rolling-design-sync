@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Public-tree scrub check
+        run: node scripts/check-public-tree.js
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: v3 API types are current
+        run: npm run gen:types:check
+      - name: Portal typecheck
+        run: npm run typecheck
+        working-directory: apps/portal
+      - name: Portal lint
+        run: npm run lint
+        working-directory: apps/portal
+      - name: Portal API types are current
+        run: npm run gen:api:check
+        working-directory: apps/portal
+      - run: npm test
+      - run: npm run build --workspaces --if-present
+      - name: Agent CLI tests
+        run: npm test
+        working-directory: scripts
+      - name: Generated CLI commands are current
+        run: npm run gen:check
+        working-directory: scripts
+
+  release-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Lint workflows (actionlint)
+        run: >-
+          docker run --rm -v "$PWD:/repo" --workdir /repo
+          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+          -color
+      - name: npm package contents
+        run: node .github/scripts/check-pack.mjs
+      - name: Publish dry run (skip-if-exists)
+        run: |
+          published="$RUNNER_TEMP/already-published"
+          mkdir -p "$published"
+          echo '{"name":"npm","version":"10.0.0"}' > "$published/package.json"
+          out=$(bash .github/scripts/npm-publish.sh --dry-run "$published" packages/core scripts apps/mcp)
+          echo "$out"
+          grep -qx 'skip: npm@10.0.0 is already published' <<< "$out"
+          for name in core agent-cli mcp; do
+            grep -Eq "^(skip: |dry run: would publish )@rolling-design-sync/$name@" <<< "$out"
+          done
+      - name: CHANGELOG has a section for the current version
+        run: bash .github/scripts/changelog-section.sh "$(node -p 'require("./package.json").version')" > /dev/null

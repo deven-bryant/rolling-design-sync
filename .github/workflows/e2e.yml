@@ -1,0 +1,271 @@
+name: E2E
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fds
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/fds
+      PGSSLMODE: disable
+      PORT: '8787'
+      RDS_API_URL: http://127.0.0.1:8787
+      RDS_PLUGIN_TOKEN: e2e-plugin-token
+      RDS_AGENT_TOKEN: e2e-agent-token
+      RDS_VIEWER_TOKEN: e2e-viewer-token
+      RDS_SESSION_SECRET: e2e-session-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Apply migrations
+        # Every migration in timestamp order (the tables the removed v1/v2 API used are kept).
+        run: |
+          for f in supabase/migrations/*.sql; do
+            echo "applying $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c "select 1 from pg_extension where extname = 'ltree'" | grep -q 1
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -c "select 'node'::regclass" > /dev/null
+      - name: Start API
+        env:
+          RDS_PLUGIN_TOKENS: ${{ env.RDS_PLUGIN_TOKEN }}
+          RDS_AGENT_TOKENS: ${{ env.RDS_AGENT_TOKEN }}
+          RDS_VIEWER_TOKENS: ${{ env.RDS_VIEWER_TOKEN }}
+          LOG_LEVEL: warn
+        run: |
+          nohup npm start -w @rolling-design-sync/api > api.log 2>&1 &
+          for _ in $(seq 1 30); do
+            if curl -fsS "$RDS_API_URL/health" > /dev/null; then echo "api up"; exit 0; fi
+            sleep 1
+          done
+          echo "API did not become healthy"; cat api.log; exit 1
+      - name: Run e2e tests (v3)
+        run: node --test tests/e2e-v3.test.js
+      - name: Build portal
+        run: npm run build --workspace @rolling-design-sync/portal
+      - name: Install Playwright
+        run: |
+          npm ci --prefix tests/e2e-portal --no-audit --no-fund
+          npx --prefix tests/e2e-portal playwright install --with-deps chromium
+      - name: Run portal e2e tests (browser)
+        working-directory: tests/e2e-portal
+        run: npx playwright test
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-postgres
+          path: |
+            tests/e2e-portal/playwright-report
+            tests/e2e-portal/test-results
+          retention-days: 7
+      - name: API log
+        if: failure()
+        run: cat api.log
+
+  e2e-local:
+    # Same suites against RDS_STORE=local (PGlite): no database service; the
+    # API applies the migrations itself into a temp data directory.
+    runs-on: ubuntu-latest
+    env:
+      RDS_STORE: local
+      PORT: '8787'
+      RDS_API_URL: http://127.0.0.1:8787
+      RDS_PLUGIN_TOKEN: e2e-plugin-token
+      RDS_AGENT_TOKEN: e2e-agent-token
+      RDS_VIEWER_TOKEN: e2e-viewer-token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Start API
+        env:
+          RDS_PLUGIN_TOKENS: ${{ env.RDS_PLUGIN_TOKEN }}
+          RDS_AGENT_TOKENS: ${{ env.RDS_AGENT_TOKEN }}
+          RDS_VIEWER_TOKENS: ${{ env.RDS_VIEWER_TOKEN }}
+          LOG_LEVEL: warn
+        run: |
+          export RDS_DATA_DIR="$RUNNER_TEMP/fds-data"
+          nohup npm start -w @rolling-design-sync/api > api.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -fsS "$RDS_API_URL/health" > /dev/null; then echo "api up"; exit 0; fi
+            sleep 1
+          done
+          echo "API did not become healthy"; cat api.log; exit 1
+      - name: Run e2e tests (v3)
+        run: node --test tests/e2e-v3.test.js
+      - name: API log
+        if: failure()
+        run: cat api.log
+
+  e2e-container:
+    # The root Dockerfile, run with the same hardening as compose.yaml
+    # (read-only root, tmpfs /tmp, no capabilities, no-new-privileges,
+    # loopback-only port, named volume at /data) in RDS_STORE=local mode.
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: rds-api:ci
+      CONTAINER: rds-api
+      VOLUME: rds-e2e-data
+      RDS_API_URL: http://127.0.0.1:8787
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build image
+        run: docker build -t "$IMAGE" .
+      - name: Image is neutral (no store configured without env)
+        run: |
+          set +e
+          out=$(docker run --rm "$IMAGE" 2>&1); code=$?
+          set -e
+          echo "$out"
+          test "$code" -ne 0
+          echo "$out" | grep -q "No store configured"
+      - name: Generate strong tokens
+        run: |
+          plugin=$(openssl rand -hex 32); agent=$(openssl rand -hex 32); viewer=$(openssl rand -hex 32)
+          echo "::add-mask::$plugin"; echo "::add-mask::$agent"; echo "::add-mask::$viewer"
+          {
+            echo "RDS_PLUGIN_TOKEN=$plugin"; echo "RDS_PLUGIN_TOKENS=$plugin"
+            echo "RDS_AGENT_TOKEN=$agent"; echo "RDS_AGENT_TOKENS=$agent"
+            echo "RDS_VIEWER_TOKEN=$viewer"; echo "RDS_VIEWER_TOKENS=$viewer"
+          } >> "$GITHUB_ENV"
+      - name: Start hardened container
+        run: |
+          cat > "$RUNNER_TEMP/run-api.sh" <<'SH'
+          set -eu
+          docker rm -f "$CONTAINER" > /dev/null 2>&1 || true
+          docker run -d --name "$CONTAINER" \
+            --read-only --tmpfs /tmp \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            -p 127.0.0.1:8787:8787 -v "$VOLUME:/data" \
+            -e RDS_STORE=local -e RDS_DATA_DIR=/data -e HOST=0.0.0.0 -e PORT=8787 -e LOG_LEVEL=warn \
+            -e RDS_PLUGIN_TOKENS -e RDS_AGENT_TOKENS -e RDS_VIEWER_TOKENS \
+            "$IMAGE" > /dev/null
+          for _ in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER")
+            if [ "$status" = healthy ]; then echo "container healthy"; exit 0; fi
+            sleep 2
+          done
+          echo "container did not become healthy ($status)"; docker logs "$CONTAINER"; exit 1
+          SH
+          docker volume create "$VOLUME"
+          bash "$RUNNER_TEMP/run-api.sh"
+      - name: Runs as a non-root user
+        run: |
+          uid=$(docker exec "$CONTAINER" id -u)
+          echo "uid=$uid"
+          test "$uid" != 0
+      - name: Foreign Host is 403
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example:8787' "$RDS_API_URL/health")
+          test "$code" = 403
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$RDS_API_URL/health")" = 200
+      - name: Run e2e tests (v3)
+        run: node --test tests/e2e-v3.test.js
+      - name: Data survives a container restart on the same volume
+        run: |
+          file_key="restart$(openssl rand -hex 8)"
+          curl -fsS -X POST "$RDS_API_URL/v3/files/$file_key/sync" \
+            -H "Authorization: Bearer $RDS_PLUGIN_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"upserts":[{"nodeId":"1:1","nodeType":"FRAME","name":"Card","attrs":{"paddingLeft":16},"contentHash":"h1"}]}'
+          echo
+          docker rm -f "$CONTAINER"
+          bash "$RUNNER_TEMP/run-api.sh"
+          curl -fsS "$RDS_API_URL/v3/files/$file_key/nodes/1:1" -H "Authorization: Bearer $RDS_AGENT_TOKEN" | tee node.json
+          echo
+          curl -fsS "$RDS_API_URL/v3/files/$file_key/nodes" -H "Authorization: Bearer $RDS_AGENT_TOKEN" | tee nodes.json
+          echo
+          node -e "const n = require('./node.json'); if (n.contentHash !== 'h1' || n.state !== 'dirty') process.exit(1)"
+          node -e "const l = require('./nodes.json'); if (!l.nodes.some(n => n.nodeId === '1:1')) process.exit(1)"
+      - name: Container log
+        if: failure()
+        run: docker logs "$CONTAINER" || true
+
+  e2e-portal:
+    # Browser E2E against the built container image in RDS_STORE=local mode,
+    # signing in with the tokens the container generates in /data/tokens.json.
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: rds-api:ci
+      CONTAINER: rds-portal
+      VOLUME: rds-portal-data
+      RDS_API_URL: http://127.0.0.1:8787
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Build image
+        run: docker build -t "$IMAGE" .
+      - name: Start hardened container (local mode, generated tokens)
+        run: |
+          docker volume create "$VOLUME"
+          docker run -d --name "$CONTAINER" \
+            --read-only --tmpfs /tmp \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            -p 127.0.0.1:8787:8787 -v "$VOLUME:/data" \
+            -e RDS_STORE=local -e RDS_DATA_DIR=/data -e HOST=0.0.0.0 -e PORT=8787 -e LOG_LEVEL=warn \
+            "$IMAGE" > /dev/null
+          for _ in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER")
+            if [ "$status" = healthy ]; then echo "container healthy"; break; fi
+            sleep 2
+          done
+          if [ "$status" != healthy ]; then echo "container did not become healthy ($status)"; docker logs "$CONTAINER"; exit 1; fi
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$RDS_API_URL/ui/sign-in")" = 200
+      - name: Read generated tokens
+        run: |
+          tokens="$RUNNER_TEMP/tokens.json"
+          docker exec "$CONTAINER" cat /data/tokens.json > "$tokens"
+          chmod 600 "$tokens"
+          for key in plugin agent viewer; do echo "::add-mask::$(node -p "require('$tokens').$key")"; done
+          echo "RDS_TOKENS_FILE=$tokens" >> "$GITHUB_ENV"
+      - name: Install Playwright
+        run: |
+          npm ci --prefix tests/e2e-portal --no-audit --no-fund
+          npx --prefix tests/e2e-portal playwright install --with-deps chromium
+      - name: Run portal e2e tests (browser)
+        working-directory: tests/e2e-portal
+        run: npx playwright test
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-container
+          path: |
+            tests/e2e-portal/playwright-report
+            tests/e2e-portal/test-results
+          retention-days: 7
+      - name: Container log
+        if: failure()
+        run: docker logs "$CONTAINER" || true

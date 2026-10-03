@@ -1,0 +1,13 @@
+{
+  "name": "Rolling Design Sync",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": ["https://rds.example.com"],
+    "devAllowedDomains": ["http://localhost:8787"],
+    "reasoning": "Uploads scoped design snapshots to the self-hosted rolling-design-sync API declared in allowedDomains."
+  }
+}
