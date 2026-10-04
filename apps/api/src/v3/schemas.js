@@ -52,7 +52,7 @@ const problem = {
   },
   additionalProperties: true,
 };
-const problemResponses = statuses => Object.fromEntries(statuses.map(s => [s, { description: 'Problem details', ...problem }]));
+const problemResponses = statuses => Object.fromEntries(statuses.map(s => [s, problem]));
 const AUTH_ERRORS = [400, 401, 403];
 
 const counts = {

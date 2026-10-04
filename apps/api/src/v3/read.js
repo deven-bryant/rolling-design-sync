@@ -226,6 +226,8 @@ function decodeCursor(cursor, fp) {
 /**
  * A format=outline cursor: `line` of the outline rendered from the row after
  * `after` (null: the first), `offset` rows before that row.
+ * @param {string} fp
+ * @param {{ after?: { k: string, id: string } | null, offset?: number, line?: number }} position
  */
 const encodeOutlineCursor = (fp, { after = null, offset = 0, line = 0 }) =>
   Buffer.from(JSON.stringify({ f: fp, l: line, o: offset, ...(after ? { k: after.k, id: after.id } : {}) }), 'utf8').toString('base64url');
@@ -438,7 +440,7 @@ function registerReadRoutes(app, { store, now }) {
     const outline = fmt === 'outline';
     const limit = outline ? format.STREAM_PAGE : format.pageSize(fmt, query.limit, schemas.DEFAULT_LIMIT);
     const fp = queryFingerprint(filter, { sort, desc, fields, view, counts, changes, ...(expand ? { expand } : {}), ...(outline ? { format: fmt } : {}) });
-    const pos = outline ? decodeOutlineCursor(query.cursor, fp) : null;
+    const pos = decodeOutlineCursor(outline ? query.cursor : undefined, fp);
     const after = outline ? pos.after : query.cursor === undefined ? null : decodeCursor(query.cursor, fp);
 
     await trackedFile(fileKey);
