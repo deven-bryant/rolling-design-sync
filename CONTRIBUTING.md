@@ -53,6 +53,8 @@ The API, MCP server, `packages/core` and the agent CLI stay JavaScript but are
 type-checked: `npm run typecheck` runs `tsc` over them (see `tsconfig.json`;
 tests and the Figma plugin are not covered yet), and CI runs it too. Add types
 with JSDoc (`@param`, `@typedef`, `@type`) where the checker cannot infer them.
+`strictNullChecks` is on: mark values that can be missing (`X | null`, optional
+params) and narrow them before use.
 Both stores implement the contract in `apps/api/src/store/types.d.ts`; a
 method added to one store goes there too. The v3 request and response types
 come from the schemas in `apps/api/src/v3/schemas.js`: after changing a schema,
