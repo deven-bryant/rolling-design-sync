@@ -38,7 +38,7 @@ function rankChildren(parentAttrs, children) {
   } else {
     const placed = listed.map(c => ({ c, t: translation(c.attrs) }));
     ranked = [
-      ...placed.filter(p => p.t).sort((a, b) => a.t.y - b.t.y || a.t.x - b.t.x || byIndex(a.c, b.c)).map(p => p.c),
+      ...placed.filter(/** @returns {p is { c: any, t: { x: number, y: number } }} */ p => !!p.t).sort((a, b) => a.t.y - b.t.y || a.t.x - b.t.x || byIndex(a.c, b.c)).map(p => p.c),
       ...placed.filter(p => !p.t).map(p => p.c).sort(byIndex),
     ];
   }
@@ -65,6 +65,11 @@ const depth = n => (n.path ? n.path.split('.').length : 0);
 // changed keys and, for each moved child, every descendant's key prefix. Works
 // top-down so a child keyed for the first time has its own children keyed too.
 // Store methods: getNodes, listChildren, rekeySubtrees. Returns rows rekeyed.
+/**
+ * @param {any} store
+ * @param {string} fileKey
+ * @param {{ parentIds?: string[], rootIds?: string[] }} [options]
+ */
 async function reorderDocument(store, fileKey, { parentIds = [], rootIds = [] } = {}) {
   let changed = 0;
   if (rootIds.length) {

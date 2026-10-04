@@ -279,6 +279,8 @@ function buildRequest(parsed, { env = {}, stdinText } = {}) {
 
   const query = {};
   const body = cmd.body ? {} : undefined;
+  /** Body flags and items only exist on commands that take a body. */
+  const bodyFields = /** @type {Record<string, any>} */ (body);
   for (const f of cmd.flags) {
     let raw = options[f.flag];
     if (raw === undefined && f.name === 'worker' && f.in === 'body') raw = envVar(env, 'WORKER');
@@ -292,10 +294,10 @@ function buildRequest(parsed, { env = {}, stdinText } = {}) {
     const value = valueOf(f, raw);
     if (f.in === 'path') pathValues[f.name] = value;
     else if (f.in === 'query') query[f.name] = value;
-    else if (f.object) (body[f.object] = body[f.object] || {})[f.name] = value;
-    else body[f.name] = value;
+    else if (f.object) (bodyFields[f.object] = bodyFields[f.object] || {})[f.name] = value;
+    else bodyFields[f.name] = value;
   }
-  if (items) body[cmd.items.name] = items;
+  if (items) bodyFields[cmd.items.name] = items;
   if (serverFormats(cmd).includes(format) && format !== 'json') query.format = format;
 
   const path = cmd.path.replace(/\{(\w+)\}/g, (_, name) => encodeURIComponent(pathValues[name]));
@@ -513,7 +515,7 @@ const RENDERERS = {
  * @param {import('../apps/api/src/v3/types').ClearReply} data
  */
 function clearNotes(data) {
-  return data.results.filter(r => r.status !== 'cleared').map(r => (r.status === 'stale'
+  return (data.results ?? []).filter(r => r.status !== 'cleared').map(r => (r.status === 'stale'
     ? `stale: ${r.nodeId} changed since it was read; current hash ${r.contentHash}. Re-read it (nodes show ${r.nodeId}) and clear against the new hash.\n`
     : `not found: ${r.nodeId} is not in this file.\n`)).join('');
 }

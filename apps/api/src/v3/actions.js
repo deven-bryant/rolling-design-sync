@@ -287,7 +287,7 @@ function registerActionRoutes(app, { store, now, config, bus = null }) {
       if (nodeIds) {
         ids = [...new Set((await resolveIds(tx, fileKey, nodeIds)).filter(Boolean).map(n => n.nodeId))];
         if (limit !== undefined) ids = ids.slice(0, limit);
-      } else {
+      } else if (storeFilter) {
         if (storeFilter.under !== null) {
           const [under] = await resolveIds(tx, fileKey, [storeFilter.under]);
           if (!under) throw address.nodeNotFound(fileKey, storeFilter.under);

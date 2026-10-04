@@ -127,11 +127,12 @@ function registerRateLimits(app, limits = {}, { now = Date.now } = {}) {
     setHeaders(reply, state);
   });
 
-  if (buckets.auth) {
+  const authBucket = buckets.auth;
+  if (authBucket) {
     app.addHook('onSend', async (request, reply, payload) => {
       if (reply.statusCode === 401 && !request.rateLimitAuthCounted && credentialOf(request)) {
         request.rateLimitAuthCounted = true;
-        buckets.auth.hit(request.ip);
+        authBucket.hit(request.ip);
       }
       return payload;
     });

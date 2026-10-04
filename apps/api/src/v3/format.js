@@ -67,6 +67,8 @@ function outlineWindow({ limit, cursor }) {
  * A copy of route `schema` taking `format`, with the ndjson / markdown media
  * types on its 200 response; `outline` ('node' | 'item') adds format=outline
  * (text/plain) for rows of that kind.
+ * @param {any} schema
+ * @param {{ outline?: 'node' | 'item' | null }} [options]
  */
 function withFormat(schema, { outline = null } = {}) {
   const ok = schema.response[200];
@@ -96,6 +98,9 @@ const pageSize = (fmt, limit, fallback) => (fmt === 'json' ? limit ?? fallback :
  * Sends rows as ndjson or markdown without buffering the response: `first` is
  * the page already read (`{ rows, next }`), `fetch(next)` reads the page after
  * it. At most `cap` rows are written (all when null).
+ * @param {any} reply
+ * @param {string} fmt
+ * @param {{ first: any, fetch: (next: any) => Promise<any>, toObject: (row: any) => any, toLine: (row: any) => string, cap?: number | null, total?: number | null }} options
  */
 function stream(reply, fmt, { first, fetch, toObject, toLine, cap = null, total = null }) {
   const render = fmt === 'ndjson' ? row => `${JSON.stringify(toObject(row))}\n` : row => `${toLine(row)}\n`;
@@ -176,6 +181,8 @@ function outlineStatus(n) {
  * `→ <mainComponentId> (shown above|below)` when `seen` says where its
  * component's expanded subtree is. `marker` prefixes `↳ ` (an expanded subtree's root);
  * `absolute` appends ` (absolute)` (positioned absolutely in an auto-layout parent).
+ * @param {any} n
+ * @param {{ depth?: number, marker?: boolean, mainName?: string | null, seen?: 'above' | 'below' | null, absolute?: boolean }} [options]
  */
 function outlineLine(n, { depth = 0, marker = false, mainName = null, seen = null, absolute = false } = {}) {
   let link = '';
@@ -271,6 +278,9 @@ function itemOutline(group, i) {
  * the render left out) the outline's last line is
  * `… N more (use cursor/limit) — cursor=<moreCursor>`. NEXT_CURSOR_HEADER is
  * `cursorAt(<next line>)` while lines remain, then `moreCursor`.
+ * @param {any} reply
+ * @param {string[]} lines
+ * @param {{ from?: number, limit?: number | null, cursorAt: (line: number) => string, more?: number, moreCursor?: string | null, unit?: string, total?: number | null }} options
  */
 function sendOutline(reply, lines, { from = 0, limit = null, cursorAt, more = 0, moreCursor = null, unit = '', total = null }) {
   const all = more ? [...lines, `… ${more} more${unit ? ` ${unit}` : ''} (use cursor/limit)${moreCursor ? ` — cursor=${moreCursor}` : ''}`] : lines;

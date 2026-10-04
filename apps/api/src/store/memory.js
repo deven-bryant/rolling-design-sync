@@ -131,6 +131,8 @@ class MemoryStore {
    * `baselined: true` when that happened. `changeType` / `changedProps` /
    * `changeCategories` are stored as given; a content-hash change clears the
    * block columns.
+   *
+   * @param {Parameters<Store['upsertNode']>[2]} [baseline]
    */
   async upsertNode(fileKey, row, baseline = null) {
     const key = this._nodeKey(fileKey, row.nodeId);
@@ -264,6 +266,8 @@ class MemoryStore {
    * Up to `limit` rows (tombstoned included) with a `changeType` but no
    * `changedProps`, in `(fileKey, nodeId)` order after `after`
    * (`{ fileKey, nodeId }`, exclusive).
+   *
+   * @param {Parameters<Store['listChangeRepairCandidates']>[0]} options
    */
   async listChangeRepairCandidates({ after = null, limit }) {
     const past = n => !after || cmp(n.fileKey, after.fileKey) > 0 || (n.fileKey === after.fileKey && cmp(n.nodeId, after.nodeId) > 0);
@@ -297,6 +301,8 @@ class MemoryStore {
    * Up to `limit` rows (tombstoned included) without an `orderKey`, parents
    * before children: in `(fileKey, depth, nodeId)` order after `after`
    * (`{ fileKey, depth, nodeId }`, exclusive). Rows carry `depth`.
+   *
+   * @param {Parameters<Store['listOrderKeyCandidates']>[0]} options
    */
   async listOrderKeyCandidates({ after = null, limit }) {
     const depth = n => (n.path ? n.path.split('.').length : 0);
@@ -434,8 +440,8 @@ class MemoryStore {
     return claim && claim.fileKey === fileKey ? clone(claim) : null;
   }
 
-  /** @param {{ fileKey?: string | null, nowIso?: string }} [options] */
-  async listClaims({ fileKey = null, nowIso } = {}) {
+  /** @param {Parameters<Store['listClaims']>[0]} options */
+  async listClaims({ fileKey = null, nowIso }) {
     return [...this.claims.values()]
       .filter(c => (fileKey === null || c.fileKey === fileKey) && Date.parse(c.expiresAt) > Date.parse(nowIso))
       .sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt) || cmp(a.claimId, b.claimId))
@@ -561,7 +567,7 @@ class MemoryStore {
       ? [...frames.entries()]
         .map(([p, count]) => [p, count, byPath.has(p) ? documentSortKey(byPath.get(p)) : null])
         .sort((a, b) => Number(a[2] === null) - Number(b[2] === null) || cmp(a[2] ?? '', b[2] ?? '') || cmp(a[0], b[0]))
-        .map(([p, count]) => ({ nodeId: pathNodeIds(p).pop(), name: byPath.get(p)?.name ?? null, count }))
+        .map(([p, count]) => ({ nodeId: /** @type {string} */ (pathNodeIds(p).pop()), name: byPath.get(p)?.name ?? null, count })) // a frame path is never empty
       : null;
     return { total: matched.length, byState, byChangeType, byCategory, byType, byFrame };
   }
@@ -723,6 +729,8 @@ class MemoryStore {
   /**
    * Events with `after < id < before`, oldest first (`order: 'desc'`: newest first), each with its file's `fileName`;
    * `fileKey` (or all files when null), `types`, `nodeId` and `since` narrow them.
+   *
+   * @param {Parameters<Store['listEvents']>[0]} [options]
    */
   async listEvents({ fileKey = null, after = 0, before = null, order = 'asc', types = [], nodeId = null, since = null, limit = 100 } = {}) {
     const out = [];

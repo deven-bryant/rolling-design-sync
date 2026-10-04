@@ -228,11 +228,14 @@ function registerInsightRoutes(app, { store, now }) {
     let full = false;
     for (;;) {
       const rows = new Map((await store.getNodes(fileKey, [...new Set(page.items.flatMap(i => i.nodeIds))])).map(n => [n.nodeId, n]));
-      const mainIds = [...new Set([...rows.values()].map(n => n.mainComponentId).filter(id => id && !rows.has(id)))];
+      const mainIds = [...new Set([...rows.values()].flatMap(n => (n.mainComponentId && !rows.has(n.mainComponentId) ? [n.mainComponentId] : [])))];
       const mains = new Map([...rows.values(), ...(mainIds.length ? await store.getNodes(fileKey, mainIds) : [])].map(n => [n.nodeId, n.name]));
       for (const raw of page.items) {
         const item = toItem(raw);
-        const nodes = item.nodeIds.filter(id => rows.has(id)).map(id => ({ node: nodeFields(fileKey, rows.get(id), at, 'names'), path: rows.get(id).path, absolute: isAbsolute(rows.get(id)), region: 0 }));
+        const nodes = item.nodeIds.flatMap(id => {
+          const row = rows.get(id);
+          return row ? [{ node: nodeFields(fileKey, row, at, 'names'), path: row.path, absolute: isAbsolute(row), region: 0 }] : [];
+        });
         const itemLines = [format.itemOutline(group, item), ...format.outlineTree(nodes, { base: 1, mainNames: mains })];
         if (shown && lines.length + itemLines.length > format.OUTLINE_LINES) { full = true; break; }
         lines.push(...itemLines);
@@ -243,7 +246,7 @@ function registerInsightRoutes(app, { store, now }) {
       page = await store.listWorkItems(fileKey, filter, { group, limit, after: page.next, maxIds: MAX_ITEM_NODE_IDS, progress });
     }
     const shownTo = pos.offset + shown;
-    const next = full ? { k: last.k, id: last.keyId ?? '' } : null;
+    const next = full && last ? { k: last.k, id: last.keyId ?? '' } : null;
     return format.sendOutline(reply, lines, {
       from: pos.line,
       limit: lineLimit,
@@ -269,7 +272,7 @@ function registerInsightRoutes(app, { store, now }) {
     const progress = query.include === 'progress';
     const outline = fmt === 'outline';
     const fp = queryFingerprint(filter, { route: 'work', group, changes, ...(progress ? { include: 'progress' } : {}), ...(expand ? { expand } : {}), ...(outline ? { format: fmt } : {}) });
-    const pos = outline ? decodeOutlineCursor(query.cursor, fp) : null;
+    const pos = decodeOutlineCursor(outline ? query.cursor : undefined, fp);
     const after = outline ? pos.after : query.cursor === undefined ? null : decodeCursor(query.cursor, fp);
     const expansion = await resolveScope(fileKey, filter, expand);
 
