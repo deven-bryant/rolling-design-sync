@@ -48,6 +48,8 @@ function writeActor(request, fallback = request.auth.label) {
  * session cookie (`readSession`, from session.js) with the needed role also
  * passes when no `Authorization` header was sent; a bearer token wins when
  * both are present.
+ *
+ * @param {((request: any, config: any) => ReturnType<typeof import('./session').readSession>) | null} [readSession]
  */
 function requireRole(config, role, readSession = null) {
   return async function authenticate(request, reply) {

@@ -70,6 +70,9 @@ function mintSession(config, token) {
  * `missing` / `disabled` / `invalid` / `expired` / `revoked`. A revoked
  * session is one whose token is no longer configured — the fingerprint check
  * is what signs its sessions out without shared state.
+ *
+ * @returns {{ status: 'ok', token: string, session: { role: string, label: string, expiresAt: string } }
+ *   | { status: 'missing' | 'disabled' | 'invalid' | 'expired' | 'revoked', token?: undefined, session?: undefined }}
  */
 function readSession(request, config) {
   const value = sessionCookie(request);

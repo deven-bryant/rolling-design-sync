@@ -76,6 +76,10 @@ function pathInput(value) {
 const EXISTS_MAX_IDS = 5000;
 
 class NodeSyncService {
+  /**
+   * @param {import('./store/types').Store} store
+   * @param {{ now?: () => Date, existsMaxIds?: number, bus?: import('./events/bus').MemoryBus | import('./events/postgres').PostgresBus | null }} [options]
+   */
   constructor(store, { now = () => new Date(), existsMaxIds = EXISTS_MAX_IDS, bus = null } = {}) {
     this.store = store;
     this.bus = bus;
