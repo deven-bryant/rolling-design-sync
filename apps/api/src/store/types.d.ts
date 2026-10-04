@@ -66,7 +66,7 @@ export interface Claim { claimId: string; fileKey: string; worker: string; label
 export interface ClaimListing extends Claim { fileName: string | null; nodeCount: number; nodeIds: string[]; nodes: any }
 export interface ClaimResult { claim: Claim; nodes: V3Node[] }
 
-export interface StoredEvent { id: number; fileKey: string; type: string; actor: string | null; data: Record<string, any>; createdAt: string | null }
+export interface StoredEvent { id: number; fileKey: string; type: string; actor: string | null; data: Record<string, any>; createdAt: string }
 
 /** A v3 listing filter (v3/read.js `buildFilter`, `states` expanded); `regions` comes from `expand=instances`. */
 export interface V3Filter {
@@ -145,7 +145,7 @@ export interface Store {
   // --- clear, claims, blocks
   clearNodes(fileKey: string, items: { nodeId: string; contentHash: string }[], patch: Record<string, any>): Promise<{ nodeId: string; contentHash: string }[]>;
   getClaim(fileKey: string, claimId: string): Promise<Claim | null>;
-  listClaims(options?: { fileKey?: string | null; nowIso?: string }): Promise<ClaimListing[]>;
+  listClaims(options: { fileKey?: string | null; nowIso: string }): Promise<ClaimListing[]>;
   createClaim(claim: { fileKey: string; worker: string; label?: string | null; expiresAt: string; nowIso: string; nodeIds: string[] }): Promise<ClaimResult>;
   renewClaim(fileKey: string, claimId: string, options: { expiresAt: string; nowIso: string }): Promise<ClaimResult | null>;
   releaseClaim(fileKey: string, claimId: string, options: { nowIso: string }): Promise<ClaimResult | null>;

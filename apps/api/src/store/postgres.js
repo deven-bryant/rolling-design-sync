@@ -220,6 +220,8 @@ class PostgresStore {
    * touches the implemented columns. `changeType` / `changedProps` / `changeCategories` are
    * stored as given; a content-hash change clears the block columns.
    * The result carries `baselined: true` when the row was inserted that way.
+   *
+   * @param {Parameters<Store['upsertNode']>[2]} [baseline]
    */
   async upsertNode(fileKey, row, baseline = null) {
     const { rows } = await this.query(
@@ -333,6 +335,8 @@ class PostgresStore {
    * Up to `limit` rows (tombstoned included) with a `change_type` but no
    * `changed_props`, in `(file_key, node_id)` order after `after`
    * (`{ fileKey, nodeId }`, exclusive).
+   *
+   * @param {Parameters<Store['listChangeRepairCandidates']>[0]} options
    */
   async listChangeRepairCandidates({ after = null, limit }) {
     const { rows } = await this.query(
@@ -371,6 +375,8 @@ class PostgresStore {
    * Up to `limit` rows (tombstoned included) without an `order_key`, parents
    * before children: in `(file_key, depth, node_id)` order after `after`
    * (`{ fileKey, depth, nodeId }`, exclusive). Rows carry `depth`.
+   *
+   * @param {Parameters<Store['listOrderKeyCandidates']>[0]} options
    */
   async listOrderKeyCandidates({ after = null, limit }) {
     const { rows } = await this.query(
@@ -741,8 +747,8 @@ class PostgresStore {
     return mapClaim(rows[0]) || null;
   }
 
-  /** @param {{ fileKey?: string | null, nowIso?: string }} [options] */
-  async listClaims({ fileKey = null, nowIso } = {}) {
+  /** @param {Parameters<Store['listClaims']>[0]} options */
+  async listClaims({ fileKey = null, nowIso }) {
     const leased = a => `${a}.file_key = c.file_key and ${a}.claim_id = c.claim_id and ${a}.claimed_by = c.worker and ${a}.claim_expires_at > $2::timestamptz`;
     const { rows } = await this.query(
       `select c.*, f.name as file_name, held.node_count, held.node_ids, preview.nodes
@@ -854,6 +860,8 @@ class PostgresStore {
   /**
    * Events with `after < id < before`, oldest first (`order: 'desc'`: newest first), each with its file's `fileName`;
    * `fileKey` (or all files when null), `types`, `nodeId` and `since` narrow them.
+   *
+   * @param {Parameters<Store['listEvents']>[0]} [options]
    */
   async listEvents({ fileKey = null, after = 0, before = null, order = 'asc', types = [], nodeId = null, since = null, limit = 100 } = {}) {
     const { rows } = await this.query(
