@@ -18,7 +18,7 @@ problem.** Report it privately instead:
 
 - **Preferred:** GitHub **private vulnerability reporting** on this repository
   — open the **Security** tab and choose **Report a vulnerability**.
-- **Email:** `security@<your-domain>`.
+- **Email:** [security@rollingdesignsync.com](mailto:security@rollingdesignsync.com).
 
 ### What to include
 
