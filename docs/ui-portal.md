@@ -219,9 +219,17 @@ per browser (`localStorage['rds-theme']`); with no saved choice the portal
 follows the OS `prefers-color-scheme`, live.
 
 ### Files — `/ui/files` (home)
-- Metrics: dirty nodes (sum of `GET /v3/files` counts) and active claims
-  (unexpired `GET /v3/claims`, with the count of distinct agents). No trends:
-  the API has no history to compare against.
+- Metrics, in this order: **Dirty nodes** (sum of `GET /v3/files` counts),
+  **Cleared this week** and **Active claims** (unexpired `GET /v3/claims`, with
+  the count of distinct agents).
+- Trends come from `GET /v3/insights/trends` (7-day windows, all files):
+  *Cleared this week* is `total.cleared`, with a `±N%` chip from
+  `clearedChangePct` (none when it is `null`: nothing was cleared the week
+  before); *Dirty nodes* gets a signed chip from `netDirty` (newly dirtied minus
+  cleared this week, e.g. `+31`; up means more dirty, no chip at `0`). The
+  numbers come from the event log, so while it holds less than two windows
+  (`complete: false`, see `RDS_EVENT_RETENTION_DAYS`) every chip is hidden and
+  only the values show. Refreshed on `sync.completed` and `nodes.cleared`.
 - Table: `GET /v3/files` — name and key, scopes (`/scopes`), dirty, implemented
   % (`clean / total`), last sync (time + `client`), agents (from claims).
 - A file with no scopes shows "Run the plugin on a frame" with a link to Connect.
@@ -231,11 +239,21 @@ follows the OS `prefers-color-scheme`, live.
   and type, node id, last sync, child nodes (total, dirty, blocked) and an
   **Open** link to the scope in Figma. **Search Scope** filters by name or node
   id (`1:2` or `1-2`).
-- One scope is selected at a time (row checkbox or row click); it is `?under=`,
-  so the screen below, the header and **Copy agent prompt** follow it. Without
-  `?under=` the most recently synced scope is selected. **View Nodes** (Work
-  Items) opens Nodes on the selected scope; Nodes shows a *1 Scope Viewed*
-  badge beside its search field.
+- Several scopes can be selected: each row has a checkbox (a row click toggles
+  it too), and the header checkbox selects or clears every scope on the page
+  (indeterminate when some are). At least one scope stays selected. The
+  selection is `?under=` as comma-separated node ids in the panel's order
+  (`?under=58:4508,33:3540`); the screen below lists the union of their
+  subtrees, and the header and **Copy agent prompt** follow it. A single id
+  (`?under=1:2`, older links) selects one scope; without `?under=` the most
+  recently synced scope is selected. The card header shows *N selected*;
+  **View Nodes** (Work Items) opens Nodes on the selection; Nodes and Work Items
+  show an *N Scope(s) Viewed* badge beside their search field.
+- With one scope the page header shows it as below. With several, the title is
+  "N scopes", the meta line is the latest sync and the summed node and
+  component counts (`N scopes · last synced … · N nodes, N components`),
+  *Open in Figma* is hidden, and **Copy agent prompt** names every selected
+  scope and passes the list as `under`.
 - **View Scopes** shows or hides the panel; shown by default, remembered per
   browser.
 
@@ -279,10 +297,17 @@ follows the OS `prefers-color-scheme`, live.
 - Viewer sessions see the same drawer without the action buttons.
 
 ### Work items — `/ui/files/:fileKey/work`
-- `GET /v3/files/:fileKey/work?group=component|frame&expand=instances&include=progress&under=<scope>`;
-  group switch (By component · By frame), under the scope panel.
+- `GET /v3/files/:fileKey/work?group=component|frame&expand=instances&include=progress&under=<scopes>`,
+  `under` passed as selected (comma-separated for several scopes).
+- Above the table, as on the Node tree: the node search field (`?q=`, the same
+  name / node id / `key:value` parsing as Nodes) with the *N Scope(s) Viewed*
+  badge, then the group switch (By component · By frame) and **Expand
+  instances** (on by default; off is `?expand=none` and drops
+  `expand=instances`). *By frame* needs one root: with several scopes it is
+  disabled with a tooltip and the list is grouped by component.
 - Columns: component (name, key, variants), placements in this screen / in file,
   dirty of total, categories, progress (`clean / total`), agent (from claims).
+  Long component names and agent names truncate so the table fits 1440 px.
 - A row opens the Node tree filtered to that component (`under=<key>`).
 
 ### Activity — `/ui/activity` (all files)
