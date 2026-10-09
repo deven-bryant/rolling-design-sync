@@ -302,8 +302,8 @@ node scripts/rds-agent.js nodes ls "$LINK" --claimed mine --worker agent-a --fie
   | node scripts/rds-agent.js clear --url "$LINK" --commit-ref <sha> -
 ```
 
-- `claim_nodes` / `claim` takes a `filter` (the listing's filters, e.g. `under`,
-  `type`, `component`) or exact `nodeIds` (claim a work item's `nodeIds` to
+- `claim_nodes` / `claim` takes a `filter` (the listing's filters, e.g. `under` — one node
+  id, or several comma-separated for the union of their subtrees — `type`, `component`) or exact `nodeIds` (claim a work item's `nodeIds` to
   take one component). It returns only the nodes it actually leased — free,
   expired, or already yours; work on those only. An empty `nodes` means nothing
   free matched.
