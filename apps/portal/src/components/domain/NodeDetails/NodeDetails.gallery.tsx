@@ -6,8 +6,8 @@ import type { GalleryEntry, GalleryExample } from '../../primitives';
 import { NodeDetails, type NodeDetailsChange, type NodeDetailsEvent, type NodeDetailsProps } from '.';
 
 const changes: NodeDetailsChange[] = [
-  { attribute: 'fills', from: { value: 'bg-primary', detail: '#FFFFFF' }, to: { value: 'bg-secondary', detail: '#F9FAFB' } },
-  { attribute: 'strokes', from: { value: 'border-secondary', detail: '#E9EAEB' }, to: { value: 'border-primary', detail: '#D5D7DA' } },
+  { attribute: 'fills', from: { value: 'bg-primary', detail: '#FFFFFF' }, to: { value: 'bg-secondary', detail: '#F7FBFC' } },
+  { attribute: 'strokes', from: { value: 'border-secondary', detail: '#E7EAEC' }, to: { value: 'border-primary', detail: '#D3D8DA' } },
   { attribute: 'itemSpacing', from: { value: 'spacing-md', detail: '8' }, to: { value: 'spacing-lg', detail: '12' } },
 ];
 

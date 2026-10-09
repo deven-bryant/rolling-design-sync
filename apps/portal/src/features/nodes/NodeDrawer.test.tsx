@@ -93,17 +93,17 @@ describe('NodeDrawer', () => {
     expect(dialog.getByRole('heading', { name: 'Breadcrumbs' })).toBeTruthy();
   });
 
-  it('opens narrow on Change History, widens for Change List and narrows again', async () => {
+  it('opens at 583px on Change History, widens for Change List and narrows again', async () => {
     const user = userEvent.setup();
     renderDrawer();
     const dialog = await screen.findByRole('dialog');
     const classes = () => dialog.parentElement?.getAttribute('class')?.split(' ') ?? [];
-    expect(classes()).toEqual(expect.arrayContaining(['w-126.25', 'max-w-full']));
+    expect(classes()).toEqual(expect.arrayContaining(['w-145.75', 'max-w-full']));
     await user.click(await within(dialog).findByRole('tab', { name: 'Change List' }));
     expect(classes()).toEqual(expect.arrayContaining(['w-275', 'max-w-full']));
-    expect(classes()).not.toContain('w-126.25');
+    expect(classes()).not.toContain('w-145.75');
     await user.click(within(dialog).getByRole('tab', { name: 'Change History' }));
-    expect(classes()).toContain('w-126.25');
+    expect(classes()).toContain('w-145.75');
   });
 
   it('opens each node on Change History', async () => {
@@ -116,7 +116,7 @@ describe('NodeDrawer', () => {
       </QueryClientProvider>,
     );
     expect((await screen.findByRole('tab', { name: 'Change History' })).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('dialog').parentElement?.getAttribute('class')?.split(' ')).toContain('w-126.25');
+    expect(screen.getByRole('dialog').parentElement?.getAttribute('class')?.split(' ')).toContain('w-145.75');
   });
 
   it('shows viewers the same content without claim or block actions', async () => {

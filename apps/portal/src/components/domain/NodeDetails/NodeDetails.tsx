@@ -3,7 +3,7 @@ import { Badge } from '../../Badge';
 import { Card } from '../../Card';
 import { Feed, FeedItem } from '../../FeedItem';
 import { Pagination } from '../../Pagination';
-import { cx, Text } from '../../primitives';
+import { cx, Text, VisuallyHidden } from '../../primitives';
 import { SectionHeader } from '../../SectionHeader';
 import { Table, TextCell } from '../../Table';
 import { Tabs } from '../../Tabs';
@@ -48,7 +48,7 @@ export interface NodeDetailsProps extends Omit<HTMLAttributes<HTMLElement>, 'tit
   description?: ReactNode;
   /** Header `Actions` (e.g. the drawer's close button). */
   actions?: ReactNode;
-  /** `Status`: the node's badges, after a `Status` label. */
+  /** `Status`: the node's badges, named by a visually hidden `Status` label. */
   status?: ReactNode;
   /** Content under the status row (a block notice, the block form). */
   children?: ReactNode;
@@ -188,9 +188,7 @@ export function NodeDetails({
       </SectionHeader>
       {status != null && (
         <div className="flex items-center gap-lg py-xxs">
-          <Text id={statusId} weight="medium">
-            Status
-          </Text>
+          <VisuallyHidden id={statusId}>Status</VisuallyHidden>
           <div aria-labelledby={statusId} role="group" className="flex flex-wrap items-center gap-md">
             {status}
           </div>
