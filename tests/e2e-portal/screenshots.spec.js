@@ -61,7 +61,8 @@ test.describe.configure({ mode: 'serial' });
 test.beforeAll(async () => {
   const { files } = await api('GET', '/v3/files', TOKENS.viewer);
   if (files.length) throw new Error(`The API already tracks ${files.length} file(s); run the screenshots against a fresh API (see tests/README.md).`);
-  await seedDemo(api, TOKENS);
+  const clock = path.join(process.env.RDS_SCREENSHOTS_DATA_DIR, 'clock');
+  await seedDemo(api, TOKENS, async days => fs.writeFileSync(clock, String(days * 86_400_000)));
   fs.mkdirSync(OUT, { recursive: true });
 });
 
@@ -87,6 +88,7 @@ test(`portal screenshots (${theme})`, async ({ page }) => {
 
   const files = page.getByRole('table', { name: 'Tracked files' });
   await expect(files.getByRole('row', { name: APP.fileName })).toBeVisible();
+  await expect(page.getByText(/^[+-]\d+%$/)).toBeVisible();
   await capture(page, 'portal-files', suffix);
 
   await go(page, `/ui/files/${APP.fileKey}/nodes`);

@@ -131,7 +131,12 @@ function dsTree(v) {
 const hashes = rows => Object.fromEntries(rows.map(r => [r.nodeId, r.contentHash]));
 
 /** Seeds both files and the agent activity; `api(method, route, token, body)` as in fixture.js. */
-async function seedDemo(api, tokens) {
+/**
+ * `shiftClock(days)` moves the API's clock (see clock.js): the design system's
+ * first build and fixes land last week, so the Files trends have a week to
+ * compare with.
+ */
+async function seedDemo(api, tokens, shiftClock = async () => {}) {
   const sync = (file, upserts, extra = {}) =>
     api('POST', `/v3/files/${file.fileKey}/sync`, tokens.plugin, { fileName: file.fileName, rootNodeId: file.root, upserts, ...extra });
   const clear = (file, rows, nodeIds, worker, commitRef) => {
@@ -141,10 +146,13 @@ async function seedDemo(api, tokens) {
   const claim = (file, nodeIds, worker, label) =>
     api('POST', `/v3/files/${file.fileKey}/claims`, tokens.agent, { worker, label, ttlSeconds: 1800, nodeIds });
 
-  // Design system: built, edited, partly rebuilt.
+  // Design system, last week: built, edited, partly rebuilt.
+  await shiftClock(-8);
   await sync(DS, dsTree(0), { markImplemented: true });
   await sync(DS, dsTree(1));
   await clear(DS, dsTree(1), ['2:1', '4:2'], 'cursor-2', '4e1d0b7');
+  await shiftClock(0);
+  await sync(DS, dsTree(1));
 
   // App: built, then the design edit, then agents at work.
   await sync(APP, appTree(0), { markImplemented: true });
