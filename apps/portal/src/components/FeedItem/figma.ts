@@ -2,18 +2,18 @@
 
 export const figma = {
   'Activity feed': {
-    setId: '22:1209',
+    setId: '111:13541',
     axes: {
       Divider: { Connector: '<Feed divider="connector">', False: '<Feed divider="none">' },
       Type: { Notifications: '<Feed> of <FeedItem>s' },
     },
     variants: [
-      { nodeId: '22:1211', key: '04e1c5e5fa65f0ac0ba6db06162a201f9aa92e02', name: 'Divider=Connector, Type=Notifications' },
-      { nodeId: '22:1212', key: 'defca1bb3ffe58c4c8120413063ee8e2f1e75ffe', name: 'Divider=False, Type=Notifications' },
+      { nodeId: '111:13543', key: '0815a69903bbafb38fd3a78c8a5cd145dbfed2b6', name: 'Divider=Connector, Type=Notifications' },
+      { nodeId: '111:13544', key: 'b2375e057a3cd356d937dc327f1a1b89b0066ada', name: 'Divider=False, Type=Notifications' },
     ],
   },
   '_Feed item base': {
-    setId: '22:982',
+    setId: '111:13320',
     axes: {
       Size: { md: 'the only size' },
       'Supporting item': {
@@ -31,17 +31,17 @@ export const figma = {
       'New dot': '<FeedItem unread>',
     },
     variants: [
-      { nodeId: '22:983', key: 'e17e97fcbb0b6c01a12e7be2a436c6eee86efe78', name: 'Size=md, Supporting item=False, Connector=True' },
-      { nodeId: '22:985', key: 'd18f1928236fa3a9d4ea353d46478cd453708b0b', name: 'Size=md, Supporting item=False, Connector=False' },
-      { nodeId: '22:987', key: 'e75c827e4dab3f698cd990a6be5e713d574c8a23', name: 'Size=md, Supporting item=File, Connector=True' },
-      { nodeId: '22:989', key: '7d8628615334c2c321186ac783c3ca196e75d067', name: 'Size=md, Supporting item=File, Connector=False' },
-      { nodeId: '22:995', key: '7370faf375635dfe2046ddcb2245ea73f8e76dda', name: 'Size=md, Supporting item=Text, Connector=True' },
-      { nodeId: '22:997', key: '2b7aaa27be88c1a12e492a5813b5a622da9a2e30', name: 'Size=md, Supporting item=Text, Connector=False' },
+      { nodeId: '111:13321', key: '9771fe7c7726f8d7c6f68d4b808c12e30378b91c', name: 'Size=md, Supporting item=False, Connector=True' },
+      { nodeId: '111:13323', key: 'a7ded7b8e8f59f88fa34fafa9b87fc8fdb198eb9', name: 'Size=md, Supporting item=False, Connector=False' },
+      { nodeId: '111:13325', key: '0fe763ffb197e76239ef46f8f4a371f7df2b901c', name: 'Size=md, Supporting item=File, Connector=True' },
+      { nodeId: '111:13327', key: 'b19fa4306acfd4fcb72a543d241a2cc6d1d52e13', name: 'Size=md, Supporting item=File, Connector=False' },
+      { nodeId: '111:13333', key: 'a5a1e009f18e31ad865f9b67b49a38e7e2989753', name: 'Size=md, Supporting item=Text, Connector=True' },
+      { nodeId: '111:13335', key: '6df7c2f2fb62edce6328e07dcb3a1eff7a07c18c', name: 'Size=md, Supporting item=Text, Connector=False' },
     ],
   },
   'File type icon': {
-    setId: '15:672',
+    setId: '111:8439',
     axes: { 'File type': { 'Document / PDF': '<FileTypeIcon type="pdf">' }, Type: { Default: '' } },
-    variants: [{ nodeId: '15:730', key: '889dfbe2c8a74824c42a799dee9b4eebcc326150', name: 'File type=Document / PDF, Type=Default' }],
+    variants: [{ nodeId: '111:8497', key: '5256e9391c4654591a33656768ceece851012cff', name: 'File type=Document / PDF, Type=Default' }],
   },
 } as const;

@@ -2,12 +2,12 @@
 
 export const figma = {
   'Code snippet': {
-    setId: '28:2994',
+    setId: '111:15113',
     axes: { Type: { Simple: '<CodeSnippet type="simple">' } },
     properties: {
       'Line numbers': '<CodeSnippet lineNumbers>',
       Code: '<CodeSnippet code>',
     },
-    variants: [{ nodeId: '28:2995', key: 'd124562c5c4e61bc333da3f243cd9b2dffc665f7', name: 'Type=Simple' }],
+    variants: [{ nodeId: '111:15114', key: 'cacea08bc03c48dfaf8c0be9c9239806de127ed5', name: 'Type=Simple' }],
   },
 } as const;

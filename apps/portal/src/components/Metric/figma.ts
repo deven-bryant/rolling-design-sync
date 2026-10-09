@@ -2,7 +2,7 @@
 
 export const figma = {
   'Metric item': {
-    setId: '24:1959',
+    setId: '111:14656',
     axes: {
       Type: { Simple: '<Metric type="simple">' },
       Actions: { False: 'no actions' },
@@ -15,12 +15,12 @@ export const figma = {
       'Dropdown icon': '<Metric menu={…}>',
     },
     variants: [
-      { nodeId: '24:1960', key: 'a31aac1a8cd308c3ae8a6097f79bf1a82c2dc5f8', name: 'Actions=False, Type=Simple, Breakpoint=Desktop' },
+      { nodeId: '111:14657', key: 'b3107d46f3ec7c660b226cb9b7a23a5414dff969', name: 'Actions=False, Type=Simple, Breakpoint=Desktop' },
     ],
   },
   _Change: {
-    setId: '24:1743',
+    setId: '111:14442',
     axes: { Type: { '03': '<MetricChange type="03">' }, Trend: { Positive: '<MetricChange trend="positive">' } },
-    variants: [{ nodeId: '24:1748', key: '0f260ba70191e314a999b096fe8204709f59fb11', name: 'Type=03, Trend=Positive' }],
+    variants: [{ nodeId: '111:14447', key: '0f8fbfff9291ed519269b571fbac6856b7ce3227', name: 'Type=03, Trend=Positive' }],
   },
 } as const;

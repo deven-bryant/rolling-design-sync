@@ -40,38 +40,38 @@ export const figmaButton = {
   },
   variants: {
     'Size=md, Hierarchy=Primary, State=Default, Icon only=False': {
-      nodeId: '9:2239',
-      key: '95edaeda33c6966f6335a867096d1d12a407a8ad',
+      nodeId: '111:11169',
+      key: 'e53a6681e460a8cb6af8453dcc2f5b03fd8548d7',
       props: { size: 'md', hierarchy: 'primary' },
     },
     'Size=md, Hierarchy=Tertiary, State=Default, Icon only=False': {
-      nodeId: '9:2242',
-      key: '57d62938d9808e5c621c75cb33aa0aae337a21e5',
+      nodeId: '111:11172',
+      key: 'abc6ca9ce46d31a0cabdfe311eaaa74e45b6abbf',
       props: { size: 'md', hierarchy: 'tertiary' },
     },
     'Size=md, Hierarchy=Tertiary, State=Default, Icon only=True': {
-      nodeId: '9:2265',
-      key: '51aa55302b5a2a01b49ffb6154017acc3fc37842',
+      nodeId: '111:11195',
+      key: '927427fee61a9eef51804453fb4a717c0b657e64',
       props: { size: 'md', hierarchy: 'tertiary', iconOnly: true },
     },
     'Size=md, Hierarchy=Secondary, State=Default, Icon only=False': {
-      nodeId: '9:2243',
-      key: '2def7e66b88415e9765f9fc7fd7e815642d45965',
+      nodeId: '111:11173',
+      key: 'aa8fdc25db3faf5803607753f61fea1829ca77bc',
       props: { size: 'md', hierarchy: 'secondary' },
     },
     'Size=sm, Hierarchy=Link color, State=Default, Icon only=False': {
-      nodeId: '9:2360',
-      key: '8c441b633ce937959fe4b6896dcee9db9d96442c',
+      nodeId: '111:11290',
+      key: '26f64c92e8ecd3bf0e9ce1165a669beb22854305',
       props: { size: 'sm', hierarchy: 'link-color' },
     },
     'Size=sm, Hierarchy=Link gray, State=Default, Icon only=False': {
-      nodeId: '9:2361',
-      key: 'd5004241599ea075b7b06e9193def598f0455166',
+      nodeId: '111:11291',
+      key: 'e3d01c304b4470158db60bed7a8ed5a2ce75068f',
       props: { size: 'sm', hierarchy: 'link-gray' },
     },
     'Size=sm, Hierarchy=Secondary, State=Default, Icon only=False': {
-      nodeId: '9:2363',
-      key: '1b16133fd821cbe698ad29e843b23f358a76c474',
+      nodeId: '111:11293',
+      key: '7a0e02eafb8a834181f59562a307b485c931d3ea',
       props: { size: 'sm', hierarchy: 'secondary' },
     },
   },
@@ -99,13 +99,13 @@ export const figmaButtonUtility = {
   properties: { '🔀 Icon swap#8003:0': 'icon', Tooltip: 'tooltip' },
   variants: {
     'Size=xs, Hierarchy=Tertiary, State=Default': {
-      nodeId: '9:7152',
-      key: '5845c288a1d03c9289748850ca53c97be8ecffc4',
+      nodeId: '111:11966',
+      key: '3cbb4e5fc0db235d647c8339f1e26fe6c9a7ee22',
       props: { size: 'xs', hierarchy: 'tertiary' },
     },
     'Size=xs, Hierarchy=Tertiary, State=Hover': {
-      nodeId: '9:7155',
-      key: '5b9ee6393a5226dc43289ec7d9013fcaf4d587c2',
+      nodeId: '111:11969',
+      key: '2c8c5f19f3296948725dbf4756e951affdb98c49',
       props: { size: 'xs', hierarchy: 'tertiary' },
     },
   },
@@ -128,13 +128,13 @@ export const figmaCloseButton = {
   },
   variants: {
     'Size=md, Dark background=False, State=Default': {
-      nodeId: '9:7321',
-      key: 'f660e709d32cc8c9ac237e3ac6fb9a39d5e7e605',
+      nodeId: '111:12635',
+      key: 'a5065b9fa212482abf1ce01d01282c9eeec9f61f',
       props: { size: 'md' },
     },
     'Size=sm, Dark background=False, State=Default': {
-      nodeId: '9:7322',
-      key: '7e93f89b1c0a91b860f1e147de9f0b527e645f76',
+      nodeId: '111:12636',
+      key: 'ef5b4ee254658239ca7fd608d02d4575ff275f26',
       props: { size: 'sm' },
     },
   },

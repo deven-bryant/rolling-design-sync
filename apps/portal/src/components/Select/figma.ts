@@ -6,7 +6,7 @@
  */
 export const figmaSelect = {
   component: 'Select',
-  setId: '9:1305',
+  setId: '111:6785',
   properties: {
     Size: 'size',
     Type: 'Default → <Select>, Search → <Select.Search>',
@@ -20,14 +20,14 @@ export const figmaSelect = {
   },
   variants: [
     {
-      nodeId: '9:1307',
-      key: '54c9998484c62caee08c1bf77a458cc186e95cae',
+      nodeId: '111:6787',
+      key: '45737481d328ab3f395bf735acb8cc81d03f3934',
       name: 'Size=sm, Type=Default, State=Default',
       code: '<Select size="sm" label="…" required tooltip="…" hint="…" defaultSelectedKey="…"><Select.Item id="…" supportingText="…">…</Select.Item></Select>',
     },
     {
-      nodeId: '9:1331',
-      key: '6dd3061519f19925a621829393c27594b7facf2a',
+      nodeId: '111:6811',
+      key: '1277396377833908cfcce61999243c633dd3cf61',
       name: 'Size=sm, Type=Search, State=Placeholder',
       code: '<Select.Search size="sm" label="…" required tooltip="…" hint="…" shortcut="⌘K" placeholder="…">…</Select.Search>',
     },
