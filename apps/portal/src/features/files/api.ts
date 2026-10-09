@@ -6,6 +6,7 @@ import { useEventStream, type StreamEvent, type StreamState } from '../../api/us
 export type TrackedFile = NonNullable<ApiResponse<'/v3/files'>['files']>[number];
 export type FileScope = NonNullable<ApiResponse<'/v3/files/{fileKey}/scopes'>['scopes']>[number];
 export type { Claim };
+export type Trends = ApiResponse<'/v3/insights/trends'>;
 export type ApiEvent = NonNullable<ApiResponse<'/v3/events'>['events']>[number];
 
 const EVENT_PAGE = 1000;
@@ -14,6 +15,7 @@ export const filesKeys = {
   list: ['files'] as const,
   scopes: (fileKey: string) => ['files', fileKey, 'scopes'] as const,
   lastSync: (fileKey: string) => ['files', fileKey, 'last-sync'] as const,
+  trends: ['insights', 'trends'] as const,
   claims: claimsQueryKey,
 };
 
@@ -23,6 +25,14 @@ export function useFiles() {
     queryKey: filesKeys.list,
     queryFn: ({ signal }) => api.get('/v3/files', { signal }),
     select: data => data.files ?? [],
+  });
+}
+
+/** `GET /v3/insights/trends`: the server's nodes cleared and dirtied this week (7-day windows) vs the week before. */
+export function useTrends() {
+  return useQuery({
+    queryKey: filesKeys.trends,
+    queryFn: ({ signal }) => api.get('/v3/insights/trends', { signal }),
   });
 }
 
@@ -70,13 +80,17 @@ export function useFilesLive(): StreamState {
   return useEventStream('/v3/events', {
     'sync.completed': event => {
       refresh(filesKeys.list, true);
+      refresh(filesKeys.trends, true);
       const fileKey = eventFileKey(event);
       if (fileKey) {
         refresh(filesKeys.scopes(fileKey));
         refresh(filesKeys.lastSync(fileKey));
       }
     },
-    'nodes.cleared': () => refresh(filesKeys.list, true),
+    'nodes.cleared': () => {
+      refresh(filesKeys.list, true);
+      refresh(filesKeys.trends, true);
+    },
     'claim.created': claims,
     'claim.renewed': claims,
     'claim.released': claims,
