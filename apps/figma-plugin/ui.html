@@ -4,9 +4,9 @@
 :root{font:12px Inter,system-ui,sans-serif;color:var(--figma-color-text,#202124);background:var(--figma-color-bg,#fff)}
 *{box-sizing:border-box}body{margin:0;padding:20px}h1{font-size:21px;letter-spacing:-.5px;margin:0 0 6px}h2{font-size:14px;margin:0 0 8px}p{line-height:1.5;margin:6px 0 12px}.muted{color:var(--figma-color-text-secondary,#666)}
 label{display:block;margin:12px 0 5px;font-weight:600}input[type=text],input[type=url],input[type=password]{width:100%;border:1px solid var(--figma-color-border,#ccc);border-radius:6px;background:var(--figma-color-bg,#fff);color:inherit;padding:8px;font:inherit}
-button{border:1px solid var(--figma-color-border,#ccc);border-radius:6px;padding:8px 11px;background:var(--figma-color-bg-secondary,#f4f4f4);color:inherit;font:inherit;cursor:pointer}button.primary{background:#1769e0;border-color:#1769e0;color:white}button:disabled{opacity:.45;cursor:default}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.panel{padding:14px;margin:16px 0;border:1px solid var(--figma-color-border,#ddd);border-radius:10px}.scope{font-weight:650;margin:8px 0}#message{padding:10px;border-radius:6px;background:var(--figma-color-bg-secondary,#f5f6f8);white-space:pre-wrap;line-height:1.5}#message.error{color:#b42318;background:#fff0ed}#busy{font-weight:600;color:#1769e0;min-height:18px;margin:8px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:240px;overflow:auto;padding:8px;background:var(--figma-color-bg-secondary,#f5f5f5)}a{color:#1769e0}summary{cursor:pointer;margin:10px 0}#result-area[hidden]{display:none}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin:10px 0}.stat{padding:10px;border:1px solid var(--figma-color-border,#ddd);border-radius:8px}.stat b{display:block;font-size:18px;letter-spacing:-.3px}.tag{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--figma-color-text-secondary,#666)}.check{display:flex;align-items:center;gap:7px;font-weight:400;margin:8px 0 0}
+button{border:1px solid var(--figma-color-border,#ccc);border-radius:6px;padding:8px 11px;background:var(--figma-color-bg-secondary,#f4f4f4);color:inherit;font:inherit;cursor:pointer}button.primary{background:#1f6e84;border-color:#1f6e84;color:white}button.primary:hover:not(:disabled){background:#145d6e;border-color:#145d6e}button:disabled{opacity:.45;cursor:default}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.panel{padding:14px;margin:16px 0;border:1px solid var(--figma-color-border,#ddd);border-radius:10px}.scope{font-weight:650;margin:8px 0}#message{padding:10px;border:1px solid transparent;border-radius:6px;background:var(--figma-color-bg-secondary,#f5f6f8);white-space:pre-wrap;line-height:1.5}#message:empty{padding:0;border:0}#message.error{color:var(--figma-color-text-danger,#b42318);background:var(--figma-color-bg-danger-tertiary,#fff0ed);border-color:var(--figma-color-border-danger,#f9c4bb)}#message.success{color:var(--figma-color-text-success,#067647);background:var(--figma-color-bg-success-tertiary,#ecfdf3);border-color:var(--figma-color-border-success,#abefc6)}#busy{font-weight:600;color:var(--figma-color-text-brand,#1f6e84);min-height:18px;margin:8px 0}#bar{position:relative;height:6px;margin:0 0 10px;border-radius:3px;overflow:hidden;background:var(--figma-color-bg-tertiary,#e6e6e6)}#bar[hidden]{display:none}#bar-fill{position:absolute;inset:0 auto 0 0;width:0;border-radius:3px;background:var(--figma-color-bg-brand,#1f6e84);transition:width .2s}#bar.indeterminate #bar-fill{width:30%;transition:none;animation:bar-slide 1.2s ease-in-out infinite}@keyframes bar-slide{from{left:-30%}to{left:100%}}@media (prefers-reduced-motion:reduce){#bar-fill{transition:none}#bar.indeterminate #bar-fill{animation:none;left:0;width:100%;opacity:.35}}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:240px;overflow:auto;padding:8px;background:var(--figma-color-bg-secondary,#f5f5f5)}a{color:var(--figma-color-text-brand,#1f6e84)}summary{cursor:pointer;margin:10px 0}#result-area[hidden]{display:none}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin:10px 0}.stat{padding:10px;border:1px solid var(--figma-color-border,#ddd);border-radius:8px}.stat b{display:block;font-size:18px;letter-spacing:-.3px}.tag{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--figma-color-text-secondary,#666)}.check{display:flex;align-items:center;gap:7px;font-weight:400;margin:8px 0 0}
 </style></head><body>
-<h1>Design change sync <small>0.4.0</small></h1>
+<h1>Rolling Design Sync <small id="version" class="muted"></small></h1>
 <p class="muted">Scan a section or frame and sync it. The plugin hashes every node locally, compares against the hashes stored on the server, and uploads only changed or new nodes plus deletions. Instances are skipped, but every instance's main component is resolved and scanned into the server if missing (loading only the pages it lives on).</p>
 <div class="panel"><h2>1 · Settings</h2>
 <label for="base-url">API base URL</label><input type="url" id="base-url" placeholder="http://localhost:8787" autocomplete="off">
@@ -23,7 +23,7 @@ button{border:1px solid var(--figma-color-border,#ccc);border-radius:6px;padding
 <p class="muted">Only affects nodes never synced before; existing changes stay in the queue. Applies to this sync only and is not saved.</p>
 <div class="row"><button id="upload" class="primary">Upload snapshot</button></div>
 </div>
-<div id="message" role="status" aria-live="polite">Choose a scope to get started.</div><div id="busy" role="status"></div><button id="cancel" disabled>Cancel operation</button>
+<div id="message" role="status" aria-live="polite">Choose a scope to get started.</div><div id="busy" role="status"></div><div id="bar" role="progressbar" aria-labelledby="busy" hidden><div id="bar-fill"></div></div><button id="cancel" disabled>Cancel operation</button>
 <section id="result-area" class="panel" hidden><h2 id="summary">3 · Sync result</h2>
 <p id="result-note" class="muted"></p>
 <div id="stats" class="stats"></div>
@@ -32,15 +32,23 @@ button{border:1px solid var(--figma-color-border,#ccc);border-radius:6px;padding
 </section>
 <script>
 const $ = id => document.getElementById(id);
-let scope=null, busy=false, progress='';
+let scope=null, busy=false, progress=null;
 function post(type, extra={}){parent.postMessage({pluginMessage:{type,...extra}},'*');}
-function message(text,error=false){$('message').textContent=text;$('message').className=error?'error':'';}
+function message(text,kind=''){$('message').textContent=text;$('message').className=kind;}
+function progressText(p){const n=v=>Number(v||0).toLocaleString();return p.phase+': '+n(p.count)+(p.total!==undefined?' / '+n(p.total):'')+' nodes';}
+function bar(){
+ const b=$('bar'),known=progress&&typeof progress.total==='number'&&progress.total>0;
+ b.hidden=!busy;b.className=known?'':'indeterminate';
+ if(known){const value=Math.min(progress.count,progress.total);b.setAttribute('aria-valuemin','0');b.setAttribute('aria-valuemax',String(progress.total));b.setAttribute('aria-valuenow',String(value));$('bar-fill').style.width=(100*value/progress.total)+'%';}
+ else{['aria-valuemin','aria-valuemax','aria-valuenow'].forEach(a=>b.removeAttribute(a));$('bar-fill').style.width='';}
+}
 function controls(){
  document.querySelectorAll('button').forEach(b=>b.disabled=busy);
  $('mark-implemented').disabled=busy;
  $('upload').disabled=busy||!scope||!$('base-url').value.trim()||!$('token').value.trim();
  $('cancel').disabled=!busy;
- $('busy').textContent=busy?(progress||'Working… please pause design edits during scanning.'):'';
+ $('busy').textContent=busy?(progress?progressText(progress):'Working… please pause design edits during scanning.'):'';
+ bar();
 }
 function elem(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function stat(label,value){const s=elem('div',undefined,'stat');s.append(elem('b',String(value)),elem('span',label,'tag'));return s;}
@@ -61,19 +69,20 @@ function renderResult(m){
 $('select').onclick=()=>post('select');
 $('cancel').onclick=()=>{post('cancel');message('Cancellation requested…');};
 $('save-settings').onclick=()=>post('save-settings',{baseUrl:$('base-url').value,token:$('token').value});
-$('upload').onclick=()=>post('upload',{fileUrl:$('url').value,baseUrl:$('base-url').value,token:$('token').value,markImplemented:$('mark-implemented').checked});
+$('upload').onclick=()=>{message('');clearResult();post('upload',{fileUrl:$('url').value,baseUrl:$('base-url').value,token:$('token').value,markImplemented:$('mark-implemented').checked});};
 $('show-token').onchange=()=>{$('token').type=$('show-token').checked?'text':'password';};
 $('base-url').oninput=controls;$('token').oninput=controls;
 onmessage=event=>{
  const m=event.data.pluginMessage;if(!m)return;
  if(m.type==='yield'){setTimeout(()=>post('yield-ack',{id:m.id}),0);return;}
- if(m.type==='progress'){progress=m.phase+': '+m.count.toLocaleString()+' nodes';controls();}
- if(m.type==='busy'){busy=m.value;if(!busy)progress='';controls();}
- if(m.type==='error')message(m.message,true);
+ if(m.type==='version')$('version').textContent=m.version;
+ if(m.type==='progress'){progress={phase:m.phase,count:m.count,total:m.total};controls();}
+ if(m.type==='busy'){busy=m.value;progress=null;controls();}
+ if(m.type==='error')message(m.message,'error');
  if(m.type==='notice')message(m.message);
  if(m.type==='settings'){$('base-url').value=m.settings.baseUrl||'';$('token').value=m.settings.token||'';controls();}
  if(m.type==='scope'){const previousId=scope&&scope.id;scope=m;clearResult();$('scope').textContent=`${m.name} · ${m.id}`;if(previousId!==m.id){$('url').value='';$('mark-implemented').checked=false;}controls();}
  if(m.type==='clear-result')clearResult();
- if(m.type==='synced'){renderResult(m);$('mark-implemented').checked=false;const k=m.mains||{};message((m.changed||0)+(m.added||0)+(m.deleted||0)+(k.scanned||0)===0?'Sync complete. No changes since the last sync.':`Sync complete: ${m.changed||0} changed, ${m.added||0} new, ${m.deleted||0} deleted uploaded${k.scanned?`; ${k.scanned} main component${k.scanned===1?'':'s'} scanned${k.stale?` (${k.stale} stale, re-scanned)`:''}`:''}. Agents can pull the delta for this scope.`);}
+ if(m.type==='synced'){renderResult(m);$('mark-implemented').checked=false;const k=m.mains||{};message((m.changed||0)+(m.added||0)+(m.deleted||0)+(k.scanned||0)===0?'Sync complete. No changes since the last sync.':`Sync complete: ${m.changed||0} changed, ${m.added||0} new, ${m.deleted||0} deleted uploaded${k.scanned?`; ${k.scanned} main component${k.scanned===1?'':'s'} scanned${k.stale?` (${k.stale} stale, re-scanned)`:''}`:''}. Agents can pull the delta for this scope.`,'success');}
 };controls();post('load-settings');
 </script></body></html>
