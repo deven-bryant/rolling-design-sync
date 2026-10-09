@@ -5,6 +5,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../test/axe';
 import { FakeEventSource } from '../test/fake-event-source';
+import { ThemeProvider } from '../theme';
 import { routes } from './router';
 
 const fetchMock = vi.fn<typeof fetch>();
@@ -13,7 +14,9 @@ function renderAt(url: string) {
   const router = createMemoryRouter(routes, { initialEntries: [url] });
   const { container } = render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <RouterProvider router={router} />
+      <ThemeProvider>
+        <RouterProvider router={router} />
+      </ThemeProvider>
     </QueryClientProvider>,
   );
   return Object.assign(router, { container });

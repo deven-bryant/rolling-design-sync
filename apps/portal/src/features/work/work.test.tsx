@@ -71,7 +71,7 @@ describe('features/work', () => {
     return source;
   };
 
-  function Screen({ onGroup, onFlat, onOpen }: { onGroup?: (g: WorkGroup) => void; onFlat?: () => void; onOpen?: (key: string) => void }) {
+  function Screen({ onGroup, onOpen }: { onGroup?: (g: WorkGroup) => void; onOpen?: (key: string) => void }) {
     const [group, setGroup] = useState<WorkGroup>('component');
     const [page, setPage] = useState(1);
     return (
@@ -83,7 +83,6 @@ describe('features/work', () => {
             setGroup(next);
             setPage(1);
           }}
-          onShowFlatList={() => onFlat?.()}
         />
         <WorkTable
           fileKey={FILE}
@@ -193,11 +192,10 @@ describe('features/work', () => {
     expect(onOpen).toHaveBeenLastCalledWith('1:24667');
   });
 
-  it('switches the group, which changes the query; Flat list hands off', async () => {
+  it('switches the group, which changes the query; there is no Flat list', async () => {
     const user = userEvent.setup();
     const onGroup = vi.fn();
-    const onFlat = vi.fn();
-    renderScreen({ onGroup, onFlat });
+    renderScreen({ onGroup });
     await waitFor(() => expect(row('Table cell')).toBeDefined());
     expect(screen.getByRole('radio', { name: 'By component' }).getAttribute('aria-checked')).toBe('true');
 
@@ -209,9 +207,7 @@ describe('features/work', () => {
     expect(screen.getByText('1 frame')).toBeDefined();
     expect(within(row('Page header')).getByText('2 dirty')).toBeDefined();
 
-    await user.click(screen.getByRole('radio', { name: 'Flat list' }));
-    expect(onFlat).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('radio', { name: 'By frame' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.queryByRole('radio', { name: 'Flat list' })).toBeNull();
   });
 
   it('pages with the cursor', async () => {
