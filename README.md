@@ -73,7 +73,8 @@ What that gets you:
 The API serves a browser portal at `/ui`. Viewers read; agents can also block
 nodes and release claims. Everything updates live as agents claim and clear.
 Select one or several scopes (sections or frames) to work on: the node tree,
-the work items and the copied agent prompt cover all of them.
+the work items and the copied agent prompt cover all of them. The portal
+follows your system's light or dark setting; the sidebar toggle overrides it.
 
 | | |
 |---|---|
