@@ -88,7 +88,7 @@ function WorkRow({
       <Table.Cell>
         <CategoryBadges categories={item.categories ?? []} max={CATEGORIES_SHOWN} />
       </Table.Cell>
-      <ProgressCell value={itemProgress(item)} label={`${name} progress`} />
+      <ProgressCell className="min-w-40" value={itemProgress(item)} label={`${name} progress`} />
       <AgentColumn claim={itemClaim(item, claims)} now={now} />
     </Table.Row>
   );
