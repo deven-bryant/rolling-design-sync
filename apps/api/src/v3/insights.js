@@ -12,7 +12,7 @@ const schemas = require('./schemas');
 const format = require('./format');
 const {
   filterParams, buildFilter, parseChanges, nodeFields, truncateChanges, queryFingerprint, encodeCursor, decodeCursor, encodeOutlineCursor, decodeOutlineCursor, offsetAfter, FILTER_KEYS,
-  parseExpand, expandScope, isAbsolute,
+  parseExpand, expandScope, isAbsolute, resolveUnder, singleRoot,
 } = require('./read');
 
 const GROUPS = ['component', 'frame', 'set'];
@@ -32,7 +32,7 @@ const nullableString = { type: ['string', 'null'] };
 
 const summary = {
   summary: 'Summarize changes',
-  description: 'Counts of the nodes the `list_nodes` filters match (default: dirty) by state, change type, change category and node type — a cheap overview before listing or planning work. With `under` (e.g. a page), `byFrame` also counts per child frame of it. '
+  description: 'Counts of the nodes the `list_nodes` filters match (default: dirty) by state, change type, change category and node type — a cheap overview before listing or planning work. With one `under` (e.g. a page), `byFrame` also counts per child frame of it (not with several `under` ids). '
     + 'With `expand=instances` the counts cover everything the scope uses — its nodes plus the main components its instances reach, transitively (`byFrame` still counts only nodes under `under`): how big is this screen, components included? Returns no nodes; use `list_nodes` or `list_work_items` for those.',
   tags, security,
   ...agentOp('summarize', 'summary'),
@@ -111,7 +111,7 @@ const work = format.withFormat({
     properties: {
       ...filterQuery,
       ...schemas.expandQuery,
-      group: { type: 'string', enum: GROUPS, description: 'component (default): by nearest component; set: merge all matching variants of a known component set (best for design systems); frame: by child frame of `under` (needs `under`).' },
+      group: { type: 'string', enum: GROUPS, description: 'component (default): by nearest component; set: merge all matching variants of a known component set (best for design systems); frame: by child frame of `under` (needs exactly one `under`).' },
       changes: {
         ...listQuery.changes,
         description: 'auto (default): each item\'s `changes` has the diffs of its modified and deleted nodes; diff: of every listed node, added ones included (their full values); names: no `changes`, only `changedProps`.',
@@ -188,13 +188,13 @@ function registerInsightRoutes(app, { store, now }) {
     return { fileKey, filter, expand: parseExpand(query, filter) };
   }
 
-  /** Resolves `under` to a stored node id and, with `expand`, sets `filter.regions`; returns the expansion (or null). */
+  /** Resolves the `under` ids to stored node ids and, with `expand`, sets `filter.regions`; returns the expansion (or null). */
   async function resolveScope(fileKey, filter, expand) {
     await trackedFile(fileKey);
-    const underNode = filter.under === null ? null : await findNode(fileKey, filter.under);
-    if (underNode) filter.under = underNode.nodeId;
+    const underNodes = filter.under === null ? null : await resolveUnder(fileKey, filter.under, findNode);
+    if (underNodes) filter.under = underNodes.map(n => n.nodeId);
     if (!expand) return null;
-    const expansion = await expandScope(store, fileKey, underNode, expand);
+    const expansion = await expandScope(store, fileKey, underNodes, expand);
     filter.regions = expansion.regions;
     return expansion;
   }
@@ -210,7 +210,7 @@ function registerInsightRoutes(app, { store, now }) {
       byChangeType: { ...zeros(schemas.CHANGE_TYPES), ...s.byChangeType },
       byCategory: { ...zeros(schemas.CATEGORIES), ...s.byCategory },
       byType: sortedKeys(s.byType),
-      ...(filter.under !== null ? { byFrame: s.byFrame || [] } : {}),
+      ...(filter.under !== null && filter.under.length === 1 ? { byFrame: s.byFrame || [] } : {}),
       ...(expansion ? { expansion: expansion.meta } : {}),
     };
   });
@@ -275,6 +275,7 @@ function registerInsightRoutes(app, { store, now }) {
     const pos = decodeOutlineCursor(outline ? query.cursor : undefined, fp);
     const after = outline ? pos.after : query.cursor === undefined ? null : decodeCursor(query.cursor, fp);
     const expansion = await resolveScope(fileKey, filter, expand);
+    if (group === 'frame' && filter.under && filter.under.length > 1) throw singleRoot('group', `'frame' needs exactly one under (got ${filter.under.length} distinct nodes).`);
 
     const limit = outline ? format.STREAM_PAGE : format.pageSize(fmt, query.limit, schemas.DEFAULT_LIMIT);
     let truncated = false;

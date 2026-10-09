@@ -39,7 +39,7 @@ const filterKeys = ['q', ...FILTER_KEYS.filter(k => k !== 'claimed' && k !== 'wo
 const listQuery = schemas.listNodes.querystring.properties;
 const claimFilter = {
   type: 'object',
-  description: 'The `list_nodes` filters (`q` included) selecting the nodes to claim, e.g. `{ "under": "1:2", "category": "color" }`; `claimed` and `worker` are implied. `{}` = the dirty nodes.',
+  description: 'The `list_nodes` filters (`q` included) selecting the nodes to claim, e.g. `{ "under": "1:2", "category": "color" }` (`under` may list several roots: `"1:2,1:5"`); `claimed` and `worker` are implied. `{}` = the dirty nodes.',
   properties: Object.fromEntries(filterKeys.map(k => [k, listQuery[k]])),
 };
 
@@ -289,9 +289,10 @@ function registerActionRoutes(app, { store, now, config, bus = null }) {
         if (limit !== undefined) ids = ids.slice(0, limit);
       } else if (storeFilter) {
         if (storeFilter.under !== null) {
-          const [under] = await resolveIds(tx, fileKey, [storeFilter.under]);
-          if (!under) throw address.nodeNotFound(fileKey, storeFilter.under);
-          storeFilter.under = under.nodeId;
+          const roots = await resolveIds(tx, fileKey, storeFilter.under);
+          const unknown = roots.findIndex(n => !n);
+          if (unknown >= 0) throw address.nodeNotFound(fileKey, storeFilter.under[unknown]);
+          storeFilter.under = [...new Set(roots.map(n => /** @type {any} */ (n).nodeId))];
         }
         const page = await tx.listNodes(fileKey, storeFilter, { sort: 'document', desc: false, limit: limit ?? schemas.DEFAULT_LIMIT, after: null, counts: false });
         ids = page.nodes.map(n => n.nodeId);

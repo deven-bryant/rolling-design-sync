@@ -198,6 +198,11 @@ for (const kind of Object.keys(STORES)) {
       const url = encodeURIComponent(`https://www.figma.com/design/${FK}/My-Design?node-id=2-4`);
       const scoped = ok(await call(app, 'POST', `/v3/files/-/claims?url=${url}`, { worker: 'w1' }));
       assert.deepEqual(ids(scoped.nodes), ['2:4']);
+      const roots = await claim(app, { worker: 'w1', filter: { under: '2:4, 2-3,2:4' } });
+      assert.deepEqual(ids(roots.nodes), ['2:4', '2:3'], 'roots in the order given');
+      assert.deepEqual(ids((await claim(app, { worker: 'w1', filter: { q: 'under:2:3,2:4 depth:0' } })).nodes), ['2:3', '2:4']);
+      const unknown = assertProblem(await call(app, 'POST', `/v3/files/${FK}/claims`, { worker: 'w1', filter: { under: '2:3,9:9' } }), 404, 'node_not_found');
+      assert.match(unknown.detail, /9:9/);
     });
 
     await t.test('claim by ids skips nodes held by another worker and unknown ids', async () => {

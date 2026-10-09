@@ -93,11 +93,17 @@ function v3Where(fileKey, f, params) {
   where.push(`(${f.states.map(s => states[s]).join(' or ')})`);
   if (f.regions) {
     if (f.regions[0] !== null) where.push(`n.path <@ any(${p(f.regions)}::text[]::ltree[])`);
-  } else if (f.under) {
-    const under = p(f.under);
+  } else if (f.under && f.under.length === 1) {
+    const under = p(f.under[0]);
     where.push(`n.path <@ (select u.path from node u where u.file_key = ${fk} and u.node_id = ${under})`);
     if (f.depth !== null && f.depth !== undefined) {
       where.push(`nlevel(n.path) <= (select nlevel(u.path) from node u where u.file_key = ${fk} and u.node_id = ${under}) + ${p(f.depth)}::int`);
+    }
+  } else if (f.under && f.under.length) {
+    const ids = p(f.under);
+    where.push(`n.path <@ any(array(select u.path from node u where u.file_key = ${fk} and u.node_id = any(${ids}::text[])))`);
+    if (f.depth !== null && f.depth !== undefined) {
+      where.push(`exists (select 1 from node u where u.file_key = ${fk} and u.node_id = any(${ids}::text[]) and n.path <@ u.path and nlevel(n.path) <= nlevel(u.path) + ${p(f.depth)}::int)`);
     }
   }
   if (f.types.length) where.push(`n.node_type = any(${p(f.types)}::text[])`);
@@ -140,6 +146,18 @@ const v3RegionOrdSql = (f, params) => {
   if (f.regions[0] === null) return '0';
   params.push(f.regions);
   return `(select u.o::int - 1 from unnest($${params.length}::text[]::ltree[]) with ordinality u(root, o) where n.path <@ u.root order by u.o limit 1)`;
+};
+/**
+ * The index in `f.under` (several roots) of the first root whose subtree (to
+ * `f.depth`) contains node `n`, as SQL; pushes its parameters (`$1` is the file key).
+ */
+const v3RootOrdSql = (f, params) => {
+  params.push(f.under);
+  const ids = `$${params.length}`;
+  let depth = '';
+  if (f.depth !== null && f.depth !== undefined) { params.push(f.depth); depth = ` and nlevel(n.path) <= nlevel(r.path) + $${params.length}::int`; }
+  return `(select u.o::int - 1 from unnest(${ids}::text[]) with ordinality u(id, o) join node r on r.file_key = $1 and r.node_id = u.id
+    where n.path <@ r.path${depth} order by u.o limit 1)`;
 };
 /** Nodes inside the `under` subtree (alias `n`), as SQL; pushes its parameter. */
 const v3InUnderSql = (under, params) => { params.push(under); return `n.path <@ (select u.path from node u where u.file_key = $1 and u.node_id = $${params.length})`; };
@@ -426,7 +444,7 @@ class PostgresStore {
     const where = v3Where(fileKey, filter, params);
     const { rows: [{ total }] } = await this.query(`select count(*)::int as total from node n where ${where}`, params);
     const listParams = params.slice();
-    const ord = filter.regions ? v3RegionOrdSql(filter, listParams) : null;
+    const ord = filter.regions ? v3RegionOrdSql(filter, listParams) : filter.under && filter.under.length > 1 ? v3RootOrdSql(filter, listParams) : null;
     const tree = { path: 'n.path::text', document: documentSortSql('n') }[page.sort];
     const key = ord && tree ? `(lpad((${ord})::text, 4, '0') || ' ' || ${tree}) collate "C"` : V3_SORT_SQL[page.sort];
     const dir = page.desc ? 'desc' : 'asc';
@@ -439,7 +457,7 @@ class PostgresStore {
     }
     listParams.push(page.limit + 1);
     const { rows } = await this.query(
-      `select n.*, c.label as claim_label, ${key} as sort_key${ord ? `, ${ord} as expand_ord` : ''}${page.counts ? `, ${V3_DESCENDANTS_SQL}` : ''}
+      `select n.*, c.label as claim_label, ${key} as sort_key${filter.regions ? `, ${ord} as expand_ord` : ''}${page.counts ? `, ${V3_DESCENDANTS_SQL}` : ''}
        from node n left join claim c on c.claim_id = n.claim_id
        where ${where}${after}
        order by ${key} ${dir}, n.node_id collate "C" ${dir}
@@ -481,10 +499,10 @@ class PostgresStore {
     const { rows: types } = await this.query(
       `select n.node_type as key, count(*)::int as count from node n where ${where} and n.node_type is not null group by n.node_type`, params);
     let byFrame = null;
-    if (filter.under) {
+    if (filter.under && filter.under.length === 1) {
       const frameParams = params.slice();
-      const level = v3UnderLevelSql(filter.under, frameParams);
-      const inUnder = filter.regions ? ` and ${v3InUnderSql(filter.under, frameParams)}` : '';
+      const level = v3UnderLevelSql(filter.under[0], frameParams);
+      const inUnder = filter.regions ? ` and ${v3InUnderSql(filter.under[0], frameParams)}` : '';
       const { rows } = await this.query(
         `select g.frame_path::text as frame_path, g.count, f.name
          from (select subpath(n.path, 0, ${level} + 1) as frame_path, count(*)::int as count
@@ -515,7 +533,7 @@ class PostgresStore {
     const params = [];
     const where = v3Where(fileKey, filter, params);
     const keySql = page.group === 'frame'
-      ? (level => `(case when nlevel(n.path) > ${level}${filter.regions ? ` and ${v3InUnderSql(filter.under, params)}` : ''} then subpath(n.path, 0, ${level} + 1) end)`)(v3UnderLevelSql(filter.under, params))
+      ? (level => `(case when nlevel(n.path) > ${level}${filter.regions ? ` and ${v3InUnderSql(filter.under[0], params)}` : ''} then subpath(n.path, 0, ${level} + 1) end)`)(v3UnderLevelSql(filter.under[0], params))
       : `(select a.path from node a where a.file_key = n.file_key and a.path @> n.path
           and a.node_type in ('COMPONENT', 'COMPONENT_SET') order by nlevel(a.path) desc limit 1)`;
     const maxIds = Number(page.maxIds);
