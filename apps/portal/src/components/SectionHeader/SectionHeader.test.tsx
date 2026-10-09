@@ -1,3 +1,4 @@
+import gallery from './SectionHeader.gallery';
 import { render, screen, within } from '@testing-library/react';
 import { createRef } from 'react';
 import { describe, expect, it } from 'vitest';
@@ -78,5 +79,15 @@ describe('SectionHeader', () => {
     expect(header.getAttribute('aria-label')).toBe('Nodes section');
     expect(screen.getByRole('heading').className).toContain('truncate');
     expect(slotRef.current?.className).toBe('flex items-center gap-lg ml-auto');
+  });
+});
+
+describe('SectionHeader under the dark theme', () => {
+  it('renders its gallery examples with no axe violations', async () => {
+    const dark = gallery.examples.filter(e => e.figma.endsWith('Color Mode=Dark'));
+    expect(dark.length).toBeGreaterThan(0);
+    const { container } = render(<div>{dark.map(e => <section key={e.figma} aria-label={e.figma}>{e.render()}</section>)}</div>);
+    expect(container.querySelectorAll('[data-theme="dark"]')).toHaveLength(dark.length);
+    await expectNoAxeViolations(container);
   });
 });

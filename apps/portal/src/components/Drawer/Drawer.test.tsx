@@ -1,3 +1,4 @@
+import gallery from './Drawer.gallery';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
@@ -145,5 +146,15 @@ describe('Drawer', () => {
       expect(transitions.every(c => c.startsWith('motion-safe:'))).toBe(true);
     }
     expect(classesOf(panel)).toEqual(expect.arrayContaining(['data-entering:translate-x-full', 'data-exiting:translate-x-full']));
+  });
+});
+
+describe('Drawer under the dark theme', () => {
+  it('renders its gallery examples with no axe violations', async () => {
+    const dark = gallery.examples.filter(e => e.figma.endsWith('Color Mode=Dark'));
+    expect(dark.length).toBeGreaterThan(0);
+    const { container } = render(<div>{dark.map(e => <section key={e.figma} aria-label={e.figma}>{e.render()}</section>)}</div>);
+    expect(container.querySelectorAll('[data-theme="dark"]')).toHaveLength(dark.length);
+    await expectNoAxeViolations(container);
   });
 });

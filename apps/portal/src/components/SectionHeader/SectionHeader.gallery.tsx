@@ -1,11 +1,30 @@
 import { Button } from '../Button';
 import { Menu } from '../Menu';
-import { Icon, type GalleryEntry } from '../primitives';
+import { Icon, type GalleryEntry, type GalleryExample } from '../primitives';
 import { SectionHeader } from './SectionHeader';
+
+
+const themes = [
+  ['Light', undefined],
+  ['Dark', 'dark'],
+] as const;
+
+/** Each example once per theme: `Color Mode` is the `data-theme` it renders under, never a prop. */
+const bothThemes = (examples: { figma: string; render: (mode: string) => ReturnType<GalleryExample['render']> }[]) =>
+  themes.flatMap(([mode, theme]) =>
+    examples.map(({ figma, render }): GalleryExample => ({
+      figma: `${figma} · Color Mode=${mode}`,
+      render: () => (
+        <div data-theme={theme} className="bg-primary">
+          {render(mode)}
+        </div>
+      ),
+    })),
+  );
 
 export default {
   component: 'SectionHeader',
-  examples: [
+  examples: bothThemes([
     {
       figma: 'Custom Section header · Actions (Tertiary icon only)',
       render: () => (
@@ -44,5 +63,5 @@ export default {
         </SectionHeader>
       ),
     },
-  ],
+  ]),
 } satisfies GalleryEntry;
