@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PORTAL_DESIGN_FILE } from '../../figma-file';
 import { expectNoAxeViolations } from '../../test/axe';
 import { FakeEventSource } from '../../test/fake-event-source';
-import { clearedNodeCount, fileAgents, FilesMetrics, filesMetrics, FilesTable, percent, timeAgo, weekAgo, type Claim, type TrackedFile } from '.';
+import { fileAgents, FilesMetrics, filesMetrics, FilesTable, percent, timeAgo, type Claim, type TrackedFile } from '.';
 
 const NOW = Date.parse('2026-10-01T12:00:00.000Z');
 const minutesAgo = (m: number) => new Date(NOW - m * 60_000).toISOString();
@@ -103,11 +103,6 @@ describe('features/files', () => {
       expect(filesMetrics([], [])).toEqual({ dirty: 0, claims: 0, workers: 0 });
     });
 
-    it('sums the cleared events’ nodeIds', () => {
-      expect(clearedNodeCount(db.cleared)).toBe(4);
-      expect(clearedNodeCount([{ data: {} }, { data: { nodeIds: 'x' } }])).toBe(0);
-    });
-
     it('lists a file’s agents once each, in claim order', () => {
       expect(fileAgents(db.claims, 'AbCdEf123456GhIjKl7890').map(c => c.claimId)).toEqual(['c1', 'c2']);
       expect(fileAgents(db.claims, PORTAL_DESIGN_FILE)).toEqual([]);
@@ -122,42 +117,28 @@ describe('features/files', () => {
       expect(timeAgo(minutesAgo(90), NOW)).toBe('1 hour ago');
       expect(timeAgo(minutesAgo(1), NOW, 'short')).toBe('1m ago');
       expect(timeAgo(new Date(NOW).toISOString(), NOW)).toBe('just now');
-      expect(weekAgo(NOW)).toBe('2026-09-24T12:00:00.000Z');
     });
   });
 
   describe('FilesMetrics', () => {
-    it('shows dirty nodes, cleared this week and active claims', async () => {
+    it('shows dirty nodes and active claims, and nothing it cannot count', async () => {
       wrap(<FilesMetrics />);
       const metric = (heading: string) => screen.getByRole('heading', { name: heading }).parentElement as HTMLElement;
       await waitFor(() => expect(within(metric('Dirty nodes')).getByText('284')).toBeDefined());
-      await waitFor(() => expect(within(metric('Cleared this week')).getByText('4')).toBeDefined());
       await waitFor(() => expect(within(metric('Active claims')).getByText('3')).toBeDefined());
       expect(within(metric('Active claims')).getByText('2 agents')).toBeDefined();
-      const [cleared] = calls('/v3/events').filter(u => u.searchParams.get('types') === 'nodes.cleared');
-      expect(cleared?.searchParams.get('since')).toBe('2026-09-24T12:00:00.000Z');
-    });
-
-    it('pages through every cleared event of the week', async () => {
-      db.cleared = Array.from({ length: 1001 }, (_, i) => ({ id: i + 1, type: 'nodes.cleared' as const, data: { nodeIds: [`1:${i}`] } }));
-      wrap(<FilesMetrics />);
-      const metric = screen.getByRole('heading', { name: 'Cleared this week' }).parentElement as HTMLElement;
-      await waitFor(() => expect(within(metric).getByText('1,001')).toBeDefined());
-      const pages = calls('/v3/events').filter(u => u.searchParams.get('types') === 'nodes.cleared');
-      expect(pages.map(u => u.searchParams.get('after'))).toEqual(['0', '1000']);
+      expect(screen.queryByRole('heading', { name: 'Cleared this week' })).toBeNull();
+      expect(calls('/v3/events').filter(u => u.searchParams.get('types') === 'nodes.cleared')).toEqual([]);
     });
 
     it('refreshes counts from live events', async () => {
       wrap(<FilesMetrics />);
       const metric = (heading: string) => screen.getByRole('heading', { name: heading }).parentElement as HTMLElement;
       await waitFor(() => expect(within(metric('Active claims')).getByText('3')).toBeDefined());
-      await waitFor(() => expect(within(metric('Cleared this week')).getByText('4')).toBeDefined());
 
       db.files = db.files.map(f => (f.name === 'Sandbox' ? { ...f, counts: { ...f.counts, dirty: 271 } } : f));
-      db.cleared = [...db.cleared, { id: 3, type: 'nodes.cleared', data: { nodeIds: Array.from({ length: 10 }, (_, i) => `2:${i}`) } }];
       act(() => stream().emit('nodes.cleared', { fileKey: 'AbCdEf123456GhIjKl7890', type: 'nodes.cleared', data: { nodeIds: [] } }));
       await waitFor(() => expect(within(metric('Dirty nodes')).getByText('274')).toBeDefined());
-      await waitFor(() => expect(within(metric('Cleared this week')).getByText('14')).toBeDefined());
 
       db.claims = db.claims.filter(c => c.worker !== 'devin');
       act(() => stream().emit('claim.released', { fileKey: 'AbCdEf123456GhIjKl7890', type: 'claim.released', data: {} }));
