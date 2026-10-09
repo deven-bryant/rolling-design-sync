@@ -42,7 +42,9 @@ RDS_PLUGIN_TOKEN=e2e-plugin-token RDS_AGENT_TOKEN=e2e-agent-token RDS_VIEWER_TOK
 finds the seeded file, expands a frame and an instance (*Expand instances*),
 opens a node drawer with no actions and signs out; an agent blocks and unblocks
 a node and releases a claim; and a claim, then a clear, made through the API
-add and poof the row's agent sprite without a reload. Each test seeds its own
+add and poof the row's agent sprite without a reload; and the sidebar
+navigation, the old file-tab links redirecting, the scope panel (selection,
+*View Nodes*, its remembered visibility) and the theme toggle. Each test seeds its own
 file through `…/sync` with the plugin token (the instance tree from
 `e2e-v3.test.js`). CI runs it in the Postgres job and in `e2e-portal`, the
 hardened local-mode container signing in with its generated `tokens.json`.
