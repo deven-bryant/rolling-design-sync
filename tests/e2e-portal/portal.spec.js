@@ -5,7 +5,7 @@
 // then signs in as a viewer and an agent. See tests/README.md.
 
 const { test, expect } = require('@playwright/test');
-const { TOKENS, FRAME, INSTANCE, MAIN_CHILD, seedFile, claim, clear } = require('./fixture');
+const { TOKENS, ROOT, FRAME, INSTANCE, MAIN_CHILD, SECOND, seedFile, syncSecondScope, claim, clear } = require('./fixture');
 
 async function signIn(page, token) {
   await page.goto('/ui/sign-in');
@@ -154,4 +154,35 @@ test('sidebar navigation, old links redirecting, the scope panel and the theme',
   await expect(page.locator('html')).toHaveAttribute('data-theme', next);
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', next);
+});
+
+test('several scopes: the union of their nodes, an "N scopes" header and the Work Items controls', async ({ page }) => {
+  const { fileKey } = await seedFile();
+  await syncSecondScope(fileKey);
+  await signIn(page, TOKENS.viewer);
+  await page.goto(`/ui/files/${fileKey}/nodes?under=${ROOT}`);
+  const scopes = page.getByRole('table', { name: 'Scopes' });
+  await expect(row(page, FRAME)).toBeVisible();
+  await scopes.getByRole('checkbox', { name: 'Select Settings' }).click({ force: true });
+  await expect(page).toHaveURL(/under=(50%3A1%2C1%3A1|1%3A1%2C50%3A1|50:1,1:1|1:1,50:1)/);
+  await expect(page.getByRole('heading', { level: 1, name: '2 scopes' })).toBeVisible();
+  await expect(page.getByText('2 Scopes Viewed')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open in Figma' })).toHaveCount(0);
+  await expect(row(page, '50:2')).toBeVisible();
+  await expect(row(page, FRAME)).toBeVisible();
+
+  await page.goto(`/ui/files/${fileKey}/work?under=${ROOT},${SECOND}&group=frame`);
+  await expect(page.getByRole('heading', { level: 1, name: '2 scopes' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'By frame' })).toBeDisabled();
+  await expect(page.getByRole('radio', { name: 'By component' })).toBeChecked();
+  await expect(page.getByText('2 Scopes Viewed')).toBeVisible();
+  await page.getByRole('switch', { name: 'Expand instances' }).click({ force: true });
+  await expect(page).toHaveURL(/expand=none/);
+  await page.getByRole('searchbox', { name: 'Search nodes' }).fill('Button');
+  await expect(page).toHaveURL(/q=Button/);
+  await expect(page.getByRole('table', { name: 'Work items' })).toBeVisible();
+
+  await page.goto(`/ui/files/${fileKey}/work?under=${ROOT}`);
+  await expect(page.getByRole('radio', { name: 'By frame' })).toBeEnabled();
+  await expect(page.getByText('1 Scope Viewed')).toBeVisible();
 });
