@@ -83,15 +83,25 @@ export function useFile(fileKey: string) {
   });
 }
 
-/** The scope a tree is rooted at (name, last sync, counts), from the file's synced scopes. */
+/** `under` as node ids (`a,b` → `['a', 'b']`), in order, blanks and repeats dropped. */
+export function splitUnder(under: string | null | undefined): string[] {
+  return [...new Set((under ?? '').split(',').map(id => id.trim()).filter(Boolean))];
+}
+
+/**
+ * The scope a tree is rooted at (name, last sync, counts), from the file's synced scopes; `scopeId` may list
+ * several (`a,b`): `scope` is then unset and `selected` holds each one found, in that order.
+ */
 export function useScope(fileKey: string, scopeId: string | undefined) {
   const scopes = useQuery({
     queryKey: nodeKeys.scopes(fileKey),
     queryFn: ({ signal }) => api.get('/v3/files/{fileKey}/scopes', { path: { fileKey }, signal }),
     enabled: !!fileKey,
   });
-  const scope = scopeId ? scopes.data?.scopes?.find(s => s.nodeId === scopeId) : undefined;
-  return { ...scopes, scope };
+  const ids = splitUnder(scopeId);
+  const selected = ids.flatMap(id => scopes.data?.scopes?.filter(s => s.nodeId === id) ?? []);
+  const scope = ids.length === 1 ? selected[0] : undefined;
+  return { ...scopes, scope, selected };
 }
 
 /** One top-level page of the tree. */

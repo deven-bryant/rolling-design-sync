@@ -5,10 +5,12 @@ export {
   useFiles,
   useFilesLive,
   useLastSyncClient,
+  useTrends,
   type ApiEvent,
   type Claim,
   type FileScope,
   type TrackedFile,
+  type Trends,
 } from './api';
 export { FilesMetrics, type FilesMetricsProps } from './FilesMetrics';
 export { FilesTable, type FilesTableProps } from './FilesTable';

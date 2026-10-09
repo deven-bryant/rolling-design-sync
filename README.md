@@ -72,12 +72,14 @@ What that gets you:
 
 The API serves a browser portal at `/ui`. Viewers read; agents can also block
 nodes and release claims. Everything updates live as agents claim and clear.
+Select one or several scopes (sections or frames) to work on: the node tree,
+the work items and the copied agent prompt cover all of them.
 
 | | |
 |---|---|
-| ![Work items](docs/images/portal-work-items.png) **Work items** — changes grouped by component, with progress, so the shared pieces get built first. | ![Change List](docs/images/portal-node-changes.png) **Change List** — each changed property, from what was built to what the design says now, design tokens included. |
+| ![Work items](docs/images/portal-work-items.png) **Work items** — changes grouped by component, with progress, so the shared pieces get built first; search nodes and expand instances like the node tree. | ![Change List](docs/images/portal-node-changes.png) **Change List** — each changed property, from what was built to what the design says now, design tokens included. |
 | ![Change History](docs/images/portal-node-history.png) **Change History** — every claim, clear and block on a node, with the commit that built it. | ![Activity](docs/images/portal-activity.png) **Activity** — everything that happened in your files, live; **Claims** shows who holds what right now. |
-| ![Files](docs/images/portal-files.png) **Files** — every tracked file with what's left to build. | ![Connect](docs/images/portal-connect.png) **Connect** — copy-paste setup for Claude Code, Cursor, Devin and the CLI. |
+| ![Files](docs/images/portal-files.png) **Files** — every tracked file with what's left to build, and the week's trend: nodes cleared vs the week before, net newly dirty. | ![Connect](docs/images/portal-connect.png) **Connect** — copy-paste setup for Claude Code, Cursor, Devin and the CLI. |
 
 The screenshots are generated from a seeded demo with
 `npm run screenshots` in [`tests/e2e-portal`](tests/e2e-portal/screenshots.spec.js).
@@ -185,6 +187,7 @@ plugin routes a plugin token, and `/v3/openapi.json` none.
 | `GET /v3/files/{fileKey}/summary` | Counts of what changed, by state, category, type and frame |
 | `GET /v3/files/{fileKey}/work` | Changes grouped into work items (per component or frame) |
 | `GET /v3/files/{fileKey}/events` | Activity log, as a page or a live event stream |
+| `GET /v3/insights/trends` | Nodes cleared and newly dirtied this week vs the last, per file |
 | `GET /v3/resolve?url=` | Figma link → `{ fileKey, nodeId }` |
 | `GET /v3/files/{fileKey}/hashes` | Plugin: stored hashes for a subtree |
 | `POST /v3/files/{fileKey}/sync` | Plugin: upsert changed nodes, tombstone deleted ones |
@@ -192,7 +195,8 @@ plugin routes a plugin token, and `/v3/openapi.json` none.
 | `GET /v3/openapi.json` | OpenAPI 3.1 spec (no token) |
 | `GET /health` | Liveness check (no token) |
 
-Node ids may be written `1:2` or `1-2`. Any file route takes `?url=<figma link>`
+Node ids may be written `1:2` or `1-2`; `under` takes one or several,
+comma-separated (`under=1-2,5-1`), for the union of their subtrees. Any file route takes `?url=<figma link>`
 in place of the key: `/v3/files/-/nodes?url=…` lists the subtree of the linked
 node.
 

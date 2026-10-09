@@ -39,7 +39,7 @@ export function Metric({ type, heading, value, change, menu, className, ref, ...
 
 export const metricChangeStyles = variants({
   base: 'inline-flex shrink-0 items-center gap-xs rounded-sm border border-primary bg-primary py-xxs pr-md pl-sm shadow-xs',
-  variants: { type: { '03': '' }, trend: { positive: '' } },
+  variants: { type: { '03': '' }, trend: { positive: '', negative: '' } },
   defaults: { type: '03', trend: 'positive' },
 });
 
@@ -52,10 +52,16 @@ export interface MetricChangeProps extends HTMLAttributes<HTMLSpanElement>, Vari
 }
 
 /** `_Change` badge (`Type=03`): the trend arrow and the change. */
-export function MetricChange({ type, trend, trendLabel = 'Up', children, className, ref, ...rest }: MetricChangeProps) {
+export function MetricChange({ type, trend, trendLabel, children, className, ref, ...rest }: MetricChangeProps) {
+  const down = trend === 'negative';
   return (
     <span ref={ref} className={metricChangeStyles({ type, trend, className })} {...rest}>
-      <Icon name="arrow-up-right" size="xs" label={trendLabel} className={cx('text-fg-success-secondary')} />
+      <Icon
+        name="arrow-up-right"
+        size="xs"
+        label={trendLabel ?? (down ? 'Down' : 'Up')}
+        className={cx(down ? 'rotate-90 text-fg-error-secondary' : 'text-fg-success-secondary')}
+      />
       <Text weight="medium" color="secondary">
         {children}
       </Text>

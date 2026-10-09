@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { api, type ApiResponse } from '../../api/client';
 import { fileClaimsQueryKey, type FileClaim } from '../../api/hooks/useFileClaims';
 import { useEventStream, type StreamState } from '../../api/useEventStream';
+import { searchParams } from '../nodes';
 
 export type WorkGroup = 'component' | 'frame';
 export type WorkPage = ApiResponse<'/v3/files/{fileKey}/work'>;
@@ -13,25 +14,29 @@ export const WORK_PAGE_SIZE = 25;
 
 export interface WorkQuery {
   fileKey: string;
-  /** The scope (screen) node id. */
+  /** The scope (screen) node id; several comma-separated. */
   under?: string;
   group: WorkGroup;
+  /** The node search, as on Nodes: a name, a node id (replaces `under`) or `key:value` pairs. */
+  q?: string;
+  /** `expand=instances` (default on): include the components the scope's instances use. */
+  expandInstances?: boolean;
   pageSize?: number;
 }
 
 export const workKeys = {
   all: (fileKey: string) => ['files', fileKey, 'work'] as const,
-  list: ({ fileKey, under, group, pageSize = WORK_PAGE_SIZE }: WorkQuery) =>
-    [...workKeys.all(fileKey), { group, under: under ?? null, pageSize }] as const,
+  list: ({ fileKey, under, group, q, expandInstances = true, pageSize = WORK_PAGE_SIZE }: WorkQuery) =>
+    [...workKeys.all(fileKey), { group, under: under ?? null, q: q ?? null, expandInstances, pageSize }] as const,
   claims: fileClaimsQueryKey,
 };
 
 /**
- * `GET /v3/files/{fileKey}/work?group=…&expand=instances&include=progress&under=…`, every state, one cursor page
+ * `GET /v3/files/{fileKey}/work?group=…&expand=instances&include=progress&under=…` (plus the node search), every state, one cursor page
  * at a time. `page` (1-based) comes from the caller; the pages before it are fetched in turn to reach its cursor.
  */
 export function useWorkItems({ page, ...query }: WorkQuery & { page: number }) {
-  const { fileKey, under, group, pageSize = WORK_PAGE_SIZE } = query;
+  const { fileKey, under, group, q, expandInstances = true, pageSize = WORK_PAGE_SIZE } = query;
   const result = useInfiniteQuery({
     queryKey: workKeys.list(query),
     initialPageParam: null as string | null,
@@ -42,7 +47,8 @@ export function useWorkItems({ page, ...query }: WorkQuery & { page: number }) {
         query: {
           group,
           under,
-          expand: 'instances',
+          ...searchParams(q),
+          expand: expandInstances ? 'instances' : undefined,
           include: 'progress',
           state: 'all',
           changes: 'names',

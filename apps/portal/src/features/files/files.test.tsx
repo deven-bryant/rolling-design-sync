@@ -16,6 +16,7 @@ interface Db {
   claims: Claim[];
   cleared: { id: number; type: 'nodes.cleared'; data: { nodeIds: string[] } }[];
   clients: Record<string, string>;
+  trends: { complete: boolean; total: { cleared: number; clearedPrevious: number; clearedChangePct: number | null; dirtied: number; netDirty: number } };
 }
 
 const seed = (): Db => ({
@@ -45,6 +46,7 @@ const seed = (): Db => ({
     { id: 2, type: 'nodes.cleared', data: { nodeIds: ['1:4'] } },
   ],
   clients: { AbCdEf123456GhIjKl7890: 'plugin/0.10.0', 'ZyXwVu987654TsRqPo3210': 'plugin/0.9.0' },
+  trends: { complete: true, total: { cleared: 42, clearedPrevious: 30, clearedChangePct: 40, dirtied: 73, netDirty: 31 } },
 });
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -76,6 +78,7 @@ describe('features/files', () => {
       if (url.pathname === '/v3/files') return json({ files: db.files });
       if (scopes?.[1]) return json({ fileKey: scopes[1], scopes: db.scopes[decodeURIComponent(scopes[1])] ?? [] });
       if (url.pathname === '/v3/claims') return json({ claims: db.claims });
+      if (url.pathname === '/v3/insights/trends') return json({ windowDays: 7, retentionDays: 30, files: [], ...db.trends });
       if (url.pathname === '/v3/events' && url.searchParams.get('types') === 'nodes.cleared') {
         const after = Number(url.searchParams.get('after') ?? 0);
         const limit = Number(url.searchParams.get('limit') ?? 100);
@@ -121,19 +124,47 @@ describe('features/files', () => {
   });
 
   describe('FilesMetrics', () => {
-    it('shows dirty nodes and active claims, and nothing it cannot count', async () => {
+    const metric = (heading: string) => screen.getByRole('heading', { name: heading }).parentElement as HTMLElement;
+
+    it('shows dirty nodes, nodes cleared this week and active claims, in that order', async () => {
       wrap(<FilesMetrics />);
-      const metric = (heading: string) => screen.getByRole('heading', { name: heading }).parentElement as HTMLElement;
       await waitFor(() => expect(within(metric('Dirty nodes')).getByText('284')).toBeDefined());
       await waitFor(() => expect(within(metric('Active claims')).getByText('3')).toBeDefined());
       expect(within(metric('Active claims')).getByText('2 agents')).toBeDefined();
-      expect(screen.queryByRole('heading', { name: 'Cleared this week' })).toBeNull();
+      await waitFor(() => expect(within(metric('Cleared this week')).getByText('42')).toBeDefined());
+      expect(within(metric('Cleared this week')).getByText('+40%')).toBeDefined();
+      expect(within(metric('Dirty nodes')).getByText('+31')).toBeDefined();
+      expect(within(metric('Dirty nodes')).getByRole('img', { name: 'Net change this week' })).toBeDefined();
+      expect(screen.getAllByRole('heading').map(h => h.textContent)).toEqual(['Dirty nodes', 'Cleared this week', 'Active claims']);
+      expect(calls('/v3/insights/trends')).toHaveLength(1);
       expect(calls('/v3/events').filter(u => u.searchParams.get('types') === 'nodes.cleared')).toEqual([]);
+    });
+
+    it('signs falling trends', async () => {
+      db.trends = { complete: true, total: { cleared: 9, clearedPrevious: 12, clearedChangePct: -25, dirtied: 0, netDirty: -12 } };
+      wrap(<FilesMetrics />);
+      await waitFor(() => expect(within(metric('Cleared this week')).getByText('-25%')).toBeDefined());
+      expect(within(metric('Dirty nodes')).getByText('-12')).toBeDefined();
+    });
+
+    it('shows no change chip when last week cleared nothing or nothing moved', async () => {
+      db.trends = { complete: true, total: { cleared: 5, clearedPrevious: 0, clearedChangePct: null, dirtied: 5, netDirty: 0 } };
+      wrap(<FilesMetrics />);
+      await waitFor(() => expect(within(metric('Cleared this week')).getByText('5')).toBeDefined());
+      expect(within(metric('Cleared this week')).queryByText(/%$/)).toBeNull();
+      expect(within(metric('Dirty nodes')).queryByRole('img')).toBeNull();
+    });
+
+    it('hides every trend chip while the event log holds less than two weeks', async () => {
+      db.trends = { complete: false, total: { cleared: 7, clearedPrevious: 0, clearedChangePct: 100, dirtied: 40, netDirty: 33 } };
+      wrap(<FilesMetrics />);
+      await waitFor(() => expect(within(metric('Cleared this week')).getByText('7')).toBeDefined());
+      expect(within(metric('Cleared this week')).queryByText('+100%')).toBeNull();
+      expect(within(metric('Dirty nodes')).queryByText('+33')).toBeNull();
     });
 
     it('refreshes counts from live events', async () => {
       wrap(<FilesMetrics />);
-      const metric = (heading: string) => screen.getByRole('heading', { name: heading }).parentElement as HTMLElement;
       await waitFor(() => expect(within(metric('Active claims')).getByText('3')).toBeDefined());
 
       db.files = db.files.map(f => (f.name === 'Sandbox' ? { ...f, counts: { ...f.counts, dirty: 271 } } : f));

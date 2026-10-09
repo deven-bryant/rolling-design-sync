@@ -10,7 +10,7 @@ import { AgentSetup, agentSetupSnippets, StatusMetrics, TokensTable, useServerSt
 import { FilesMetrics, FilesTable, formatCount, plural, useFiles } from '../features/files';
 import { NodeDrawer, NodeTable } from '../features/nodes';
 import { ScopeViewedBadge } from '../features/scopes';
-import { WorkGroupSwitch, WorkTable } from '../features/work';
+import { WorkFiltersBar, WorkGroupSwitch, WorkTable } from '../features/work';
 import { CopyButton } from './CopyButton';
 import { useFileOutlet } from './FileLayout';
 import { lastFile } from './lastFile';
@@ -55,7 +55,7 @@ export function FilesPage() {
 }
 
 export function NodesPage() {
-  const { fileKey, under, scopeViewed } = useFileOutlet();
+  const { fileKey, scopes, under, scopeViewed } = useFileOutlet();
   const [params, setParams] = useSearchParams();
   const nodeId = params.get('node');
   const setNode = (id: string | null) =>
@@ -74,7 +74,7 @@ export function NodesPage() {
         onFiltersChange={filters => setParams(prev => writeNodeFilters(prev, filters), { replace: true })}
         onOpenNode={setNode}
         selectedNodeId={nodeId}
-        filtersAddon={scopeViewed ? <ScopeViewedBadge /> : undefined}
+        filtersAddon={scopeViewed ? <ScopeViewedBadge count={scopes.length} /> : undefined}
         className="gap-4xl"
       />
       <NodeDrawer fileKey={fileKey} nodeId={nodeId} onClose={() => setNode(null)} />
@@ -83,22 +83,35 @@ export function NodesPage() {
 }
 
 export function WorkPage() {
-  const { fileKey, scope, under } = useFileOutlet();
+  const { fileKey, scope, scopes, under, scopeViewed } = useFileOutlet();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const state = readWorkState(params);
+  const several = scopes.length > 1;
+  const group = several ? 'component' : state.group;
   const toNodes = (nodeUnder: string | undefined) => void navigate(`${filePath(fileKey, 'nodes')}${query({ under: nodeUnder })}`);
   return (
     <>
-      <WorkGroupSwitch
-        group={state.group}
-        onGroupChange={group => setParams(prev => writeWorkState(prev, { group, page: 1 }))}
+      <WorkFiltersBar
+        filters={{ q: state.q, expandInstances: state.expandInstances }}
+        onFiltersChange={filters => setParams(prev => writeWorkState(prev, { ...state, ...filters, page: 1 }), { replace: true })}
+        addon={scopeViewed ? <ScopeViewedBadge count={scopes.length} /> : undefined}
+        groupSwitch={
+          <WorkGroupSwitch
+            group={group}
+            onGroupChange={next => setParams(prev => writeWorkState(prev, { ...state, group: next, page: 1 }))}
+            frameDisabledReason={several ? 'Select one scope to group by frame: frames need a single root.' : undefined}
+          />
+        }
       />
       <WorkTable
         fileKey={fileKey}
         under={under}
-        scopeName={scope?.name ?? undefined}
-        group={state.group}
+        scopeName={several ? `the ${scopes.length} selected scopes` : (scope?.name ?? undefined)}
+        scopeCount={scopes.length}
+        q={state.q}
+        expandInstances={state.expandInstances}
+        group={group}
         page={state.page}
         onPageChange={page => setParams(prev => writeWorkState(prev, { ...state, page }))}
         onOpenComponent={toNodes}
