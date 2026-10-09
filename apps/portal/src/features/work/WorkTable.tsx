@@ -53,9 +53,13 @@ function AgentColumn({ claim, now }: { claim: FileClaim | undefined; now: number
   return (
     <Table.Cell>
       {claim?.worker ? (
-        <AgentCell worker={claim.worker} when={claim.createdAt && `claimed ${timeAgo(claim.createdAt, now, 'short')}`} />
+        <AgentCell
+          className="max-w-28"
+          worker={claim.worker}
+          when={claim.createdAt && `claimed ${timeAgo(claim.createdAt, now, 'short')}`}
+        />
       ) : (
-        <AgentCell worker="—" avatar={false} when="unclaimed" />
+        <AgentCell className="max-w-28" worker="—" avatar={false} when="unclaimed" />
       )}
     </Table.Cell>
   );
@@ -80,7 +84,7 @@ function WorkRow({
   return (
     <Table.Row aria-label={name} onAction={key ? () => onOpenComponent(key) : undefined}>
       <Table.Cell>
-        <NodeCell name={name} meta={key ? `${item.type ?? 'NODE'} · ${key}` : undefined} />
+        <NodeCell className="max-w-44" name={name} meta={key ? `${item.type ?? 'NODE'} · ${key}` : undefined} />
       </Table.Cell>
       {group === 'component' &&
         (key ? (
@@ -94,7 +98,7 @@ function WorkRow({
       <Table.Cell>
         <CategoryBadges categories={item.categories ?? []} max={CATEGORIES_SHOWN} />
       </Table.Cell>
-      <ProgressCell className="min-w-40" value={itemProgress(item)} label={`${name} progress`} />
+      <ProgressCell className="min-w-32" value={itemProgress(item)} label={`${name} progress`} />
       <AgentColumn claim={itemClaim(item, claims)} now={now} />
     </Table.Row>
   );

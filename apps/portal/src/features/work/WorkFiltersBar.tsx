@@ -16,10 +16,12 @@ export interface WorkFiltersBarProps {
   onFiltersChange: (filters: WorkFilters) => void;
   /** Shown beside the search field, e.g. the *N Scopes Viewed* badge. */
   addon?: ReactNode;
+  /** The group switch, on the second row opposite *Expand instances*. */
+  groupSwitch?: ReactNode;
 }
 
 /** The Work Items filter row: node search, an addon and *Expand instances*, wired like the Nodes filters. */
-export function WorkFiltersBar({ filters, onFiltersChange, addon }: WorkFiltersBarProps) {
+export function WorkFiltersBar({ filters, onFiltersChange, addon, groupSwitch }: WorkFiltersBarProps) {
   const q = filters.q ?? '';
   const [draft, setDraft] = useState(q);
   const [committed, setCommitted] = useState(q);
@@ -34,25 +36,30 @@ export function WorkFiltersBar({ filters, onFiltersChange, addon }: WorkFiltersB
   }, [draft, q, filters, onFiltersChange]);
 
   return (
-    <div className="flex flex-wrap items-center gap-lg">
-      <Input
-        aria-label="Search nodes"
-        className="w-70"
-        type="search"
-        placeholder="Search name, node id, or key:value"
-        tooltip="Plain text matches node names, a node id lists that node, and key:value pairs (state:dirty changed:fills) filter like the API's q."
-        iconLeading={<Icon name="search-lg" size="md" />}
-        value={draft}
-        onChange={setDraft}
-      />
-      {addon}
-      <Toggle
-        className="ml-auto shrink-0"
-        isSelected={filters.expandInstances}
-        onChange={expandInstances => onFiltersChange({ ...filters, expandInstances })}
-      >
-        Expand instances
-      </Toggle>
+    <div className="flex flex-col gap-lg">
+      <div className="flex flex-wrap items-center gap-lg">
+        <Input
+          aria-label="Search nodes"
+          className="w-70"
+          type="search"
+          placeholder="Search name, node id, or key:value"
+          tooltip="Plain text matches node names, a node id lists that node, and key:value pairs (state:dirty changed:fills) filter like the API's q."
+          iconLeading={<Icon name="search-lg" size="md" />}
+          value={draft}
+          onChange={setDraft}
+        />
+        {addon}
+      </div>
+      <div className="flex flex-wrap items-center gap-lg">
+        {groupSwitch}
+        <Toggle
+          className="ml-auto shrink-0"
+          isSelected={filters.expandInstances}
+          onChange={expandInstances => onFiltersChange({ ...filters, expandInstances })}
+        >
+          Expand instances
+        </Toggle>
+      </div>
     </div>
   );
 }

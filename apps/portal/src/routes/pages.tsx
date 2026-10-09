@@ -96,11 +96,13 @@ export function WorkPage() {
         filters={{ q: state.q, expandInstances: state.expandInstances }}
         onFiltersChange={filters => setParams(prev => writeWorkState(prev, { ...state, ...filters, page: 1 }), { replace: true })}
         addon={scopeViewed ? <ScopeViewedBadge count={scopes.length} /> : undefined}
-      />
-      <WorkGroupSwitch
-        group={group}
-        onGroupChange={next => setParams(prev => writeWorkState(prev, { ...state, group: next, page: 1 }))}
-        frameDisabledReason={several ? 'Select one scope to group by frame: frames need a single root.' : undefined}
+        groupSwitch={
+          <WorkGroupSwitch
+            group={group}
+            onGroupChange={next => setParams(prev => writeWorkState(prev, { ...state, group: next, page: 1 }))}
+            frameDisabledReason={several ? 'Select one scope to group by frame: frames need a single root.' : undefined}
+          />
+        }
       />
       <WorkTable
         fileKey={fileKey}
