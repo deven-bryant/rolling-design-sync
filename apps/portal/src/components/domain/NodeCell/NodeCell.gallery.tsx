@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Table } from '../../Table';
-import type { GalleryEntry } from '../../primitives';
+import type { GalleryEntry, GalleryExample } from '../../primitives';
 import { NodeCell, figmaNodeCell } from '.';
 
 function Tree() {
@@ -32,11 +32,30 @@ function Tree() {
   );
 }
 
+
+const themes = [
+  ['Light', undefined],
+  ['Dark', 'dark'],
+] as const;
+
+/** Each example once per theme: `Color Mode` is the `data-theme` it renders under, never a prop. */
+const bothThemes = (examples: { figma: string; render: (mode: string) => ReturnType<GalleryExample['render']> }[]) =>
+  themes.flatMap(([mode, theme]) =>
+    examples.map(({ figma, render }): GalleryExample => ({
+      figma: `${figma} · Color Mode=${mode}`,
+      render: () => (
+        <div data-theme={theme} className="bg-primary">
+          {render(mode)}
+        </div>
+      ),
+    })),
+  );
+
 export default {
   component: 'NodeCell',
-  examples: [
+  examples: bothThemes([
     { figma: 'Node cell (Chevron=True)', render: () => <NodeCell {...figmaNodeCell.defaults} className="w-72" /> },
     { figma: 'Node cell (Chevron=False)', render: () => <NodeCell name="Team View" meta="FRAME · 1:95540" className="w-72" /> },
     { figma: 'Node tree (depth 0–2)', render: () => <Tree /> },
-  ],
+  ]),
 } satisfies GalleryEntry;

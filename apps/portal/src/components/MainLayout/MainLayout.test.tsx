@@ -1,3 +1,4 @@
+import gallery from './MainLayout.gallery';
 import { render, screen } from '@testing-library/react';
 import { createRef } from 'react';
 import { describe, expect, it } from 'vitest';
@@ -13,7 +14,7 @@ describe('MainLayout', () => {
       </MainLayout>,
     );
     const main = screen.getByRole('main');
-    expect(main.className).toBe('flex min-w-0 flex-1 flex-col gap-4xl overflow-x-clip px-6xl py-3xl');
+    expect(main.className).toBe('flex min-w-0 flex-1 flex-col gap-4xl overflow-x-clip bg-primary px-6xl py-3xl');
     expect(Array.from(main.children).map(c => c.textContent)).toEqual(['Files', 'Synced files']);
     await expectNoAxeViolations(container);
   });
@@ -38,6 +39,16 @@ describe('MainLayout', () => {
     expect(el.id).toBe('main');
     expect(el.className).toContain('gap-xl');
     expect(el.className).not.toContain('gap-4xl');
+    await expectNoAxeViolations(container);
+  });
+});
+
+describe('MainLayout under the dark theme', () => {
+  it('renders its gallery examples with no axe violations', async () => {
+    const dark = gallery.examples.filter(e => e.figma.endsWith('Color Mode=Dark'));
+    expect(dark.length).toBeGreaterThan(0);
+    const { container } = render(<div>{dark.map(e => <section key={e.figma} aria-label={e.figma}>{e.render()}</section>)}</div>);
+    expect(container.querySelectorAll('[data-theme="dark"]')).toHaveLength(dark.length);
     await expectNoAxeViolations(container);
   });
 });

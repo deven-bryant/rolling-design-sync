@@ -3,6 +3,7 @@ export {
   SidebarNav,
   type SidebarNavAccountProps,
   type SidebarNavFeatureCardProps,
+  type SidebarNavHeaderProps,
   type SidebarNavItemProps,
   type SidebarNavProps,
   type SidebarNavSectionProps,

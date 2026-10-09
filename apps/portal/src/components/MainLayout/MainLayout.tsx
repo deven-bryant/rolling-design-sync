@@ -16,7 +16,7 @@ export interface MainLayoutProps extends HTMLAttributes<HTMLElement> {
 export function MainLayout({ as = 'main', className, ref, ...rest }: MainLayoutProps) {
   return createElement(as, {
     ref,
-    className: cx('flex min-w-0 flex-1 flex-col gap-4xl overflow-x-clip px-6xl py-3xl', className),
+    className: cx('flex min-w-0 flex-1 flex-col gap-4xl overflow-x-clip bg-primary px-6xl py-3xl', className),
     ...rest,
   });
 }

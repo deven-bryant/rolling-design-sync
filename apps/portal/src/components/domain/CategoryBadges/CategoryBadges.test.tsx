@@ -1,3 +1,4 @@
+import gallery from './CategoryBadges.gallery';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { expectNoAxeViolations } from '../../../test/axe';
@@ -26,5 +27,15 @@ describe('CategoryBadges', () => {
   it('renders nothing but the container for no categories', () => {
     const { container } = render(<CategoryBadges categories={[]} />);
     expect(container.firstElementChild?.children).toHaveLength(0);
+  });
+});
+
+describe('CategoryBadges under the dark theme', () => {
+  it('renders its gallery examples with no axe violations', async () => {
+    const dark = gallery.examples.filter(e => e.figma.endsWith('Color Mode=Dark'));
+    expect(dark.length).toBeGreaterThan(0);
+    const { container } = render(<div>{dark.map(e => <section key={e.figma} aria-label={e.figma}>{e.render()}</section>)}</div>);
+    expect(container.querySelectorAll('[data-theme="dark"]')).toHaveLength(dark.length);
+    await expectNoAxeViolations(container);
   });
 });

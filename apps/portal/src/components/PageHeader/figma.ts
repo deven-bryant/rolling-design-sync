@@ -4,12 +4,12 @@ export const figma = {
   sets: [
     {
       name: 'Page header',
-      nodeId: '9:6403',
+      nodeId: '111:19126',
       variants: [
         {
           name: 'Style=Simple, Breakpoint=Desktop',
-          nodeId: '9:6404',
-          key: 'ee2a1ff156a81f2774174739d0a3fe87c7ef9320',
+          nodeId: '111:19127',
+          key: 'baa05ab337b6e92d2144fee09fb0459b92c42da1',
           props: {},
         },
       ],

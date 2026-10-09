@@ -1,3 +1,4 @@
+import gallery from './NodeDetails.gallery';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -53,10 +54,10 @@ describe('NodeDetails', () => {
   it('renders State=Change List: header, status, claim and the changes table', async () => {
     const { container } = render(<Example />);
     expect(classesOf(container.firstElementChild)).toEqual(expect.arrayContaining(['flex-col', 'gap-4xl', 'w-full']));
-    expect(classesOf(screen.getByRole('group', { name: 'Status' }))).toContain('flex-1');
-    const claimRow = screen.getByRole('heading', { name: 'Claim Holder', level: 3 }).parentElement?.parentElement ?? null;
-    expect(classesOf(claimRow)).toEqual(expect.arrayContaining(['gap-md']));
-    expect(classesOf(claimRow)).not.toContain('justify-between');
+    expect(classesOf(screen.getByRole('group', { name: 'Status' }))).not.toContain('flex-1');
+    const claimText = screen.getByRole('heading', { name: 'Claim Holder', level: 3 }).parentElement;
+    expect(classesOf(claimText)).not.toContain('flex-1');
+    expect(classesOf(claimText?.parentElement ?? null)).toEqual(expect.arrayContaining(['justify-between', 'gap-4xl']));
     expect(screen.getByRole('heading', { name: 'Breadcrumbs', level: 2 })).toBeTruthy();
     expect(screen.getByText('INSTANCE · 1:2345')).toBeTruthy();
     expect(within(screen.getByRole('group', { name: 'Status' })).getByText('Dirty')).toBeTruthy();
@@ -71,6 +72,7 @@ describe('NodeDetails', () => {
     expect(screen.getByText('2 items')).toBeTruthy();
     const table = screen.getByRole('table', { name: 'Change list' });
     expect(within(table).getAllByRole('columnheader').map(h => h.textContent)).toEqual(['Attribute', 'From', 'To']);
+    expect(within(table).getAllByRole('columnheader').some(h => classesOf(h).includes('w-1/2'))).toBe(false);
     const first = within(table).getAllByRole('row')[1] as HTMLElement;
     expect(within(first).getAllByRole('cell').map(c => c.textContent)).toEqual(['fills', 'bg-primary#FFFFFF', 'bg-secondary#F9FAFB']);
     expect(screen.getByRole('navigation', { name: 'Change list pages' })).toBeTruthy();
@@ -138,5 +140,23 @@ describe('NodeDetails', () => {
     expect(within(claim).getByText('covers 2 other nodes too')).toBeTruthy();
     expect(within(claim).getByText('Confirm?')).toBeTruthy();
     expect(screen.getByText('Blocked: waiting on tokens')).toBeTruthy();
+  });
+});
+
+describe('NodeDetails paginationLabel', () => {
+  it('names the change list pagination', () => {
+    render(<Example paginationLabel="Table changes" />);
+    expect(screen.getByRole('navigation', { name: 'Table changes' })).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: 'Change list pages' })).toBeNull();
+  });
+});
+
+describe('NodeDetails under the dark theme', () => {
+  it('renders its gallery examples with no axe violations', async () => {
+    const dark = gallery.examples.filter(e => e.figma.endsWith('Color Mode=Dark'));
+    expect(dark.length).toBeGreaterThan(0);
+    const { container } = render(<div>{dark.map(e => <section key={e.figma} aria-label={e.figma}>{e.render()}</section>)}</div>);
+    expect(container.querySelectorAll('[data-theme="dark"]')).toHaveLength(dark.length);
+    await expectNoAxeViolations(container);
   });
 });

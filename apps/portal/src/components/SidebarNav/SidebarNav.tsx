@@ -1,5 +1,5 @@
 import { createContext, useContext, type HTMLAttributes, type ReactNode, type Ref } from 'react';
-import { Button, Disclosure, DisclosurePanel, Link, RouterProvider } from 'react-aria-components';
+import { Button, Link, RouterProvider } from 'react-aria-components';
 import { Menu } from '../Menu';
 import { cx, Icon, Text, variants, type IconName } from '../primitives';
 
@@ -39,8 +39,18 @@ export interface SidebarNavSlotProps extends HTMLAttributes<HTMLDivElement> {
   ref?: Ref<HTMLDivElement>;
 }
 
-function SidebarNavHeader({ className, ref, ...rest }: SidebarNavSlotProps) {
-  return <div ref={ref} className={cx('flex flex-col gap-2xl px-2xl', className)} {...rest} />;
+export interface SidebarNavHeaderProps extends SidebarNavSlotProps {
+  /** Controls on the right of the product name, e.g. the theme toggle. */
+  actions?: ReactNode;
+}
+
+function SidebarNavHeader({ actions, children, className, ref, ...rest }: SidebarNavHeaderProps) {
+  return (
+    <div ref={ref} className={cx('flex items-start gap-lg px-2xl', className)} {...rest}>
+      <div className="flex min-w-0 flex-1 flex-col gap-2xl">{children}</div>
+      {actions != null && <div className="flex h-8 shrink-0 items-center gap-xs">{actions}</div>}
+    </div>
+  );
 }
 
 function SidebarNavSearch({ className, ref, ...rest }: SidebarNavSlotProps) {
@@ -66,64 +76,20 @@ export interface SidebarNavItemProps {
   badge?: ReactNode;
   /** Figma `Current`: the item for the current page (aria-current="page"). */
   current?: boolean;
-  /** Sub-items: makes this a Figma `_Nav item dropdown base` that expands them. */
-  items?: ReactNode;
-  defaultExpanded?: boolean;
-  expanded?: boolean;
-  onExpandedChange?: (expanded: boolean) => void;
   className?: string;
 }
 
-function ItemContent({ icon, badge, current, children }: Pick<SidebarNavItemProps, 'icon' | 'badge' | 'current' | 'children'>) {
+/** Figma `_Nav item base` (and `_Nav item dropdown base`, built without its chevron): a link row. */
+function SidebarNavItem({ children, href, icon, badge, current = false, className }: SidebarNavItemProps) {
   return (
-    <>
-      <span className={cx('flex min-w-0 flex-1 items-center gap-md text-md font-semibold', current ? 'text-secondary_hover' : 'text-secondary')}>
-        {icon && <Icon name={icon} size="md" className="text-fg-quaternary" />}
-        {children}
-      </span>
-      {badge}
-    </>
-  );
-}
-
-function SidebarNavItem({
-  children,
-  href,
-  icon,
-  badge,
-  current = false,
-  items,
-  defaultExpanded,
-  expanded,
-  onExpandedChange,
-  className,
-}: SidebarNavItemProps) {
-  if (items === undefined) {
-    return (
-      <li className={cx('py-xxs', className)}>
-        <Link href={href} aria-current={current ? 'page' : undefined} className={navItemStyles({ current })}>
-          <ItemContent icon={icon} badge={badge} current={current}>
-            {children}
-          </ItemContent>
-        </Link>
-      </li>
-    );
-  }
-  return (
-    <li className={className}>
-      <Disclosure defaultExpanded={defaultExpanded} isExpanded={expanded} onExpandedChange={onExpandedChange} className="group">
-        <div className="py-xxs">
-          <Button slot="trigger" className={navItemStyles({ current })}>
-            <ItemContent icon={icon} badge={badge} current={current}>
-              {children}
-            </ItemContent>
-            <Icon name="chevron-down" size="sm" className="text-fg-quaternary group-data-expanded:rotate-180" />
-          </Button>
-        </div>
-        <DisclosurePanel>
-          <ul className="flex flex-col">{items}</ul>
-        </DisclosurePanel>
-      </Disclosure>
+    <li className={cx('py-xxs', className)}>
+      <Link href={href} aria-current={current ? 'page' : undefined} className={navItemStyles({ current })}>
+        <span className={cx('flex min-w-0 flex-1 items-center gap-md text-md font-semibold', current ? 'text-secondary_hover' : 'text-secondary')}>
+          {icon && <Icon name={icon} size="md" className="text-fg-quaternary" />}
+          {children}
+        </span>
+        {badge}
+      </Link>
     </li>
   );
 }
@@ -140,8 +106,6 @@ export interface SidebarNavFeatureCardProps extends Omit<HTMLAttributes<HTMLDivE
   title: ReactNode;
   /** Figma `Supporting text`. */
   children?: ReactNode;
-  /** Figma `Type=Progress bar`: the progress bar slot. */
-  progress?: ReactNode;
   /** Link buttons under the content. */
   actions?: ReactNode;
   /** Figma `X close button`: shown when set. */
@@ -153,7 +117,6 @@ export interface SidebarNavFeatureCardProps extends Omit<HTMLAttributes<HTMLDivE
 function SidebarNavFeatureCard({
   title,
   children,
-  progress,
   actions,
   onDismiss,
   dismissLabel = 'Dismiss',
@@ -182,7 +145,6 @@ function SidebarNavFeatureCard({
           </Text>
         )}
       </div>
-      {progress}
       {actions && <div className="flex gap-lg">{actions}</div>}
     </div>
   );
@@ -201,7 +163,7 @@ function SidebarNavAccount({ children, menu, menuLabel = 'Account menu', classNa
   return (
     <div
       ref={ref}
-      className={cx('relative flex gap-xl rounded-xl border border-secondary bg-primary_alt p-lg', className)}
+      className={cx('relative flex gap-xl rounded-xl border border-secondary bg-primary_alt p-lg', menu != null && 'pr-5xl', className)}
       {...rest}
     >
       <div className="flex min-w-0 flex-1">{children}</div>
@@ -212,7 +174,7 @@ function SidebarNavAccount({ children, menu, menuLabel = 'Account menu', classNa
           trigger={
             <Button
               aria-label={menuLabel}
-              className="flex shrink-0 cursor-pointer self-start rounded-sm p-sm text-fg-quaternary outline-none data-hovered:bg-primary_hover data-hovered:text-fg-quaternary_hover data-pressed:bg-primary_hover data-focus-visible:ring-2 data-focus-visible:ring-focus-ring"
+              className="absolute top-md right-md flex cursor-pointer rounded-sm p-sm text-fg-quaternary outline-none data-hovered:bg-primary_hover data-hovered:text-fg-quaternary_hover data-pressed:bg-primary_hover data-focus-visible:ring-2 data-focus-visible:ring-focus-ring"
             >
               <Icon name="chevron-selector-vertical" size="sm" />
             </Button>

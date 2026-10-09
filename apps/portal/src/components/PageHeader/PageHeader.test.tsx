@@ -1,3 +1,4 @@
+import gallery from './PageHeader.gallery';
 import { render, screen } from '@testing-library/react';
 import { createRef } from 'react';
 import { describe, expect, it } from 'vitest';
@@ -72,5 +73,15 @@ describe('PageHeader', () => {
     expect(ref.current).toBe(screen.getByTestId('ph'));
     expect(ref.current?.className).toContain('pb-xl');
     expect(screen.getByTestId('actions').className).toBe('flex items-center gap-lg ml-auto');
+  });
+});
+
+describe('PageHeader under the dark theme', () => {
+  it('renders its gallery examples with no axe violations', async () => {
+    const dark = gallery.examples.filter(e => e.figma.endsWith('Color Mode=Dark'));
+    expect(dark.length).toBeGreaterThan(0);
+    const { container } = render(<div>{dark.map(e => <section key={e.figma} aria-label={e.figma}>{e.render()}</section>)}</div>);
+    expect(container.querySelectorAll('[data-theme="dark"]')).toHaveLength(dark.length);
+    await expectNoAxeViolations(container);
   });
 });

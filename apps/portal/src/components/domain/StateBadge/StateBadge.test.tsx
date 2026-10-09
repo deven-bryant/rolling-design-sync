@@ -1,3 +1,4 @@
+import gallery from './StateBadge.gallery';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { expectNoAxeViolations } from '../../../test/axe';
@@ -23,5 +24,15 @@ describe('StateBadge', () => {
   it('accepts a custom label', () => {
     render(<StateBadge state="blocked">Blocked by devin</StateBadge>);
     expect(screen.getByText('Blocked by devin')).toBeTruthy();
+  });
+});
+
+describe('StateBadge under the dark theme', () => {
+  it('renders its gallery examples with no axe violations', async () => {
+    const dark = gallery.examples.filter(e => e.figma.endsWith('Color Mode=Dark'));
+    expect(dark.length).toBeGreaterThan(0);
+    const { container } = render(<div>{dark.map(e => <section key={e.figma} aria-label={e.figma}>{e.render()}</section>)}</div>);
+    expect(container.querySelectorAll('[data-theme="dark"]')).toHaveLength(dark.length);
+    await expectNoAxeViolations(container);
   });
 });

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button } from '../Button';
-import { Icon, Text, type GalleryEntry } from '../primitives';
+import { Icon, Text, type GalleryEntry, type GalleryExample } from '../primitives';
 import { Drawer, type DrawerProps } from '.';
 
 function Example({ size }: Pick<DrawerProps, 'size'>) {
@@ -33,11 +33,30 @@ function Example({ size }: Pick<DrawerProps, 'size'>) {
   );
 }
 
+
+const themes = [
+  ['Light', undefined],
+  ['Dark', 'dark'],
+] as const;
+
+/** Each example once per theme: `Color Mode` is the `data-theme` it renders under, never a prop. */
+const bothThemes = (examples: { figma: string; render: (mode: string) => ReturnType<GalleryExample['render']> }[]) =>
+  themes.flatMap(([mode, theme]) =>
+    examples.map(({ figma, render }): GalleryExample => ({
+      figma: `${figma} · Color Mode=${mode}`,
+      render: () => (
+        <div data-theme={theme} className="bg-primary">
+          {render(mode)}
+        </div>
+      ),
+    })),
+  );
+
 export default {
   component: 'Drawer',
-  examples: [
+  examples: bothThemes([
     { figma: 'Node drawer · _Slide out menu header (Tabs=False, Breakpoint=Desktop)', render: () => <Example /> },
     { figma: 'Node drawer (State=Change History, size="narrow")', render: () => <Example size="narrow" /> },
     { figma: 'Node drawer (State=Change List, size="wide")', render: () => <Example size="wide" /> },
-  ],
+  ]),
 } satisfies GalleryEntry;
