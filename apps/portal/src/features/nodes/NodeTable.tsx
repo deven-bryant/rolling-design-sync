@@ -20,7 +20,7 @@ import { cx, Icon, Text } from '../../components/primitives';
 import { CATEGORIES, categoriesOf, type Category } from './categories';
 import { nodeMeta, timeAgo, whatChanged } from './format';
 import { useNodeLiveUpdates, type NodeLiveUpdates } from './live';
-import { filterParams, nodePageParams, PAGE_SIZE, useChildNodes, useFile, useNodePage, useScope } from './queries';
+import { filterParams, nodePageParams, PAGE_SIZE, splitUnder, useChildNodes, useFile, useNodePage, useScope } from './queries';
 import type { ChangeFilter, FileClaim, NodeFilters, NodeItem, StateFilter } from './types';
 
 /** How long the search box waits after typing before it updates the filters. */
@@ -441,12 +441,13 @@ export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNo
   const live = useNodeLiveUpdates(fileKey);
   const claimsQuery = useFileClaims(fileKey);
   const file = useFile(fileKey);
-  const { scope } = useScope(fileKey, scopeId);
+  const { scope, selected } = useScope(fileKey, scopeId);
   const now = useNow(30_000);
   const [columns, setColumns] = useState<ReadonlySet<NodeColumn>>(() => new Set(COLUMNS.map(c => c.id)));
 
   const claims = new Map((claimsQuery.data?.claims ?? []).flatMap(c => (c.claimId ? [[c.claimId, c] as const] : [])));
-  const dirty = (scope ?? file.data)?.counts?.dirty;
+  const several = selected.length > 1 && selected.length === splitUnder(scopeId).length;
+  const dirty = several ? selected.reduce((sum, s) => sum + (s.counts?.dirty ?? 0), 0) : (scope ?? file.data)?.counts?.dirty;
   const outlineHref = buildUrl('/v3/files/{fileKey}/nodes', { fileKey }, {
     under: scopeId,
     ...filterParams(filters),

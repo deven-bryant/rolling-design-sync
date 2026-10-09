@@ -14,11 +14,17 @@ import { itemClaim, useWorkItems, useWorkLive, type FileClaim, type WorkGroup, t
 
 export interface WorkTableProps extends HTMLAttributes<HTMLDivElement> {
   fileKey: string;
-  /** The scope (screen) node id. */
+  /** The scope (screen) node id; several comma-separated. */
   under?: string;
-  /** The scope's name, for the card description. */
+  /** The scope's name, for the card description (e.g. `the 2 selected scopes`). */
   scopeName?: string;
+  /** How many scopes `scopeName` covers (plural wording). */
+  scopeCount?: number;
   group: WorkGroup;
+  /** The node search (see `WorkQuery.q`). */
+  q?: string;
+  /** `expand=instances` (default on). */
+  expandInstances?: boolean;
   /** 1-based cursor page. */
   page: number;
   onPageChange: (page: number) => void;
@@ -109,7 +115,10 @@ export function WorkTable({
   fileKey,
   under,
   scopeName,
+  scopeCount = 1,
   group,
+  q,
+  expandInstances,
   page,
   onPageChange,
   onOpenComponent,
@@ -118,14 +127,14 @@ export function WorkTable({
   ...rest
 }: WorkTableProps) {
   useWorkLive(fileKey);
-  const work = useWorkItems({ fileKey, under, group, pageSize, page });
+  const work = useWorkItems({ fileKey, under, group, q, expandInstances, pageSize, page });
   const claims = useFileClaims(fileKey);
   const now = useNow();
   const heads = columns(group);
   const scope = scopeName ?? 'this screen';
   const description =
     group === 'component'
-      ? `Components ${scope} uses. Build leaves first, then the composites that contain them.`
+      ? `Components ${scope} ${scopeCount > 1 ? 'use' : 'uses'}. Build leaves first, then the composites that contain them.`
       : `Frames in ${scope}, in layer order.`;
   return (
     <Card {...rest} className={className}>

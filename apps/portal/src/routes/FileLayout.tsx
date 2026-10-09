@@ -5,7 +5,7 @@ import { Breadcrumbs } from '../components/Breadcrumbs';
 import { Button } from '../components/Button';
 import { PageHeader } from '../components/PageHeader';
 import { formatCount, timeAgo, useLastSyncClient } from '../features/files';
-import { useFile, useScope } from '../features/nodes';
+import { splitUnder, useFile, useScope } from '../features/nodes';
 import { defaultScope, ScopePanel } from '../features/scopes';
 import { useWorkItems } from '../features/work';
 import { CopyButton } from './CopyButton';
@@ -16,25 +16,36 @@ type Scope = NonNullable<ReturnType<typeof useScope>['scope']>;
 
 export interface FileOutlet {
   fileKey: string;
-  /** The scope in `?under=`, else the most recently synced one. */
+  /** The scope in `?under=`, else the most recently synced one; unset when several are selected. */
   scope: Scope | undefined;
-  /** `?under=` (a scope or any node, e.g. a component). */
+  /** The scopes in `?under=`, in its order. */
+  scopes: Scope[];
+  /** `?under=` (a scope or any node, e.g. a component; several comma-separated). */
   under: string | undefined;
-  /** `?under=` is a scope picked in the scope panel. */
+  /** `?under=` is scopes picked in the scope panel. */
   scopeViewed: boolean;
 }
 
 export const useFileOutlet = () => useOutletContext<FileOutlet>();
 
-/** A prompt that starts an agent on a scope's work queue: MCP tools first, the CLI as the fallback. */
-export function scopePrompt({ fileKey, nodeId, name }: { fileKey: string; nodeId: string; name?: string | null }): string {
-  const label = name ? `"${name}" (${nodeId})` : nodeId;
+export interface PromptScope {
+  nodeId: string;
+  name?: string | null;
+}
+
+/**
+ * A prompt that starts an agent on the work queue of one or more scopes: MCP tools first, the CLI as the
+ * fallback. Several scopes are named in order and passed as one comma-separated `under`.
+ */
+export function scopePrompt({ fileKey, scopes }: { fileKey: string; scopes: readonly PromptScope[] }): string {
+  const nodeId = scopes.map(s => s.nodeId).join(',');
+  const label = scopes.map(({ nodeId: id, name }) => (name ? `"${name}" (${id})` : id)).join(', ');
   const cli = 'node scripts/rds-agent.js';
   return [
-    `Implement the Figma scope ${label} in file ${fileKey}, tracked by Rolling Design Sync.`,
+    `Implement the Figma ${scopes.length === 1 ? 'scope' : 'scopes'} ${label} in file ${fileKey}, tracked by Rolling Design Sync.`,
     'Use the rds MCP tools if you have them; otherwise run the CLI from a checkout of rolling-design-sync (needs RDS_API_BASE_URL and RDS_AGENT_TOKEN).',
     '',
-    '1. List the work items under the scope; build leaves first, then the composites that contain them:',
+    `1. List the work items under the ${scopes.length === 1 ? 'scope' : 'scopes'}; build leaves first, then the composites that contain them:`,
     `   - MCP: list_work_items { "fileKey": "${fileKey}", "under": "${nodeId}", "expand": "instances" }`,
     `   - CLI: ${cli} work --file-key ${fileKey} --under ${nodeId} --expand instances`,
     "2. Claim each item's nodeIds with a stable worker id; work only on the nodes the claim returns:",
@@ -73,6 +84,21 @@ function ScopeMeta({ fileKey, scope }: { fileKey: string; scope: Scope }) {
   return <>{[`${typeName(scope.type)} ${scope.nodeId ?? ''}`, synced, counts.join(', ')].filter(Boolean).join(' · ')}</>;
 }
 
+/** Several scopes: their summed node counts, the components they use and the latest sync. */
+function ScopesMeta({ fileKey, scopes }: { fileKey: string; scopes: readonly Scope[] }) {
+  const now = useNow();
+  const components = useWorkItems({
+    fileKey,
+    under: scopes.map(s => s.nodeId).join(','),
+    group: 'component',
+    page: 1,
+  }).total;
+  const latest = scopes.reduce<string | undefined>((at, s) => (s.lastSyncAt && (!at || s.lastSyncAt > at) ? s.lastSyncAt : at), undefined);
+  const nodes = scopes.reduce((sum, s) => sum + (s.counts?.total ?? 0), 0);
+  const counts = [`${formatCount(nodes)} nodes`, components !== undefined ? `${formatCount(components)} components` : null].filter(Boolean);
+  return <>{[`${scopes.length} scopes`, latest ? `last synced ${timeAgo(latest, now)}` : 'never synced', counts.join(', ')].join(' · ')}</>;
+}
+
 /** The Nodes and Work Items frame: the scope header and actions, then the scope panel bound to `?under=`. */
 export function FileLayout() {
   const { fileKey = '' } = useParams();
@@ -84,23 +110,26 @@ export function FileLayout() {
   useEffect(() => rememberFile(fileKey), [fileKey]);
 
   const live = (scopes.data?.scopes ?? []).filter(s => !s.deleted);
-  const under = params.get('under') ?? undefined;
+  const under = params.get('under') || undefined;
   const fallback = defaultScope(live);
   if (!under && fallback?.nodeId) {
     const next = new URLSearchParams(params);
     next.set('under', fallback.nodeId);
     return <Navigate to={{ pathname, search: `?${next.toString()}` }} replace />;
   }
-  const picked = live.find(s => s.nodeId === under);
-  const scope = picked ?? fallback;
+  const picked = splitUnder(under).flatMap(id => live.filter(s => s.nodeId === id));
+  const several = picked.length > 1;
+  const scope = several ? undefined : (picked[0] ?? fallback);
+  const shown = several ? picked : scope ? [scope] : [];
+  const title = several ? `${picked.length} scopes` : scope?.name ?? scope?.nodeId ?? undefined;
   const fileName = file.data?.name ?? fileKey;
   const figmaUrl = scope?.figmaUrl ?? `https://www.figma.com/design/${encodeURIComponent(fileKey)}`;
   const onWork = pathname.endsWith('/work');
 
-  const select = (nodeId: string) =>
+  const select = (nodeIds: string[]) =>
     setParams(prev => {
       const next = new URLSearchParams(prev);
-      next.set('under', nodeId);
+      next.set('under', nodeIds.join(','));
       next.delete('node');
       next.delete('page');
       return next;
@@ -116,12 +145,14 @@ export function FileLayout() {
             </Breadcrumbs.Item>
             <Breadcrumbs.Item href="/files">Files</Breadcrumbs.Item>
             <Breadcrumbs.Item href={filePath(fileKey)}>{fileName}</Breadcrumbs.Item>
-            {scope && <Breadcrumbs.Item>{scope.name ?? scope.nodeId ?? ''}</Breadcrumbs.Item>}
+            {title && <Breadcrumbs.Item>{title}</Breadcrumbs.Item>}
           </Breadcrumbs>
         </PageHeader.Breadcrumbs>
-        <PageHeader.Title>{scope?.name ?? fileName}</PageHeader.Title>
+        <PageHeader.Title>{title ?? fileName}</PageHeader.Title>
         <PageHeader.Description>
-          {scope ? (
+          {several ? (
+            <ScopesMeta fileKey={fileKey} scopes={picked} />
+          ) : scope ? (
             <ScopeMeta fileKey={fileKey} scope={scope} />
           ) : scopes.isPending ? (
             'Loading scopes…'
@@ -130,32 +161,33 @@ export function FileLayout() {
           )}
         </PageHeader.Description>
         <PageHeader.Actions>
-          {scope?.nodeId && (
+          {shown.length > 0 && (
             <CopyButton
               hierarchy="secondary"
               size="md"
               text={scopePrompt({
                 fileKey,
-                nodeId: scope.nodeId,
-                name: scope.name,
+                scopes: shown.flatMap(s => (s.nodeId ? [{ nodeId: s.nodeId, name: s.name }] : [])),
               })}
             >
               Copy agent prompt
             </CopyButton>
           )}
-          <Button hierarchy="primary" size="md" href={figmaUrl} target="_blank" rel="noreferrer">
-            Open in Figma
-          </Button>
+          {!several && (
+            <Button hierarchy="primary" size="md" href={figmaUrl} target="_blank" rel="noreferrer">
+              Open in Figma
+            </Button>
+          )}
         </PageHeader.Actions>
       </PageHeader>
       <ScopePanel
         fileKey={fileKey}
         fileName={fileName}
-        selected={picked?.nodeId}
-        onSelect={select}
-        onViewNodes={onWork ? nodeId => void navigate(`${filePath(fileKey, 'nodes')}${query({ under: nodeId })}`) : undefined}
+        selected={picked.flatMap(s => (s.nodeId ? [s.nodeId] : []))}
+        onSelectionChange={select}
+        onViewNodes={onWork ? nodeIds => void navigate(`${filePath(fileKey, 'nodes')}${query({ under: nodeIds.join(',') })}`) : undefined}
       />
-      <Outlet context={{ fileKey, scope, under, scopeViewed: !!picked } satisfies FileOutlet} />
+      <Outlet context={{ fileKey, scope, scopes: picked, under, scopeViewed: picked.length > 0 } satisfies FileOutlet} />
     </>
   );
 }

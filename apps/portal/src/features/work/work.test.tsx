@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { FakeEventSource } from '../../test/fake-event-source';
-import { itemClaim, itemProgress, nodesSummary, WorkGroupSwitch, WorkTable, type FileClaim, type WorkGroup, type WorkItem } from '.';
+import { itemClaim, itemProgress, nodesSummary, WorkFiltersBar, WorkGroupSwitch, WorkTable, type FileClaim, type WorkGroup, type WorkItem } from '.';
 
 const NOW = Date.parse('2026-10-01T12:00:00.000Z');
 const FILE = 'AbCdEf123456GhIjKl7890';
@@ -261,5 +261,27 @@ describe('features/work', () => {
     db.byComponent = db.byComponent.map(item => (item.key === '1:24667' ? { ...item, progress: { total: 12, clean: 11 } } : item));
     act(() => stream().emit('sync.completed', { fileKey: FILE, type: 'sync.completed', data: {} }));
     await waitFor(() => expect(within(row('Pagination')).getByText('1 dirty')).toBeDefined());
+  });
+});
+
+describe('WorkFiltersBar', () => {
+  it('debounces the node search and toggles Expand instances', async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(<WorkFiltersBar filters={{ expandInstances: true }} onFiltersChange={onChange} addon={<span>2 Scopes Viewed</span>} />);
+    expect(screen.getByText('2 Scopes Viewed')).toBeDefined();
+    await user.type(screen.getByRole('searchbox', { name: 'Search nodes' }), 'button');
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith({ expandInstances: true, q: 'button' }));
+    await user.click(screen.getByRole('switch', { name: 'Expand instances' }));
+    expect(onChange).toHaveBeenLastCalledWith({ expandInstances: false });
+  });
+});
+
+describe('WorkGroupSwitch with one root required', () => {
+  it('disables By frame and explains why', () => {
+    render(<WorkGroupSwitch group="component" onGroupChange={vi.fn()} frameDisabledReason="Select one scope to group by frame." />);
+    expect((screen.getByRole('radio', { name: 'By frame' }) as HTMLButtonElement).disabled).toBe(true);
+    const group = screen.getByRole('radiogroup', { name: 'Group work items' });
+    expect(document.getElementById(group.getAttribute('aria-describedby') ?? '')?.textContent).toBe('Select one scope to group by frame.');
   });
 });

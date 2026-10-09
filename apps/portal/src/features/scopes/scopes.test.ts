@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { defaultScope, filterScopes, readScopesVisible } from '.';
+import { defaultScope, filterScopes, readScopesVisible, toggleScopes } from '.';
 
 const scopes = [
   { nodeId: '1:2', name: 'Team View', lastSyncAt: '2026-10-01T10:00:00.000Z' },
@@ -28,5 +28,14 @@ describe('features/scopes', () => {
     expect(readScopesVisible()).toBe(true);
     window.localStorage.setItem('rds.portal.scopesVisible', 'false');
     expect(readScopesVisible()).toBe(false);
+  });
+
+  it('toggles scopes in the panel order', () => {
+    const order = ['1:2', '3:4', '5:6'];
+    expect(toggleScopes(order, ['5:6'], ['1:2'], true)).toEqual(['1:2', '5:6']);
+    expect(toggleScopes(order, ['1:2', '5:6'], ['1:2'], false)).toEqual(['5:6']);
+    expect(toggleScopes(order, ['3:4'], order, true)).toEqual(order);
+    expect(toggleScopes(order, order, ['1:2', '3:4'], false)).toEqual(['5:6']);
+    expect(toggleScopes(order, ['7:7', '3:4'], ['1:2'], true)).toEqual(['1:2', '3:4']);
   });
 });

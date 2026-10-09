@@ -46,28 +46,39 @@ export function filterScopes<T extends Pick<FileScope, 'name' | 'nodeId'>>(scope
 
 const typeLabel = (type: string | null | undefined) => type ?? 'SCOPE';
 
-/** "1 Scope Viewed": the node and work lists are narrowed to the selected scope. */
-export function ScopeViewedBadge() {
-  return <Badge>1 Scope Viewed</Badge>;
+/** "N Scopes Viewed": the node and work lists are narrowed to the selected scopes. */
+export function ScopeViewedBadge({ count = 1 }: { count?: number }) {
+  return <Badge>{`${formatCount(count)} ${count === 1 ? 'Scope' : 'Scopes'} Viewed`}</Badge>;
+}
+
+/** `ids` toggled `on` for `changed`, in the order of `order` (the panel's); ids not in `order` are dropped. */
+export function toggleScopes(order: readonly string[], ids: readonly string[], changed: readonly string[], on: boolean): string[] {
+  const next = new Set(ids);
+  for (const id of changed) {
+    if (on) next.add(id);
+    else next.delete(id);
+  }
+  return order.filter(id => next.has(id));
 }
 
 export interface ScopePanelProps {
   fileKey: string;
   /** Named in the card description. */
   fileName?: string;
-  /** The selected scope's node id (`?under=`). */
-  selected: string | undefined;
-  onSelect: (nodeId: string) => void;
-  /** *View Nodes*: open the Nodes screen on the selected scope; omitted (disabled) on Nodes itself. */
-  onViewNodes?: (nodeId: string) => void;
+  /** The selected scopes' node ids (`?under=a,b`). */
+  selected: readonly string[];
+  /** The new selection, in the panel's order; never empty (the last selected scope stays selected). */
+  onSelectionChange: (nodeIds: string[]) => void;
+  /** *View Nodes*: open the Nodes screen on the selected scopes; omitted (disabled) on Nodes itself. */
+  onViewNodes?: (nodeIds: string[]) => void;
   className?: string;
 }
 
 /**
  * Figma *Selected File Frame*: the *View Scopes* toggle (remembered per browser), *Search Scope*,
- * and the Scopes card — one scope selected at a time, which narrows the screen below it.
+ * and the Scopes card — row checkboxes and a select-all-on-this-page checkbox pick the scopes that narrow the screen below it.
  */
-export function ScopePanel({ fileKey, fileName, selected, onSelect, onViewNodes, className }: ScopePanelProps) {
+export function ScopePanel({ fileKey, fileName, selected, onSelectionChange, onViewNodes, className }: ScopePanelProps) {
   const [visible, setVisible] = useState(readScopesVisible);
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
@@ -78,6 +89,14 @@ export function ScopePanel({ fileKey, fileName, selected, onSelect, onViewNodes,
   const pageCount = Math.max(1, Math.ceil(matches.length / SCOPE_PAGE_SIZE));
   const current = Math.min(page, pageCount);
   const rows = matches.slice((current - 1) * SCOPE_PAGE_SIZE, current * SCOPE_PAGE_SIZE);
+  const order = (scopes.data ?? []).flatMap(s => (s.nodeId ? [s.nodeId] : []));
+  const picked = new Set(selected);
+  const pageIds = rows.flatMap(s => (s.nodeId ? [s.nodeId] : []));
+  const pageOn = pageIds.filter(id => picked.has(id)).length;
+  const change = (ids: readonly string[], on: boolean) => {
+    const next = toggleScopes(order, selected, ids, on);
+    if (next.length > 0) onSelectionChange(next);
+  };
   const toggle = (on: boolean) => {
     setVisible(on);
     saveScopesVisible(on);
@@ -108,14 +127,14 @@ export function ScopePanel({ fileKey, fileName, selected, onSelect, onViewNodes,
         <Card className="overflow-hidden">
           <Card.Header
             title="Scopes"
-            badge={selected ? <Badge color="brand">1 selected</Badge> : undefined}
+            badge={selected.length > 0 ? <Badge color="brand">{`${formatCount(selected.length)} selected`}</Badge> : undefined}
             description={`The sections and frames that are synced from ${fileName ?? 'this file'}.`}
             actions={
               <Button
                 hierarchy="secondary"
                 size="sm"
-                isDisabled={!onViewNodes || !selected}
-                onPress={() => selected && onViewNodes?.(selected)}
+                isDisabled={!onViewNodes || selected.length === 0}
+                onPress={() => onViewNodes?.([...selected])}
               >
                 View Nodes
               </Button>
@@ -137,7 +156,18 @@ export function ScopePanel({ fileKey, fileName, selected, onSelect, onViewNodes,
             ) : (
               <Table aria-label="Scopes">
                 <Table.Header>
-                  <Table.HeaderCell>Name</Table.HeaderCell>
+                  <Table.HeaderCell
+                    checkbox={
+                      <LeadAction
+                        aria-label="Select all scopes on this page"
+                        isSelected={pageIds.length > 0 && pageOn === pageIds.length}
+                        isIndeterminate={pageOn > 0 && pageOn < pageIds.length}
+                        onChange={on => change(pageIds, on)}
+                      />
+                    }
+                  >
+                    Name
+                  </Table.HeaderCell>
                   <Table.HeaderCell>Node ID</Table.HeaderCell>
                   <Table.HeaderCell>Last Sync</Table.HeaderCell>
                   <Table.HeaderCell>Status of Child Nodes</Table.HeaderCell>
@@ -147,16 +177,16 @@ export function ScopePanel({ fileKey, fileName, selected, onSelect, onViewNodes,
                   {rows.map(scope => {
                     const nodeId = scope.nodeId ?? '';
                     const name = scope.name ?? nodeId;
-                    const isSelected = !!nodeId && nodeId === selected;
+                    const isSelected = !!nodeId && picked.has(nodeId);
                     return (
-                      <Table.Row key={nodeId} selected={isSelected} onAction={() => nodeId && onSelect(nodeId)}>
+                      <Table.Row key={nodeId} selected={isSelected} onAction={() => nodeId && change([nodeId], !isSelected)}>
                         <TextCell
                           supportingText={typeLabel(scope.type)}
                           leadAction={
                             <LeadAction
                               aria-label={`Select ${name}`}
                               isSelected={isSelected}
-                              onChange={on => on && nodeId && onSelect(nodeId)}
+                              onChange={on => nodeId && change([nodeId], on)}
                             />
                           }
                         >

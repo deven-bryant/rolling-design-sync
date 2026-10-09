@@ -46,19 +46,31 @@ export interface WorkState {
   group: WorkGroup;
   /** 1-based. */
   page: number;
+  /** The node search (`?q=`, shared with Nodes). */
+  q?: string;
+  /** *Expand instances*: on unless `?expand=none`. */
+  expandInstances: boolean;
 }
 
-/** `?group=component|frame&page=<n>`, defaulting to the first page by component. */
+/** `?group=component|frame&page=<n>&q=…&expand=none`, defaulting to the first page by component, instances expanded. */
 export function readWorkState(params: URLSearchParams): WorkState {
   const page = Number(params.get('page'));
   return {
     group: oneOf(GROUPS, params.get('group')) ?? 'component',
     page: Number.isInteger(page) && page > 1 ? page : 1,
+    q: params.get('q') || undefined,
+    expandInstances: params.get('expand') !== 'none',
   };
 }
 
-export function writeWorkState(params: URLSearchParams, { group, page }: WorkState): URLSearchParams {
+/** Writes `state`; `q` and `expandInstances` are left as they are when not given. */
+export function writeWorkState(params: URLSearchParams, state: Omit<WorkState, 'expandInstances'> & Partial<WorkState>): URLSearchParams {
+  const { group, page, q, expandInstances } = state;
   const next = new URLSearchParams(params);
+  if (q) next.set('q', q);
+  else if ('q' in state) next.delete('q');
+  if (expandInstances === false) next.set('expand', 'none');
+  else if (expandInstances && next.get('expand') === 'none') next.delete('expand');
   if (group === 'component') next.delete('group');
   else next.set('group', group);
   if (page > 1) next.set('page', String(page));

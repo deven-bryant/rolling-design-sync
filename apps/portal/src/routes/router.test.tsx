@@ -7,6 +7,7 @@ import { setSignInRedirect } from '../api/client';
 import { expectNoAxeViolations } from '../test/axe';
 import { FakeEventSource } from '../test/fake-event-source';
 import { ThemeProvider } from '../theme';
+import { scopePrompt } from './FileLayout';
 import { navItemOf } from './Layout';
 import { routes } from './router';
 import { readNodeFilters, readWorkState, writeNodeFilters, writeWorkState } from './urlState';
@@ -166,16 +167,58 @@ describe('routes', () => {
     expect(screen.getByText('1 Scope Viewed')).toBeDefined();
   });
 
-  it('selects one scope at a time through ?under=', async () => {
+  it('selects several scopes through ?under=, in the panel order', async () => {
     const router = renderAt(`/files/${FILE}/nodes?under=1:2&state=dirty&page=2`);
     const user = userEvent.setup();
     const table = within(await screen.findByRole('table', { name: 'Scopes' }));
     await user.click(table.getByRole('checkbox', { name: 'Select Settings' }));
-    await waitFor(() => expect(search(router).get('under')).toBe('3:4'));
+    await waitFor(() => expect(search(router).get('under')).toBe('3:4,1:2'));
     expect(search(router).get('page')).toBeNull();
     expect(search(router).get('state')).toBe('dirty');
-    expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeDefined();
-    expect((table.getByRole('checkbox', { name: 'Select Team View' }) as HTMLInputElement).checked).toBe(false);
+    expect(await screen.findByRole('heading', { level: 1, name: '2 scopes' })).toBeDefined();
+    expect(await screen.findByText('2 scopes · last synced 12 min ago · 293 nodes, 37 components')).toBeDefined();
+    expect(screen.queryByRole('link', { name: 'Open in Figma' })).toBeNull();
+    expect(screen.getByText('2 selected')).toBeDefined();
+    expect(screen.getByText('2 Scopes Viewed')).toBeDefined();
+    expect((table.getByRole('checkbox', { name: 'Select all scopes on this page' }) as HTMLInputElement).checked).toBe(true);
+
+    await user.click(table.getByRole('checkbox', { name: 'Select Settings' }));
+    await waitFor(() => expect(search(router).get('under')).toBe('1:2'));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Team View' })).toBeDefined();
+    expect(screen.getByRole('link', { name: 'Open in Figma' })).toBeDefined();
+    expect(screen.getByText('1 Scope Viewed')).toBeDefined();
+    const all = table.getByRole('checkbox', { name: 'Select all scopes on this page' }) as HTMLInputElement;
+    expect(all.indeterminate).toBe(true);
+
+    await user.click(table.getByRole('checkbox', { name: 'Select Team View' }));
+    expect(search(router).get('under')).toBe('1:2');
+    await user.click(all);
+    await waitFor(() => expect(search(router).get('under')).toBe('3:4,1:2'));
+  });
+
+  it('opens several scopes from a ?under= list and keeps single-id links', async () => {
+    renderAt(`/files/${FILE}/work?under=1:2,3:4&group=frame`);
+    expect(await screen.findByRole('heading', { level: 1, name: '2 scopes' })).toBeDefined();
+    const frame = screen.getByRole('radio', { name: 'By frame' }) as HTMLButtonElement;
+    expect(frame.disabled).toBe(true);
+    expect((screen.getByRole('radio', { name: 'By component' }) as HTMLButtonElement).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('radiogroup', { name: 'Group work items' }).getAttribute('aria-describedby')).toBeTruthy();
+    expect(screen.getByText('Select one scope to group by frame: frames need a single root.')).toBeDefined();
+    expect(screen.getByText('2 Scopes Viewed')).toBeDefined();
+    expect(screen.getByRole('switch', { name: 'Expand instances' })).toBeDefined();
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.map(([input]) => new URL(String(input), 'http://localhost')).some(u => u.pathname.endsWith('/work') && u.searchParams.get('under') === '1:2,3:4' && u.searchParams.get('group') === 'component')).toBe(true),
+    );
+  });
+
+  it('names every selected scope in the agent prompt', () => {
+    const text = scopePrompt({ fileKey: FILE, scopes: [{ nodeId: '3:4', name: 'Settings' }, { nodeId: '1:2', name: 'Team View' }] });
+    expect(text).toContain('Implement the Figma scopes "Settings" (3:4), "Team View" (1:2) in file AbC123');
+    expect(text).toContain('"under": "3:4,1:2"');
+    expect(text).toContain('--under 3:4,1:2');
+    const one = scopePrompt({ fileKey: FILE, scopes: [{ nodeId: '1:2', name: 'Team View' }] });
+    expect(one).toContain('Implement the Figma scope "Team View" (1:2) in file AbC123');
+    expect(one).toContain('--under 1:2 --expand instances');
   });
 
   it('searches scopes by name or node id', async () => {
@@ -331,11 +374,15 @@ describe('URL state', () => {
   });
 
   it('round-trips the work group and page', () => {
-    expect(readWorkState(new URLSearchParams())).toEqual({ group: 'component', page: 1 });
+    expect(readWorkState(new URLSearchParams())).toEqual({ group: 'component', page: 1, q: undefined, expandInstances: true });
     const params = writeWorkState(new URLSearchParams('under=1:2'), { group: 'frame', page: 2 });
-    expect(readWorkState(params)).toEqual({ group: 'frame', page: 2 });
+    expect(readWorkState(params)).toEqual({ group: 'frame', page: 2, q: undefined, expandInstances: true });
     expect(writeWorkState(params, { group: 'component', page: 1 }).toString()).toBe('under=1%3A2');
-    expect(readWorkState(new URLSearchParams('page=-4&group=x'))).toEqual({ group: 'component', page: 1 });
+    expect(readWorkState(new URLSearchParams('page=-4&group=x'))).toEqual({ group: 'component', page: 1, q: undefined, expandInstances: true });
+    const filtered = writeWorkState(params, { group: 'component', page: 1, q: 'button', expandInstances: false });
+    expect(readWorkState(filtered)).toEqual({ group: 'component', page: 1, q: 'button', expandInstances: false });
+    expect(writeWorkState(filtered, { group: 'component', page: 1, q: undefined, expandInstances: true }).toString()).toBe('under=1%3A2');
+    expect(readWorkState(new URLSearchParams('expand=instances')).expandInstances).toBe(true);
   });
 
   it('maps paths to sidebar items', () => {
