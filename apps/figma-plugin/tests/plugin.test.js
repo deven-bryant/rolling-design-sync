@@ -347,7 +347,7 @@ test('cancellation during scanning uploads nothing; cancellation before upload p
  await assert.rejects(P.sync(server.fetch,CFG,snapshot,{cancelled:()=>cancelled,progress:phase=>{if(phase==='Comparing')cancelled=true;}}),/cancelled/);
  same(server.calls.map(c=>c.method),['GET']);assert.equal(server.nodes.size,0);
  cancelled=false;server.calls.length=0;
- await assert.rejects(P.sync(server.fetch,CFG,snapshot,{batchChars:1000,cancelled:()=>cancelled,progress:phase=>{if(phase==='Uploading')cancelled=true;}}),/cancelled/);
+ await assert.rejects(P.sync(server.fetch,CFG,snapshot,{batchChars:1000,cancelled:()=>cancelled,progress:(phase,count)=>{if(phase==='Uploading'&&count>0)cancelled=true;}}),/cancelled/);
  assert.equal(server.calls.filter(c=>c.path===SYNC).length,1);
 });
 test('blocking property read failures prevent upload; component metadata warnings do not',async()=>{
@@ -528,6 +528,36 @@ test('existence checks are chunked to 1,000 ids per request',async()=>{
  const checks=server.calls.filter(c=>c.path===EXISTS);assert.equal(checks.length,2);
  assert.equal(checks[0].body.nodeIds.length,1000);assert.equal(checks[1].body.nodeIds.length,500);
  assert.equal(out.counts.unresolved,1500);assert.equal(out.warnings.length,1500);assert.equal(out.upserts.length,0);
+});
+
+test('main-component checks report ids checked of ids to check',async()=>{
+ const f=fixture();const lib=library(f);const server=mockServer();
+ const mains={};for(let n=1;n<=1500;n++)mains['M:'+n]={id:'M:'+n,key:'K'+n,name:'M'+n,remote:false};
+ const seen=[];await P.resolveMains(lib.api,server.fetch,CFG,{fileKey:'FILE',nodes:{},mains},{progress:(phase,count,total)=>seen.push([phase,count,total])});
+ same(seen.filter(p=>p[0]==='Checking main components'),[['Checking main components',1000,1500],['Checking main components',1500,1500]]);
+});
+test('uploading reports nodes sent of the planned upserts + deletions, from 0 to the total',async()=>{
+ const f=fixture();for(let n=3;n<=60;n++)f.root.children.push(node('1:'+n,'RECTANGLE',{parent:f.root}));
+ const server=mockServer();let snapshot=await P.capture(f.api,f.root,'FILE');
+ const uploads=async()=>{const seen=[];const out=await P.sync(server.fetch,CFG,snapshot,{batchChars:1000,progress:(phase,count,total)=>{if(phase==='Uploading')seen.push([count,total]);}});return {seen,out};};
+ let {seen,out}=await uploads();
+ assert.ok(out.batches>1);assert.equal(seen.length,out.batches+1);
+ same(seen[0],[0,60]);same(seen.at(-1),[60,60]);assert.ok(seen.every((p,i)=>p[1]===60&&(i===0||p[0]>seen[i-1][0])));
+ f.root.children.splice(10,5);f.child.width=120;snapshot=await P.capture(f.api,f.root,'FILE');
+ ({seen,out}=await uploads());assert.equal(out.deleted,5);
+ const total=out.changed+out.added+out.deleted;same(seen[0],[0,total]);same(seen.at(-1),[total,total]);
+ snapshot=await P.capture(f.api,f.root,'FILE');({seen,out}=await uploads());
+ same(seen,[]);assert.equal(out.batches,0);// nothing to upload -> no Uploading progress
+});
+test('runtime sends the plugin version and progress totals where known',async()=>{
+ const f=fixture();for(let n=3;n<=250;n++)f.root.children.push(node('1:'+n,'RECTANGLE',{parent:f.root}));
+ const server=mockServer();const r=runtime(f,server,SETTINGS);
+ same(r.messages.find(m=>m.type==='version'),{type:'version',version:PLUGIN_VERSION});
+ await r.send({type:'upload',fileUrl:FILE});
+ const progress=r.messages.filter(m=>m.type==='progress');
+ assert.ok(progress.filter(m=>m.phase==='Scanning').every(m=>!('total' in m)));
+ assert.ok(progress.filter(m=>m.phase==='Verifying scan').every(m=>m.total===250));
+ const up=progress.filter(m=>m.phase==='Uploading');same(up.at(-1),{type:'progress',phase:'Uploading',count:250,total:250});
 });
 
 /* ---- First-scan baseline ("code already matches this design"). ---- */
