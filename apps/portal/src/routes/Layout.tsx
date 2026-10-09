@@ -9,7 +9,7 @@ import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { MainLayout } from '../components/MainLayout';
 import { Menu } from '../components/Menu';
-import { Text, VisuallyHidden } from '../components/primitives';
+import { VisuallyHidden } from '../components/primitives';
 import { SidebarNav } from '../components/SidebarNav';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { useServerStatus, type ServerHealth } from '../features/connect';
@@ -126,11 +126,7 @@ function Sidebar() {
   const { theme, setTheme } = useTheme();
   return (
     <SidebarNav>
-      <SidebarNav.Header actions={<ThemeToggle theme={theme} onChange={setTheme} />}>
-        <Text as="p" size="xl" weight="semibold" className="px-md">
-          Rolling Design Sync
-        </Text>
-      </SidebarNav.Header>
+      <SidebarNav.Header title="Rolling Design Sync" actions={<ThemeToggle theme={theme} onChange={setTheme} />} />
       <SidebarNav.Section>
         <SidebarNav.Item href="/files" icon="home-line" current={current === 'files'}>
           Files

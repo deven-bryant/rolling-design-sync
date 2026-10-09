@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Menu } from '../Menu';
 import type { GalleryEntry, GalleryExample } from '../primitives';
 import { Text } from '../primitives';
+import { ThemeToggle, type ThemeToggleTheme } from '../ThemeToggle';
 import { SidebarNav } from './SidebarNav';
 
 const identity = (
@@ -14,6 +15,11 @@ const identity = (
     </Text>
   </span>
 );
+
+function HeaderToggle({ initial }: { initial: ThemeToggleTheme }) {
+  const [theme, setTheme] = useState(initial);
+  return <ThemeToggle theme={theme} onChange={setTheme} />;
+}
 
 const themes = [
   ['Light', undefined],
@@ -37,11 +43,10 @@ export default {
     ...bothThemes('Open=False, Style=Simple, Breakpoint=Desktop', mode => (
       <div className="flex h-240">
         <SidebarNav aria-label={`Main (${mode})`}>
-          <SidebarNav.Header actions={<Text size="xs" color="tertiary">Theme toggle slot</Text>}>
-            <Text as="p" size="xl" weight="semibold" className="px-md">
-              Rolling Design Sync
-            </Text>
-          </SidebarNav.Header>
+          <SidebarNav.Header
+            title="Rolling Design Sync"
+            actions={<HeaderToggle initial={mode === 'Dark' ? 'dark' : 'light'} />}
+          />
           <SidebarNav.Section>
             <SidebarNav.Item href="#files" icon="home-line">
               Files
