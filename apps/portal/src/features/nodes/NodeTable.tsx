@@ -72,7 +72,7 @@ interface FilterSelectProps<K extends string> {
 
 function FilterSelect<K extends string>({ label, value, options, onChange }: FilterSelectProps<K>) {
   return (
-    <Select aria-label={label} className="w-35" selectedKey={value} onSelectionChange={key => key != null && onChange(String(key) as K)}>
+    <Select aria-label={label} className="min-w-35 flex-1" selectedKey={value} onSelectionChange={key => key != null && onChange(String(key) as K)}>
       {options.map(o => (
         <SelectItem key={o.id} id={o.id} textValue={o.label}>
           <Prefixed prefix={label}>{o.label}</Prefixed>
@@ -85,10 +85,12 @@ function FilterSelect<K extends string>({ label, value, options, onChange }: Fil
 export interface NodeFiltersBarProps {
   filters: NodeFilters;
   onFiltersChange: (filters: NodeFilters) => void;
+  /** Shown beside the search field, e.g. the *1 Scope Viewed* badge. */
+  addon?: ReactNode;
 }
 
 /** The Node tree's filter row: search, state, change, category, type and *Expand instances*. */
-export function NodeFiltersBar({ filters, onFiltersChange }: NodeFiltersBarProps) {
+export function NodeFiltersBar({ filters, onFiltersChange, addon }: NodeFiltersBarProps) {
   const q = filters.q ?? '';
   const [draft, setDraft] = useState(q);
   const [committed, setCommitted] = useState(q);
@@ -106,8 +108,9 @@ export function NodeFiltersBar({ filters, onFiltersChange }: NodeFiltersBarProps
   const any = <K extends string>(value: K) => (value === 'any' ? undefined : value);
 
   return (
-    <div className="flex flex-wrap items-center gap-lg">
-      <Input
+    <div className="flex flex-col gap-lg">
+      <div className="flex flex-wrap items-center gap-lg">
+        <Input
         aria-label="Search nodes"
         className="w-70"
         type="search"
@@ -116,7 +119,10 @@ export function NodeFiltersBar({ filters, onFiltersChange }: NodeFiltersBarProps
         iconLeading={<Icon name="search-lg" size="md" />}
         value={draft}
         onChange={setDraft}
-      />
+        />
+        {addon}
+      </div>
+      <div className="flex flex-wrap items-center gap-lg">
       <FilterSelect label="State" value={filters.state ?? 'all'} options={STATE_OPTIONS} onChange={state => set({ state })} />
       <FilterSelect
         label="Change"
@@ -131,9 +137,10 @@ export function NodeFiltersBar({ filters, onFiltersChange }: NodeFiltersBarProps
         onChange={v => set({ category: any(v) as Category | undefined })}
       />
       <FilterSelect label="Type" value={filters.type ?? 'any'} options={TYPE_OPTIONS} onChange={v => set({ type: any(v) })} />
-      <Toggle isSelected={!!filters.expandInstances} onChange={on => set({ expandInstances: on || undefined })}>
+      <Toggle className="ml-auto shrink-0" isSelected={!!filters.expandInstances} onChange={on => set({ expandInstances: on || undefined })}>
         Expand instances
       </Toggle>
+      </div>
     </div>
   );
 }
@@ -421,6 +428,8 @@ export interface NodeTableProps {
   onOpenNode?: (nodeId: string) => void;
   /** The node whose drawer is open; its row shows selected. */
   selectedNodeId?: string | null;
+  /** Shown beside the search field. */
+  filtersAddon?: ReactNode;
   className?: string;
 }
 
@@ -428,7 +437,7 @@ export interface NodeTableProps {
  * Figma *Team View* content: the filter row and the Nodes table card — the scope's tree in
  * document order, expanded lazily, paged by cursor, and kept live from the file's event stream.
  */
-export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNode, selectedNodeId, className }: NodeTableProps) {
+export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNode, selectedNodeId, filtersAddon, className }: NodeTableProps) {
   const live = useNodeLiveUpdates(fileKey);
   const claimsQuery = useFileClaims(fileKey);
   const file = useFile(fileKey);
@@ -449,7 +458,7 @@ export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNo
 
   return (
     <div className={cx('flex flex-col gap-2xl', className)}>
-      <NodeFiltersBar filters={filters} onFiltersChange={onFiltersChange} />
+      <NodeFiltersBar filters={filters} onFiltersChange={onFiltersChange} addon={filtersAddon} />
       <Card className="overflow-hidden">
         <Card.Header
           title="Nodes"
