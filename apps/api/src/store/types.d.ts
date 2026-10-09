@@ -164,4 +164,10 @@ export interface Store {
   lastEventId(fileKey: string): Promise<number>;
   latestEventIds(fileKeys: string[]): Promise<{ fileKey: string; id: number }[]>;
   pruneEvents(before: string): Promise<number>;
+  /**
+   * Per tracked file (by fileKey), nodes cleared (`nodes.cleared` `data.count`, else `nodeIds.length`) in
+   * `[since, until)` and in `[from, since)`, and nodes newly dirtied (`sync.completed` `counts.dirty`) in `[since, until)`.
+   */
+  eventTrends(options: { fileKey?: string | null; from: string; since: string; until: string }):
+    Promise<{ fileKey: string; fileName: string | null; cleared: number; clearedPrevious: number; dirtied: number }[]>;
 }

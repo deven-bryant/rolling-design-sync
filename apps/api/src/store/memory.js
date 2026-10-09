@@ -14,6 +14,9 @@ const clone = v => (v === undefined ? undefined : structuredClone(v));
 // --- v3 read helpers (mirror store/postgres.js v3Where) ----------------------
 const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const v3State = n => (n.blockedAt ? 'blocked' : n.dirty ? 'dirty' : n.deletedAt ? null : 'clean');
+const isCount = v => Number.isInteger(v) && v >= 0;
+const eventClearedCount = data => (isCount(data && data.count) ? data.count : Array.isArray(data && data.nodeIds) ? data.nodeIds.length : 0);
+const eventDirtyCount = data => (data && data.counts && isCount(data.counts.dirty) ? data.counts.dirty : 0);
 const V3_SORT_KEY = { document: documentSortKey, path: n => n.path || '', name: n => n.name || '', updatedAt: n => new Date(n.updatedAt).toISOString() };
 const globRegex = g => new RegExp(`^${String(g).split('').map(c => (c === '*' ? '.*' : c === '?' ? '.' : c.replace(/[.+^${}()|[\]\\]/g, '\\$&'))).join('')}$`, 'is');
 
@@ -772,6 +775,26 @@ class MemoryStore {
   }
 
   /** Deletes events created before `before`; returns how many. */
+  async eventTrends({ fileKey = null, from, since, until }) {
+    const out = new Map([...this.files.values()]
+      .filter(f => fileKey === null || f.fileKey === fileKey)
+      .sort((a, b) => cmp(a.fileKey, b.fileKey))
+      .map(f => [f.fileKey, { fileKey: f.fileKey, fileName: f.name ?? null, cleared: 0, clearedPrevious: 0, dirtied: 0 }]));
+    const [lo, mid, hi] = [from, since, until].map(t => Date.parse(t));
+    for (const e of this.events.values()) {
+      const row = out.get(e.fileKey);
+      const at = Date.parse(e.createdAt);
+      if (!row || at < lo || at >= hi) continue;
+      if (e.type === 'nodes.cleared') {
+        const n = eventClearedCount(e.data);
+        if (at >= mid) row.cleared += n; else row.clearedPrevious += n;
+      } else if (e.type === 'sync.completed' && at >= mid) {
+        row.dirtied += eventDirtyCount(e.data);
+      }
+    }
+    return [...out.values()];
+  }
+
   async pruneEvents(before) {
     let n = 0;
     for (const [id, e] of this.events) {
