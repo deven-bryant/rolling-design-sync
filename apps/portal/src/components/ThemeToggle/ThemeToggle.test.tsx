@@ -13,20 +13,20 @@ const darkMode = () => screen.getByRole('switch', { name: 'Dark mode' }) as HTML
 describe.each(themes)('ThemeToggle (%s document theme)', documentTheme => {
   withDocumentTheme(documentTheme);
 
-  it('State=Light: shows the moon and an unchecked "Dark mode" switch', async () => {
+  it('State=Light: shows the sun and an unchecked "Dark mode" switch', async () => {
     const { container } = render(<ThemeToggle theme="light" onChange={() => {}} />);
     expect(darkMode().checked).toBe(false);
     expect(screen.getByRole('switch', { name: 'Dark mode', checked: false })).toBe(darkMode());
-    expect(icon(container)?.getAttribute('data-icon')).toBe('moon-01');
+    expect(icon(container)?.getAttribute('data-icon')).toBe('sun');
     expect(icon(container)?.getAttribute('aria-hidden')).toBe('true');
     await expectNoAxeViolations(container);
   });
 
-  it('State=Dark: shows the sun and a checked switch', async () => {
+  it('State=Dark: shows the moon and a checked switch', async () => {
     const { container } = render(<ThemeToggle theme="dark" onChange={() => {}} />);
     expect(darkMode().checked).toBe(true);
     expect(screen.getByRole('switch', { name: 'Dark mode', checked: true })).toBe(darkMode());
-    expect(icon(container)?.getAttribute('data-icon')).toBe('sun');
+    expect(icon(container)?.getAttribute('data-icon')).toBe('moon-01');
     await expectNoAxeViolations(container);
   });
 });
