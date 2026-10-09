@@ -4,6 +4,7 @@ import { useClaims } from '../api/hooks/useClaims';
 import { useNow } from '../api/hooks/useNow';
 import { Button } from '../components/Button';
 import { PageHeader } from '../components/PageHeader';
+import { VisuallyHidden } from '../components/primitives';
 import { ClaimsPanel, EventFeed } from '../features/activity';
 import { AgentSetup, agentSetupSnippets, StatusMetrics, TokensTable, useServerStatus } from '../features/connect';
 import { FilesMetrics, FilesTable, formatCount, plural, useFiles } from '../features/files';
@@ -46,6 +47,7 @@ export function FilesPage() {
           </Button>
         </PageHeader.Actions>
       </PageHeader>
+      <VisuallyHidden as="h2">Summary</VisuallyHidden>
       <FilesMetrics />
       <FilesTable onOpenFile={fileKey => void navigate(filePath(fileKey))} onOpenConnect={() => void navigate('/connect')} />
     </>

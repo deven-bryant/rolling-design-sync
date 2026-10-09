@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setSignInRedirect } from '../api/client';
+import { expectNoAxeViolations } from '../test/axe';
 import { FakeEventSource } from '../test/fake-event-source';
 import { ThemeProvider } from '../theme';
 import { navItemOf } from './Layout';
@@ -71,14 +72,14 @@ function api(method: string, path: string): Response {
 
 function renderAt(url: string) {
   const router = createMemoryRouter(routes, { initialEntries: [url] });
-  render(
+  const view = render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <ThemeProvider>
         <RouterProvider router={router} />
       </ThemeProvider>
     </QueryClientProvider>,
   );
-  return router;
+  return Object.assign(router, { container: view.container });
 }
 
 const search = (router: ReturnType<typeof renderAt>) => new URLSearchParams(router.state.location.search);
@@ -117,6 +118,28 @@ describe('routes', () => {
     expect(await screen.findByRole('heading', { level: 1, name: title })).toBeDefined();
     expect(screen.getByText('Rolling Design Sync')).toBeDefined();
     expect(screen.getByRole('main').className.split(' ')).toEqual(expect.arrayContaining(['gap-4xl', 'px-6xl', 'py-3xl']));
+  });
+
+  it.each(
+    (['light', 'dark'] as const).flatMap(theme =>
+      (
+        [
+        ['/files', 'Files'],
+        [`/files/${FILE}/nodes?under=1:2`, 'Team View'],
+        [`/files/${FILE}/work?under=1:2`, 'Team View'],
+        ['/activity', 'Activity'],
+        ['/claims', 'Claims'],
+        ['/connect', 'Connect'],
+        ] as const
+      ).map(([url, title]) => [url, theme, title] as const),
+    ),
+  )('%s has no axe violations in the %s theme', async (url, theme, title) => {
+    window.localStorage.setItem('rds-theme', theme);
+    const { container } = renderAt(url);
+    expect(await screen.findByRole('heading', { level: 1, name: title })).toBeDefined();
+    expect(document.documentElement.dataset.theme).toBe(theme);
+    if (url.includes('/files/')) await screen.findByRole('table', { name: 'Scopes' });
+    await expectNoAxeViolations(container);
   });
 
   it('composes each screen from its features', async () => {
