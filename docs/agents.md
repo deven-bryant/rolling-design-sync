@@ -314,8 +314,8 @@ node scripts/rds-agent.js nodes ls "$LINK" --claimed mine --worker agent-a --fie
 - `list_claims` / `node scripts/rds-agent.js claims ls --file-key <fileKey>`
   lists unexpired claims, soonest expiry first, with worker, label, expiry,
   node count and up to 500 still-leased node IDs per claim. Call it before
-  claiming to see who holds what; the portal's Claims tab and Agents page show
-  the same leases, live.
+  claiming to see who holds what; the portal's Claims page shows the same
+  leases, live.
 - `list_nodes` with `claimed=false` shows what nobody holds; `claimed=mine`
   needs `worker` (the CLI's `nodes ls` doesn't fill it from `RDS_WORKER`).
 

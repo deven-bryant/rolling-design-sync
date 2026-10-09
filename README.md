@@ -76,7 +76,7 @@ nodes and release claims. Everything updates live as agents claim and clear.
 | | |
 |---|---|
 | ![Work items](docs/images/portal-work-items.png) **Work items** — changes grouped by component, with progress, so the shared pieces get built first. | ![Change List](docs/images/portal-node-changes.png) **Change List** — each changed property, from what was built to what the design says now, design tokens included. |
-| ![Change History](docs/images/portal-node-history.png) **Change History** — every claim, clear and block on a node, with the commit that built it. | ![Activity and agents](docs/images/portal-activity.png) **Activity & agents** — who holds what right now, and everything that happened in the file. |
+| ![Change History](docs/images/portal-node-history.png) **Change History** — every claim, clear and block on a node, with the commit that built it. | ![Activity](docs/images/portal-activity.png) **Activity** — everything that happened in your files, live; **Claims** shows who holds what right now. |
 | ![Files](docs/images/portal-files.png) **Files** — every tracked file with what's left to build. | ![Connect](docs/images/portal-connect.png) **Connect** — copy-paste setup for Claude Code, Cursor, Devin and the CLI. |
 
 The screenshots are generated from a seeded demo with

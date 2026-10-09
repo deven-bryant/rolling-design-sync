@@ -11,5 +11,5 @@ export const figmaDiffRow = {
     'Show raw#21:4': 'showRaw',
   },
   layers: { Category: 'category (Badge, Color=Gray blue)' },
-  defaults: { property: 'fills', category: 'color', built: 'bg-primary', now: 'bg-secondary', raw: '#FFFFFF → #F9FAFB', showRaw: true },
+  defaults: { property: 'fills', category: 'color', built: 'bg-primary', now: 'bg-secondary', raw: '#FFFFFF → #F7FBFC', showRaw: true },
 } as const;
