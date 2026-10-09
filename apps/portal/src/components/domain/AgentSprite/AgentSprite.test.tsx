@@ -1,3 +1,4 @@
+import gallery from './AgentSprite.gallery';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../../test/axe';
@@ -100,5 +101,15 @@ describe('AgentSprite', () => {
     act(() => vi.advanceTimersByTime(0));
     expect(onAnimationEnd).toHaveBeenCalledExactlyOnceWith('poof');
     expect(classesOf(screen.getByRole('img'))).toContain('motion-reduce:opacity-0');
+  });
+});
+
+describe('AgentSprite under the dark theme', () => {
+  it('renders its gallery examples with no axe violations', async () => {
+    const dark = gallery.examples.filter(e => e.figma.endsWith('Color Mode=Dark'));
+    expect(dark.length).toBeGreaterThan(0);
+    const { container } = render(<div>{dark.map(e => <section key={e.figma} aria-label={e.figma}>{e.render()}</section>)}</div>);
+    expect(container.querySelectorAll('[data-theme="dark"]')).toHaveLength(dark.length);
+    await expectNoAxeViolations(container);
   });
 });
