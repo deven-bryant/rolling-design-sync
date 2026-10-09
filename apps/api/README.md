@@ -180,7 +180,9 @@ Shapes:
 
 Listing filters (AND across parameters, comma-separated values OR'd within
 one): `state` (`dirty` default, `clean`, `blocked`, `all`), `under` (node id;
-subtree including the node), `depth` (with `under`), `type`, `changeType`,
+subtree including the node; or up to 50 comma-separated ids: the union of
+their subtrees, each node once, roots in the order given), `depth` (with
+`under`; levels below each root), `type`, `changeType`,
 `changed` (property names, trailing `*` for a prefix: `padding*`), `category`,
 `component` (instances of a main component), `instance` (`true`: instances
 only, `false`: none), `name` (case-insensitive, `*`
@@ -225,9 +227,10 @@ every listing filter (default `state=dirty`) and aggregate in the store (SQL
 
 - Summary: `byState` `{dirty, clean, blocked}`, `byChangeType` `{added,
   modified, deleted}`, `byCategory` (a node counts once per category it has),
-  `byType` (node type → count). With `under` (or a `?url=` link),
+  `byType` (node type → count). With one `under` (or a `?url=` link),
   `byFrame: [{nodeId, name, count}]` groups by the ancestor one level below
-  `under`, in document order; the `under` node itself is in none.
+  `under`, in document order; the `under` node itself is in none. With
+  several `under` ids there is no `byFrame`.
 - Work items: `group=component` (default) keys each node by its nearest
   component ancestor-or-self, with `set: { id, key, name }` when known.
   `group=set` merges variants into one item named like their Figma component
@@ -238,8 +241,8 @@ every listing filter (default `state=dirty`) and aggregate in the store (SQL
   components and unknown sets keep component grouping.
   This uses the nearest `COMPONENT` / `COMPONENT_SET` ancestor-or-self;
   `group=frame` groups by the
-  ancestor one level below `under` — required, else `400 invalid_parameter`
-  with a hint. Nodes without a key form one `key: null` item, listed last.
+  ancestor one level below `under` — exactly one `under` is required, else
+  `400 invalid_parameter` with a hint (several: pass one, or group by component). Nodes without a key form one `key: null` item, listed last.
   `item` is `{key, name, type, nodeCount, categories, changedProps, changes?,
   placements?, nodeIds, more, progress?}`: `changes` is `{nodeId: diff}` for the listed
   `nodeIds` per `changes=` (absent with `names`); `placements` (component grouping only) counts
@@ -271,7 +274,8 @@ events JSON page take `format` (`outline`: the listing and work items only):
   section 5) — `text/plain`, an indented tree with one line per node:
   `Name (TYPE) · modified (3: fills, paddingLeft, …)` (`clean` / `added` /
   `deleted`, `· blocked`; an instance shows `(INSTANCE → <mainComponentId>
-  <main name>)`). Two spaces per level below `under`; a node whose ancestors
+  <main name>)`). Two spaces per level below `under` (several `under` ids: each root's tree
+  in the order given, each root at the left margin); a node whose ancestors
   the filters leave out is indented under its nearest shown ancestor (no
   placeholder lines). With `expand=instances` a component's subtree is nested
   (`↳ Name (COMPONENT)`) under the first instance that reached it, and other

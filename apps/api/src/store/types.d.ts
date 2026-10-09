@@ -71,7 +71,8 @@ export interface StoredEvent { id: number; fileKey: string; type: string; actor:
 /** A v3 listing filter (v3/read.js `buildFilter`, `states` expanded); `regions` comes from `expand=instances`. */
 export interface V3Filter {
   states: string[];
-  under: string | null;
+  /** Subtree roots (stored node ids, in order): their union; null = the whole file. */
+  under: string[] | null;
   depth: number | null;
   types: string[];
   changeTypes: string[];

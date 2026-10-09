@@ -1003,6 +1003,66 @@ test('v3 expand=instances: one call returns everything a synced screen uses, on 
   assertProblem(await files(fileKey, '/nodes', { query: { under: '2:1', expandDepth: 2 } }), 400, 'invalid_parameter');
 });
 
+test('v3 under with several subtree roots: the union on the listing, outline, summary, work and claims; expand from every root', async () => {
+  const fileKey = newFileKey();
+  // Two screens place Button; Screen B also places Icon.
+  const rows = [
+    upsert(ROOT, 'SECTION', 'Page', { width: 1000 }),
+    upsert('2:1', 'FRAME', 'Screen A', { paddingLeft: 16 }, [ROOT]),
+    { ...upsert('5:1', 'INSTANCE', 'Button', { x: 0 }, [ROOT, '2:1']), isInstance: true, mainComponentId: '10:1' },
+    upsert('2:2', 'FRAME', 'Screen B', { paddingLeft: 8 }, [ROOT]),
+    { ...upsert('5:2', 'INSTANCE', 'Button', { x: 40 }, [ROOT, '2:2']), isInstance: true, mainComponentId: '10:1' },
+    { ...upsert('5:3', 'INSTANCE', 'Icon', { size: 16 }, [ROOT, '2:2']), isInstance: true, mainComponentId: '20:1' },
+    upsert('10:1', 'COMPONENT', 'Button', { width: 120 }),
+    upsert('20:1', 'COMPONENT', 'Icon', { size: 16 }),
+  ];
+  await batch(fileKey, { rootNodeId: ROOT, upserts: rows });
+
+  const both = ['2:2', '5:2', '5:3', '2:1', '5:1'];
+  assert.deepEqual(await listIds(fileKey, { under: '2:2,2:1' }), both, 'roots in the order given, document order within each');
+  assert.deepEqual(await listIds(fileKey, { under: '2-1, 2:2' }), ['2:1', '5:1', '2:2', '5:2', '5:3']);
+  assert.deepEqual(await listIds(fileKey, { q: 'under:2:2,2:1' }), both);
+  assert.deepEqual(await listIds(fileKey, { under: `${ROOT},2:1`, depth: 1 }), [ROOT, '2:1', '2:2', '5:1'], 'depth below each root; overlaps once');
+  const paged = [];
+  let cursor;
+  do {
+    const p = await list(fileKey, { under: '2:2,2:1', fields: 'nodeId', limit: 2, ...(cursor ? { cursor } : {}) });
+    assert.equal(p.total, both.length);
+    paged.push(...p.nodes.map(n => n.nodeId));
+    cursor = p.nextCursor;
+  } while (cursor);
+  assert.deepEqual(paged, both);
+
+  const outline = await files(fileKey, '/nodes', { query: { under: '2:2,2:1', format: 'outline' } });
+  assert.equal(outline.status, 200, JSON.stringify(outline.body));
+  assert.deepEqual(outline.body.raw.split('\n').slice(0, -1), [
+    'Screen B (FRAME) · added',
+    '  Button (INSTANCE → 10:1 Button) · added',
+    '  Icon (INSTANCE → 20:1 Icon) · added',
+    'Screen A (FRAME) · added',
+    '  Button (INSTANCE → 10:1 Button) · added',
+  ]);
+
+  const unknown = assertProblem(await files(fileKey, '/nodes', { query: { under: '2:1,77:77' } }), 404, 'node_not_found');
+  assert.match(unknown.detail, /77:77/);
+  assertProblem(await files(fileKey, '/nodes', { query: { under: Array(51).fill('2:1').join(',') } }), 400, 'invalid_parameter');
+
+  const summary = await ok(files(fileKey, '/summary', { query: { under: '2:1,2:2' } }));
+  assert.equal(summary.total, both.length);
+  assert.equal(summary.byFrame, undefined);
+  const frame = assertProblem(await files(fileKey, '/work', { query: { group: 'frame', under: '2:1,2:2' } }), 400, 'invalid_parameter');
+  assert.match(frame.hint, /one under/);
+  const work = await ok(files(fileKey, '/work', { query: { under: '2:1,2:2', changes: 'names' } }));
+  assert.equal(work.items.reduce((sum, i) => sum + i.nodeCount, 0), both.length);
+
+  const expanded = await list(fileKey, { under: '2:1,2:2', expand: 'instances', fields: 'nodeId' });
+  assert.deepEqual(expanded.nodes.map(n => n.nodeId), ['2:1', '5:1', '2:2', '5:2', '5:3', '10:1', '20:1'], 'each reachable component once');
+  assert.equal(expanded.expansion.components, 2);
+
+  const leased = await ok(call('POST', `/v3/files/${fileKey}/claims`, { body: { worker: 'e2e-multi', ttlSeconds: 600, filter: { under: '2:2,2:1', type: 'INSTANCE' } } }));
+  assert.deepEqual(leased.nodes.map(n => n.nodeId), ['5:2', '5:3', '5:1']);
+});
+
 test('v3 format=outline: a synced screen as an indented tree, components nested under their first instance', async () => {
   const fileKey = newFileKey();
   const rows = [
