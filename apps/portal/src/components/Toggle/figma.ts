@@ -25,6 +25,12 @@ export const figmaToggle = {
       name: 'Type=Default, Pressed=False, Size=md, Text=False, State=Default',
       code: '<Toggle size="md" aria-label="…" />',
     },
+    {
+      nodeId: '111:7868',
+      key: 'd07607591a06576de05c8018955cc88e21605565',
+      name: 'Type=Default, Pressed=True, Size=md, Text=False, State=Default',
+      code: '<Toggle size="md" isSelected aria-label="…" />',
+    },
   ],
 } as const;
 
@@ -44,6 +50,12 @@ export const figmaToggleBase = {
       key: '65772855be5be4954cc34163dfa630dcfb120bbe',
       name: 'Type=Default, Pressed=False, Size=md, State=Default',
       code: '<Toggle.Base size="md" />',
+    },
+    {
+      nodeId: '111:7785',
+      key: 'e5ad6d04c21d1eacc443daabf7bae7f0a2e77bb9',
+      name: 'Type=Default, Pressed=True, Size=md, State=Default',
+      code: '<Toggle.Base size="md" pressed />',
     },
   ],
 } as const;

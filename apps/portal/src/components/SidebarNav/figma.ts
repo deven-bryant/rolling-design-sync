@@ -3,6 +3,24 @@ export const figma = {
   component: 'SidebarNav',
   sets: [
     {
+      name: 'Portal Sidebar Navigation',
+      nodeId: '122:49271',
+      variants: [
+        {
+          name: 'Color Mode=Default',
+          nodeId: '120:36024',
+          key: '848f7b35b6f3241055d3dc24b060ee0a6d69a8e8',
+          props: { header: '`SidebarNav.Header` `title` + `ThemeToggle` in `actions` (light theme)' },
+        },
+        {
+          name: 'Color Mode=Dark',
+          nodeId: '122:49272',
+          key: '5c15b19e2dcfa892810d8d09f77f0392245c18c4',
+          props: { header: '`SidebarNav.Header` `title` + `ThemeToggle` in `actions` (dark theme)' },
+        },
+      ],
+    },
+    {
       name: 'Sidebar navigation',
       nodeId: '111:17495',
       variants: [
@@ -74,7 +92,8 @@ export const figma = {
     Dot: 'off in every instance; not implemented',
     'X close button': '`SidebarNav.FeatureCard` `onDismiss`',
     'Progress bar': 'not built',
-    'Header / Color Mode Toggle': '`SidebarNav.Header` `actions` slot, right of the product name',
+    'Header / Logo': '`SidebarNav.Header` `title`: the product name (text, on one line)',
+    'Header / Color Mode Toggle': '`SidebarNav.Header` `actions` slot, right of the product name, 12px from the edge',
     'Buttons/Button utility': '`SidebarNav.Account` menu trigger, pinned top-right',
     State: 'hover / focus-visible styles',
     'Color Mode': 'the theme (`data-theme`), not a prop',

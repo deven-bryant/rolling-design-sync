@@ -105,6 +105,15 @@ describe('Toggle', () => {
     expect(classesOf(track(container)?.firstElementChild)).toContain('translate-x-5');
   });
 
+  it('renders Pressed=True, Size=md, Text=False as a checked md switch on the brand track', () => {
+    const { container } = render(<Toggle size="md" isSelected aria-label="Dark mode" />);
+    expect((screen.getByRole('switch', { name: 'Dark mode' }) as HTMLInputElement).checked).toBe(true);
+    expect(classesOf(track(container))).toEqual(expect.arrayContaining(['h-6', 'w-11', 'p-xxs', 'bg-brand-solid']));
+    expect(classesOf(track(container)?.firstElementChild)).toEqual(
+      expect.arrayContaining(['size-5', 'bg-fg-white', 'translate-x-5']),
+    );
+  });
+
   it('forwards ref and className to the label root', () => {
     const ref = createRef<HTMLLabelElement>();
     render(<Toggle ref={ref} className="w-full" aria-label="Live" />);

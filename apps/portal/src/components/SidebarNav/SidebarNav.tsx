@@ -39,16 +39,30 @@ export interface SidebarNavSlotProps extends HTMLAttributes<HTMLDivElement> {
   ref?: Ref<HTMLDivElement>;
 }
 
-export interface SidebarNavHeaderProps extends SidebarNavSlotProps {
-  /** Controls on the right of the product name, e.g. the theme toggle. */
+export interface SidebarNavHeaderProps extends Omit<SidebarNavSlotProps, 'title'> {
+  /** Figma `Logo`: the product name, on one line beside `actions`. */
+  title?: ReactNode;
+  /** Figma `Color Mode Toggle`: controls on the right of the product name, e.g. the theme toggle. */
   actions?: ReactNode;
 }
 
-function SidebarNavHeader({ actions, children, className, ref, ...rest }: SidebarNavHeaderProps) {
+/** Figma `Header`: a 32px row with the product name and, inset 12px from the edge, the actions; then `children` (e.g. search). */
+function SidebarNavHeader({ title, actions, children, className, ref, ...rest }: SidebarNavHeaderProps) {
   return (
-    <div ref={ref} className={cx('flex items-start gap-lg px-2xl', className)} {...rest}>
-      <div className="flex min-w-0 flex-1 flex-col gap-2xl">{children}</div>
-      {actions != null && <div className="flex h-8 shrink-0 items-center gap-xs">{actions}</div>}
+    <div ref={ref} className={cx('flex flex-col gap-2xl px-2xl', className)} {...rest}>
+      {(title != null || actions != null) && (
+        <div className="-mr-md flex h-8 items-center gap-lg">
+          <div className="flex min-w-0 flex-1 items-center">
+            {title != null && (
+              <Text as="p" size="lg" weight="semibold" color="primary" truncate>
+                {title}
+              </Text>
+            )}
+          </div>
+          {actions != null && <div className="flex shrink-0 items-center gap-xs">{actions}</div>}
+        </div>
+      )}
+      {children}
     </div>
   );
 }

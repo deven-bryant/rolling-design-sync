@@ -81,26 +81,40 @@ describe('SidebarNav', () => {
     expect(screen.queryByRole('button', { name: 'Projects' })).toBeNull();
   });
 
-  it('puts header actions right of the product name', async () => {
+  it('puts the product name and, inset 12px from the edge, the actions on one 32px row', async () => {
     const user = userEvent.setup();
     const onPress = vi.fn();
     render(
       <SidebarNav>
-        <SidebarNav.Header data-testid="header" actions={<button type="button" onClick={onPress}>Toggle theme</button>}>
-          <span>Rolling Design Sync</span>
+        <SidebarNav.Header
+          data-testid="header"
+          title="Rolling Design Sync"
+          actions={
+            <button type="button" onClick={onPress}>
+              Toggle theme
+            </button>
+          }
+        >
+          <span>Search</span>
         </SidebarNav.Header>
       </SidebarNav>,
     );
     const header = screen.getByTestId('header');
-    expect(header.className).toContain('flex items-start gap-lg px-2xl');
-    const [name, actions] = Array.from(header.children);
-    expect(name?.textContent).toBe('Rolling Design Sync');
-    expect(actions?.className).toContain('h-8 shrink-0 items-center');
+    expect(header.className.split(' ')).toEqual(expect.arrayContaining(['flex', 'flex-col', 'gap-2xl', 'px-2xl']));
+    const [row, search] = Array.from(header.children);
+    expect(row?.className.split(' ')).toEqual(expect.arrayContaining(['-mr-md', 'h-8', 'items-center', 'gap-lg']));
+    expect(search?.textContent).toBe('Search');
+    const [name, actions] = Array.from(row?.children ?? []);
+    const title = screen.getByText('Rolling Design Sync');
+    expect(name?.contains(title)).toBe(true);
+    expect(title.tagName).toBe('P');
+    expect(title.className.split(' ')).toEqual(expect.arrayContaining(['text-lg', 'font-semibold', 'truncate']));
+    expect(actions?.className.split(' ')).toEqual(expect.arrayContaining(['shrink-0', 'items-center']));
     await user.click(screen.getByRole('button', { name: 'Toggle theme' }));
     expect(onPress).toHaveBeenCalledOnce();
   });
 
-  it('renders no actions wrapper without actions', () => {
+  it('renders no name row without a title or actions', () => {
     render(
       <SidebarNav>
         <SidebarNav.Header data-testid="header">
@@ -109,6 +123,7 @@ describe('SidebarNav', () => {
       </SidebarNav>,
     );
     expect(screen.getByTestId('header').children).toHaveLength(1);
+    expect(screen.getByTestId('header').textContent).toBe('Logo');
   });
 
   it('renders the featured card and dismisses it', async () => {
