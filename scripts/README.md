@@ -152,6 +152,7 @@ Generated from the API's OpenAPI document (API 3.0.0) — one command per `x-rds
 | [`block`](#rds-agent-block) | `POST /v3/files/{fileKey}/nodes/{nodeId}/block` | Block a node |
 | [`unblock`](#rds-agent-unblock) | `POST /v3/files/{fileKey}/nodes/{nodeId}/unblock` | Unblock a node |
 | [`summary`](#rds-agent-summary) | `GET /v3/files/{fileKey}/summary` | Summarize changes |
+| [`trends`](#rds-agent-trends) | `GET /v3/insights/trends` | Weekly trends |
 | [`work`](#rds-agent-work) | `GET /v3/files/{fileKey}/work` | List work items |
 
 ### rds-agent files ls
@@ -389,6 +390,17 @@ Counts of the nodes the `list_nodes` filters match (default: dirty) by state, ch
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--expand` | instances | query `expand` | `instances`: also include the subtree of every main component the scope's instances use (the scope is `under`, or the whole file) — transitively through instances inside those components, breadth-first, each component once. Use it for "everything this screen uses" / "which components do I build for this screen". Other filters apply after expansion; `depth` cannot be combined with it. |
 | `--expand-depth` | integer | query `expandDepth` | With `expand=instances`: at most this many instance → main hops (default 10, max 20; 1 = only the components the scope uses directly). |
+
+### rds-agent trends
+
+`GET /v3/insights/trends`
+
+How fast the backlog moves: nodes cleared and nodes newly dirtied by syncs in the last `windowDays` days (default 7) and the change in clears vs the window before, for the whole server (`total`) and each tracked file (`files`); `fileKey` narrows both to one file. Counts come from the event log, so `complete` is false when RDS_EVENT_RETENTION_DAYS (`retentionDays`) keeps less than two windows — `clearedPrevious` and `clearedChangePct` may then undercount. Returns no nodes.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--window-days` | integer | query `windowDays` | Default `7`. Window length in days, 1–14 (default 7). |
+| `--file-key` | string | query `fileKey` | Only this tracked file (file_not_found otherwise). |
 
 ### rds-agent work
 

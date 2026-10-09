@@ -219,6 +219,10 @@ test('every tool round-trips: inputs → HTTP request → JSON result', async t 
   const summary = await same('summarize', { state: 'all' }, `${file}/summary`, { state: 'all' });
   assert.ok(summary);
   await same('list_work_items', { limit: 10 }, `${file}/work`, { limit: '10' });
+  const trends = await expectCall('get_trends', { windowDays: 7 }, { method: 'GET', path: '/v3/insights/trends', query: { windowDays: '7' } });
+  const { from, to, ...rest } = await get('/v3/insights/trends', { windowDays: '7' });
+  assert.deepEqual({ ...trends, from: undefined, to: undefined }, { ...rest, from: undefined, to: undefined });
+  assert.deepEqual(trends.files.map(f => f.fileKey), [FILE_KEY]);
 
   const claim = await expectCall('claim_nodes', { worker: 'agent-a', nodeIds: [CHILD], ttlSeconds: 30 },
     { method: 'POST', path: `${file}/claims`, body: { worker: 'agent-a', nodeIds: [CHILD], ttlSeconds: 30 } });
