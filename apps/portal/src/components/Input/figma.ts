@@ -6,7 +6,7 @@
  */
 export const figmaInput = {
   component: 'Input',
-  setId: '9:9810',
+  setId: '111:15133',
   properties: {
     Size: 'size',
     'Label#3285:0': 'label',
@@ -18,8 +18,8 @@ export const figmaInput = {
   },
   variants: [
     {
-      nodeId: '9:9812',
-      key: '7ce4295c8cc023265ec8e4996ff5ba1bab03a793',
+      nodeId: '111:15135',
+      key: 'de8523a0c99dd13856beab4f9d0b1b5a6860499f',
       name: 'Size=sm, Type=Default, Destructive=False, State=Placeholder',
       code: '<Input size="sm" label="…" required hint="…" tooltip="…" iconLeading={<Icon name="mail-01" size="md" />} placeholder="…" />',
     },
@@ -28,12 +28,12 @@ export const figmaInput = {
 
 export const figmaHelpIcon = {
   component: 'Input.HelpIcon',
-  setId: '9:208',
+  setId: '111:5965',
   properties: { Tooltip: 'label (accessible name)' },
   variants: [
     {
-      nodeId: '9:209',
-      key: '145d361558287ab6cec9c1711d1291a0e210fd9b',
+      nodeId: '111:5966',
+      key: '7640e8e4c064e750c9917a06d3ca48a43927eb15',
       name: 'Open=False, Supporting text=False, Tooltip=Top no arrow',
       code: '<Input.HelpIcon label="…" />',
     },

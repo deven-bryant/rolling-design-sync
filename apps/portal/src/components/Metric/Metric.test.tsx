@@ -3,6 +3,8 @@ import { createRef } from 'react';
 import { describe, expect, it } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Metric, MetricChange } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Metric.gallery';
 
 describe('Metric', () => {
   it('Type=Simple: heading, value, change and menu', async () => {
@@ -48,3 +50,5 @@ describe('Metric', () => {
     await expectNoAxeViolations(container);
   });
 });
+
+describeGalleryInThemes(gallery);

@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Menu } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Menu.gallery';
 
 describe('Menu', () => {
   it('renders the dots-vertical icon trigger closed', async () => {
@@ -118,3 +120,5 @@ describe('Menu', () => {
     expect(screen.getByRole('menuitem').className).toContain('mx-xs');
   });
 });
+
+describeGalleryInThemes(gallery);

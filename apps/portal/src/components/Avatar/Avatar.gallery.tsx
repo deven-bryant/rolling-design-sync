@@ -1,4 +1,4 @@
-import type { GalleryEntry } from '../primitives';
+import { inBothThemes, type GalleryEntry } from '../primitives';
 import { Avatar, AvatarLabelGroup } from '.';
 
 const photo =
@@ -7,7 +7,7 @@ const photo =
 
 export default {
   component: 'Avatar',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Size=sm, Placeholder=False, Text=True, Status icon=Online indicator',
       render: () => <Avatar size="sm" alt="Olivia Rhye" initials="OR" status="online" />,
@@ -42,5 +42,5 @@ export default {
       figma: 'Avatar label group · Size=md, Status icon=Online indicator',
       render: () => <AvatarLabelGroup src={photo} status="online" label="Olivia Rhye" supportingText="olivia@untitledui.com" />,
     },
-  ],
+  ]),
 } satisfies GalleryEntry;

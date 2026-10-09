@@ -3,8 +3,8 @@ export const figmaTooltip = {
   componentSet: 'Tooltip',
   variants: {
     'Supporting text=False, Arrow=None': {
-      nodeId: '9:62',
-      key: '4ae2bd712adf9a616898e58916b9d1e73aaf7a02',
+      nodeId: '111:5822',
+      key: 'eed992d1aec910d972dc49e0b9e77eaccd589080',
       props: {},
     },
   },

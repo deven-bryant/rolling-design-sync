@@ -1,13 +1,13 @@
 import { Input as AriaInput, TextField } from 'react-aria-components';
 import { PORTAL_DESIGN_FILE } from '../../figma-file';
-import { Icon, type GalleryEntry } from '../primitives';
+import { inBothThemes, Icon, type GalleryEntry } from '../primitives';
 import { HelpIcon } from './HelpIcon';
 import { Input } from './Input';
 import { inputFrameStyles, inputTextClass } from './InputParts';
 
 export default {
   component: 'Input',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Size=sm, Type=Default, Destructive=False, State=Placeholder',
       render: () => (
@@ -47,5 +47,5 @@ export default {
       ),
     },
     { figma: 'Help icon: Open=False, Supporting text=False, Tooltip=Top no arrow', render: () => <HelpIcon label="Help" /> },
-  ],
+  ]),
 } satisfies GalleryEntry;

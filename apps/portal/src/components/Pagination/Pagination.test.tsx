@@ -4,6 +4,8 @@ import { createRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { pageSlots, Pagination } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Pagination.gallery';
 
 describe('pageSlots', () => {
   it.each([
@@ -82,3 +84,5 @@ describe('Pagination', () => {
     expect(nav.getAttribute('data-testid')).toBe('p');
   });
 });
+
+describeGalleryInThemes(gallery);

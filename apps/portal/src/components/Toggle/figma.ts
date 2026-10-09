@@ -5,7 +5,7 @@
  */
 export const figmaToggle = {
   component: 'Toggle',
-  setId: '9:3128',
+  setId: '111:7851',
   properties: {
     Pressed: 'isSelected',
     Size: 'size',
@@ -14,24 +14,36 @@ export const figmaToggle = {
   },
   variants: [
     {
-      nodeId: '9:3151',
-      key: '41b87d56b9c1ee3d078b9966034b81c71b8ea051',
+      nodeId: '111:7874',
+      key: 'c754faee13716335d5a6d57ca29fd82891041470',
       name: 'Type=Default, Pressed=True, Size=sm, Text=True, State=Default',
       code: '<Toggle size="sm" isSelected supportingText="…">…</Toggle>',
+    },
+    {
+      nodeId: '111:7900',
+      key: '9cddb275cd2959ae35f115c3fef8b58083e10447',
+      name: 'Type=Default, Pressed=False, Size=md, Text=False, State=Default',
+      code: '<Toggle size="md" aria-label="…" />',
     },
   ],
 } as const;
 
 export const figmaToggleBase = {
   component: 'Toggle.Base',
-  setId: '9:3053',
+  setId: '111:7776',
   properties: { Pressed: 'pressed', Size: 'size' },
   variants: [
     {
-      nodeId: '9:3064',
-      key: '17fddff5e6fcd33be7872cf76e5f83ce71918d4d',
+      nodeId: '111:7787',
+      key: '1a8e25f0cac99e1e47c26f15c474d81accb19e06',
       name: 'Type=Default, Pressed=True, Size=sm, State=Default',
       code: '<Toggle.Base size="sm" pressed />',
+    },
+    {
+      nodeId: '111:7801',
+      key: '65772855be5be4954cc34163dfa630dcfb120bbe',
+      name: 'Type=Default, Pressed=False, Size=md, State=Default',
+      code: '<Toggle.Base size="md" />',
     },
   ],
 } as const;

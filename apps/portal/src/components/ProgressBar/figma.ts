@@ -7,13 +7,13 @@ export const figmaProgressBar = {
   },
   variants: {
     'Progress=60%, Label=Right': {
-      nodeId: '9:7388',
-      key: '4f2fa4d4cd5e9f119c446891eee4f47550b42b0d',
+      nodeId: '111:10851',
+      key: '44115076e9fc1903c31cf56e85e305f51767f6b8',
       props: { value: 60, label: 'right' },
     },
     'Progress=80%, Label=False': {
-      nodeId: '9:7402',
-      key: 'a2fe7c15934d03b41421a9e3dce9e77f98d7a49e',
+      nodeId: '111:10865',
+      key: '610490a08226038dbc30b13d954f720f46a960c7',
       props: { value: 80, label: 'none' },
     },
   },

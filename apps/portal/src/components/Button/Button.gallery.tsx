@@ -1,11 +1,11 @@
-import { Icon, type GalleryEntry } from '../primitives';
+import { inBothThemes, Icon, type GalleryEntry } from '../primitives';
 import { Button, ButtonUtility, CloseButton } from '.';
 
 const placeholder = <Icon name="placeholder" />;
 
 export default {
   component: 'Button',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Size=md, Hierarchy=Primary, State=Default, Icon only=False',
       render: () => (
@@ -130,5 +130,5 @@ export default {
       figma: 'Button close X · Size=md, Dark background=False, State=Default',
       render: () => <CloseButton size="md" />,
     },
-  ],
+  ]),
 } satisfies GalleryEntry;

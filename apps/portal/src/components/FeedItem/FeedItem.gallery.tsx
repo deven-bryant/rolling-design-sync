@@ -1,4 +1,4 @@
-import type { GalleryEntry } from '../primitives';
+import { inBothThemes, type GalleryEntry } from '../primitives';
 import { Avatar } from '../Avatar';
 import { Feed, FeedItem, FileTypeIcon, type FeedDivider } from './FeedItem';
 
@@ -29,9 +29,9 @@ function Example({ divider }: { divider: FeedDivider }) {
 
 export default {
   component: 'FeedItem',
-  examples: [
+  examples: inBothThemes([
     { figma: 'Activity feed: Divider=Connector (Supporting item=File · Text · False, Connector=True · last False)', render: () => <Example divider="connector" /> },
     { figma: 'Activity feed: Divider=False (Connector=False)', render: () => <Example divider="none" /> },
     { figma: 'File type icon: File type=Document / PDF, Type=Default', render: () => <FileTypeIcon type="pdf" /> },
-  ],
+  ]),
 } satisfies GalleryEntry;

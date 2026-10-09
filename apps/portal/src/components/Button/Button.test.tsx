@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Icon } from '../primitives';
 import { Button, buttonStyles, ButtonUtility, CloseButton, figmaButton, figmaButtonUtility, figmaCloseButton } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Button.gallery';
 
 const icon = <Icon name="placeholder" />;
 const classesOf = (el: Element) => el.getAttribute('class')?.split(' ') ?? [];
@@ -260,3 +262,5 @@ describe('CloseButton', () => {
     expect(onPress).toHaveBeenCalledTimes(1);
   });
 });
+
+describeGalleryInThemes(gallery);

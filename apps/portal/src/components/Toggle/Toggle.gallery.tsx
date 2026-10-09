@@ -1,10 +1,10 @@
-import type { GalleryEntry } from '../primitives';
+import { inBothThemes, type GalleryEntry } from '../primitives';
 import { Toggle } from './Toggle';
 import { ToggleBase } from './ToggleBase';
 
 export default {
   component: 'Toggle',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Type=Default, Pressed=True, Size=sm, Text=True, State=Default',
       render: () => (
@@ -15,6 +15,11 @@ export default {
     },
     { figma: 'Pressed=False · Text', render: () => <Toggle>Auto-clear</Toggle> },
     { figma: 'Pressed=True · no text', render: () => <Toggle defaultSelected aria-label="Live updates" /> },
+    {
+      figma: 'Type=Default, Pressed=False, Size=md, Text=False, State=Default',
+      render: () => <Toggle size="md" aria-label="Dark mode" />,
+    },
     { figma: '_Toggle base: Type=Default, Pressed=True, Size=sm, State=Default', render: () => <ToggleBase pressed /> },
-  ],
+    { figma: '_Toggle base: Type=Default, Pressed=False, Size=md, State=Default', render: () => <ToggleBase size="md" /> },
+  ]),
 } satisfies GalleryEntry;

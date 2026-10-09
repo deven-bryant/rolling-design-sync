@@ -1,9 +1,9 @@
-import type { GalleryEntry } from '../primitives';
+import { inBothThemes, type GalleryEntry } from '../primitives';
 import { ButtonGroup } from '.';
 
 export default {
   component: 'ButtonGroup',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Icon=False',
       render: () => (
@@ -34,5 +34,5 @@ export default {
         </ButtonGroup>
       ),
     },
-  ],
+  ]),
 } satisfies GalleryEntry;

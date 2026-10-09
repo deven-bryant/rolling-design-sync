@@ -1,9 +1,9 @@
-import { Icon, type GalleryEntry } from '../primitives';
+import { inBothThemes, Icon, type GalleryEntry } from '../primitives';
 import { Badge, BadgeDot, FeaturedIcon, figmaBadge } from '.';
 
 export default {
   component: 'Badge',
-  examples: [
+  examples: inBothThemes([
     ...Object.entries(figmaBadge.variants).map(([figma, { props }]) => ({ figma, render: () => <Badge {...props}>Label</Badge> })),
     {
       figma: 'Type=Pill color · Badge color · Badge modern',
@@ -39,5 +39,5 @@ export default {
     },
     { figma: '_Dot · Size=md, Outline=False', render: () => <BadgeDot size="md" /> },
     { figma: 'Featured icon · Size=md, Color=Gray, Type=Modern', render: () => <FeaturedIcon /> },
-  ],
+  ]),
 } satisfies GalleryEntry;

@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Icon } from '../primitives';
 import { HelpIcon, Input, InputHint, InputLabel } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Input.gallery';
 
 const classesOf = (el: Element | null | undefined) => (el?.getAttribute('class') ?? '').split(' ');
 const frameOf = (input: HTMLElement) => input.parentElement;
@@ -116,3 +118,5 @@ describe('HelpIcon', () => {
     expect(classesOf(icon)).toEqual(expect.arrayContaining(['size-4', 'text-fg-quaternary', 'ml-xs']));
   });
 });
+
+describeGalleryInThemes(gallery);

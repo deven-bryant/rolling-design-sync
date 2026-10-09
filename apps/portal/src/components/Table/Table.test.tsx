@@ -17,6 +17,8 @@ import {
   Table,
   TextCell,
 } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Table.gallery';
 
 function renderTable(row: React.ReactNode, header: React.ReactNode = <Table.HeaderCell>Name</Table.HeaderCell>) {
   return render(
@@ -256,3 +258,5 @@ describe('Table', () => {
     expect(cell.className).toContain('w-60');
   });
 });
+
+describeGalleryInThemes(gallery);

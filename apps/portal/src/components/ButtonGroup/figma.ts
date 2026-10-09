@@ -11,8 +11,8 @@ export const figmaButtonGroup = {
     properties: { Text: 'children' },
     variants: {
       'Current=False, Icon=False, State=Default': {
-        nodeId: '25:2061',
-        key: '6264ac5d718bfbc934b10b3a1e58ebc0e7a536cc',
+        nodeId: '111:16493',
+        key: '8c8c32f5ec109e663b23da50b1aa1c715bee9bfa',
         props: {},
         note: '40px min height (`min-h-10`), 8/16 padding, Text sm/Semibold secondary on bg-primary',
       },
@@ -20,8 +20,8 @@ export const figmaButtonGroup = {
   },
   variants: {
     'Icon=False': {
-      nodeId: '25:2145',
-      key: '0e583efab42f056087e6908545e60f067215610b',
+      nodeId: '111:16577',
+      key: 'e96e6ac8e8a82add0f61ca2e243efde9cf219fdb',
       props: {},
     },
   },

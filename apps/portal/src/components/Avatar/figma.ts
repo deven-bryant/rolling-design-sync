@@ -14,23 +14,23 @@ export const figmaAvatar = {
   },
   variants: {
     'Size=sm, Placeholder=False, Text=True, Status icon=Online indicator': {
-      nodeId: '9:414',
-      key: 'e59df24ba2d73fecd73e4713fda82b7cd0b95b61',
+      nodeId: '111:3839',
+      key: 'fe62789256d6f958d2325b1f5984c6db219c137b',
       props: { size: 'sm', initials: 'OR', status: 'online' },
     },
     'Size=lg, Placeholder=False, Text=False, Status icon=Online indicator': {
-      nodeId: '9:442',
-      key: 'bc1867984bc2673693005b24cbcca32aebb23dbe',
+      nodeId: '111:3867',
+      key: 'acfd75928f716ec1872488189b34e9becccb1353',
       props: { size: 'lg', src: 'photo', status: 'online' },
     },
     'Size=md, Placeholder=False, Text=False, Status icon=False': {
-      nodeId: '9:457',
-      key: 'ebcb7f14f5d7b6c72f97f5a30284a75d0e75151c',
+      nodeId: '111:3882',
+      key: '8878fcd47b0bd7d5069244847d5bda82dfdb2735',
       props: { size: 'md', src: 'photo' },
     },
     'Size=md, Placeholder=False, Text=False, Status icon=Online indicator': {
-      nodeId: '9:445',
-      key: '06cb115c12e204fb6f6ead4d0cb57f3c024f4880',
+      nodeId: '111:3870',
+      key: '63a33d0e08a5cc30821d4c2cf3d6a05da033234f',
       props: { size: 'md', src: 'photo', status: 'online' },
     },
   },
@@ -44,9 +44,9 @@ export const figmaOnlineIndicator = {
     Online: { prop: null, values: { True: {} } },
   },
   variants: {
-    'Size=sm, Online=True': { nodeId: '9:356', key: '62de4108559250eeb71aaba8b20cd65fb0644d6d', props: { size: 'sm' } },
-    'Size=md, Online=True': { nodeId: '9:358', key: '0d396d125784c85cd4fc81ad2bc1f1ebb701b4da', props: { size: 'md' } },
-    'Size=lg, Online=True': { nodeId: '9:360', key: '9901d7d56371c83d962956ec6f6aa934382416db', props: { size: 'lg' } },
+    'Size=sm, Online=True': { nodeId: '111:3789', key: 'b298e8323a94ab650a4b62638b56160ff7837a38', props: { size: 'sm' } },
+    'Size=md, Online=True': { nodeId: '111:3791', key: '34c632f642b53331ee479425400c147eee26d342', props: { size: 'md' } },
+    'Size=lg, Online=True': { nodeId: '111:3793', key: '544e16f61071437ee018a6aa7cb4f4b0da203355', props: { size: 'lg' } },
   },
 } as const;
 
@@ -60,8 +60,8 @@ export const figmaAvatarLabelGroup = {
   properties: { Text: 'label', 'Supporting text': 'supportingText' },
   variants: {
     'Size=md, Status icon=Online indicator': {
-      nodeId: '9:5509',
-      key: '487a3d66c4ee289ee1a5eae0c4a4b7781c9b8208',
+      nodeId: '111:11730',
+      key: 'dab9d3dc4d457222561f7801289d7c81436a3586',
       props: { size: 'md', status: 'online' },
     },
   },

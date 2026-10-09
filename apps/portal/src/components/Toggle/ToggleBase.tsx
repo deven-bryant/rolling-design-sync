@@ -1,12 +1,12 @@
 import type { HTMLAttributes, Ref } from 'react';
 import { cx, variants } from '../primitives';
 
-export type ToggleSize = 'sm';
+export type ToggleSize = 'sm' | 'md';
 
 export const toggleBaseStyles = variants({
   base: 'flex shrink-0 items-center rounded-full p-xxs motion-safe:transition-colors',
   variants: {
-    size: { sm: 'h-5 w-9' },
+    size: { sm: 'h-5 w-9', md: 'h-6 w-11' },
     pressed: { true: 'bg-brand-solid', false: 'bg-tertiary' },
     focusVisible: { true: 'outline-2 outline-offset-2 outline-focus-ring', false: '' },
     disabled: { true: 'bg-disabled', false: '' },
@@ -15,12 +15,17 @@ export const toggleBaseStyles = variants({
 });
 
 const thumbStyles = variants({
-  base: 'size-4 rounded-full bg-fg-white shadow-sm motion-safe:transition-transform',
+  base: 'rounded-full bg-fg-white shadow-sm motion-safe:transition-transform',
   variants: {
-    pressed: { true: 'translate-x-4', false: 'translate-x-0' },
+    size: { sm: 'size-4', md: 'size-5' },
+    pressed: { true: '', false: 'translate-x-0' },
     disabled: { true: 'bg-toggle-button-fg_disabled shadow-none', false: '' },
   },
-  defaults: { pressed: false, disabled: false },
+  compound: [
+    { size: 'sm', pressed: true, className: 'translate-x-4' },
+    { size: 'md', pressed: true, className: 'translate-x-5' },
+  ],
+  defaults: { size: 'sm', pressed: false, disabled: false },
 });
 
 export interface ToggleBaseProps extends HTMLAttributes<HTMLSpanElement> {
@@ -43,7 +48,7 @@ export function ToggleBase({ pressed = false, size = 'sm', focusVisible, disable
       {...rest}
       className={toggleBaseStyles({ size, pressed, focusVisible, disabled, className })}
     >
-      <span className={cx(thumbStyles({ pressed, disabled }))} />
+      <span className={cx(thumbStyles({ size, pressed, disabled }))} />
     </span>
   );
 }
