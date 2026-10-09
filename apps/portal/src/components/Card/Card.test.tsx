@@ -3,6 +3,8 @@ import { createRef } from 'react';
 import { describe, expect, it } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Card } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Card.gallery';
 
 describe('Card', () => {
   it('renders the surface with header, body and footer', async () => {
@@ -63,3 +65,5 @@ describe('Card', () => {
     expect(footer.current).toBe(screen.getByTestId('footer'));
   });
 });
+
+describeGalleryInThemes(gallery);

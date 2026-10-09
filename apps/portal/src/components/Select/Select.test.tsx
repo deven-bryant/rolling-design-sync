@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Icon } from '../primitives';
 import { Select, SelectItem, SelectSearch, type SelectProps, type SelectSearchProps } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Select.gallery';
 
 const classesOf = (el: Element | null | undefined) => (el?.getAttribute('class') ?? '').split(' ');
 
@@ -204,3 +206,5 @@ describe('Select.Search', () => {
     await expectNoAxeViolations(container);
   });
 });
+
+describeGalleryInThemes(gallery);

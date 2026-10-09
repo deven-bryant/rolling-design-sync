@@ -1,10 +1,10 @@
 import { Button } from 'react-aria-components';
-import type { GalleryEntry } from '../primitives';
+import { inBothThemes, type GalleryEntry } from '../primitives';
 import { Tooltip, TooltipTrigger } from '.';
 
 export default {
   component: 'Tooltip',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Supporting text=False, Arrow=None',
       render: () => (
@@ -14,5 +14,5 @@ export default {
         </TooltipTrigger>
       ),
     },
-  ],
+  ]),
 } satisfies GalleryEntry;

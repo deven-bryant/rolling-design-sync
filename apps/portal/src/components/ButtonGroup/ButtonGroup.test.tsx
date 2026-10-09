@@ -4,6 +4,8 @@ import { createRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { ButtonGroup } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './ButtonGroup.gallery';
 
 const classesOf = (el: Element) => el.getAttribute('class')?.split(' ') ?? [];
 
@@ -84,3 +86,5 @@ describe('ButtonGroup', () => {
     expect(classesOf(itemRef.current!)).toContain('flex-1');
   });
 });
+
+describeGalleryInThemes(gallery);

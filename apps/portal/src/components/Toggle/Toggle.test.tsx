@@ -4,6 +4,8 @@ import { createRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Toggle, ToggleBase } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Toggle.gallery';
 
 const track = (container: Element) => container.querySelector('[aria-hidden="true"]');
 const classesOf = (el: Element | null | undefined) => (el?.getAttribute('class') ?? '').split(' ');
@@ -16,6 +18,17 @@ describe('ToggleBase', () => {
     expect(classesOf(t?.firstElementChild)).toEqual(
       expect.arrayContaining(['size-4', 'rounded-full', 'bg-fg-white', 'shadow-sm', 'translate-x-4']),
     );
+  });
+
+  it('draws Size=md as the 44×24 track with a 20px thumb', () => {
+    const { container, rerender } = render(<ToggleBase size="md" />);
+    const t = track(container);
+    expect(classesOf(t)).toEqual(expect.arrayContaining(['h-6', 'w-11', 'rounded-full', 'p-xxs', 'bg-tertiary']));
+    expect(classesOf(t?.firstElementChild)).toEqual(expect.arrayContaining(['size-5', 'translate-x-0']));
+    rerender(<ToggleBase size="md" pressed />);
+    expect(classesOf(track(container))).toContain('bg-brand-solid');
+    expect(classesOf(track(container)?.firstElementChild)).toContain('translate-x-5');
+    expect(classesOf(track(container)?.firstElementChild)).not.toContain('translate-x-4');
   });
 
   it('draws Pressed=False with the thumb at the start', () => {
@@ -84,6 +97,14 @@ describe('Toggle', () => {
     expect(classesOf(track(container))).toContain('bg-disabled');
   });
 
+  it('renders Size=md, Text=False as a labelled md switch', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Toggle size="md" aria-label="Dark mode" />);
+    expect(classesOf(track(container))).toEqual(expect.arrayContaining(['h-6', 'w-11']));
+    await user.click(screen.getByRole('switch', { name: 'Dark mode' }));
+    expect(classesOf(track(container)?.firstElementChild)).toContain('translate-x-5');
+  });
+
   it('forwards ref and className to the label root', () => {
     const ref = createRef<HTMLLabelElement>();
     render(<Toggle ref={ref} className="w-full" aria-label="Live" />);
@@ -104,3 +125,5 @@ describe('Toggle', () => {
     await expectNoAxeViolations(container);
   });
 });
+
+describeGalleryInThemes(gallery);

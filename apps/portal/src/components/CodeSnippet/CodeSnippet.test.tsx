@@ -3,6 +3,8 @@ import { createRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { CodeSnippet } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './CodeSnippet.gallery';
 
 const code = 'const a = 1;\nconst b = 2;\nexport { a, b };';
 
@@ -42,3 +44,5 @@ describe('CodeSnippet', () => {
     await expectNoAxeViolations(container);
   });
 });
+
+describeGalleryInThemes(gallery);

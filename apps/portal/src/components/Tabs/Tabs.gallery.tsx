@@ -1,11 +1,11 @@
-import type { GalleryEntry } from '../primitives';
+import { inBothThemes, type GalleryEntry } from '../primitives';
 import { Tabs } from './Tabs';
 
 const labels = ['My details', 'Profile', 'Password', 'Team', 'Plan'];
 
 export default {
   component: 'Tabs',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Type=Underline, Size=md, Full width=False, Breakpoint=Desktop',
       render: () => (
@@ -63,5 +63,5 @@ export default {
         </Tabs>
       ),
     },
-  ],
+  ]),
 } satisfies GalleryEntry;

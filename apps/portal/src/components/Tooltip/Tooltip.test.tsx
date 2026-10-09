@@ -4,6 +4,8 @@ import { Button } from 'react-aria-components';
 import { describe, expect, it } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Tooltip, TooltipTrigger } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Tooltip.gallery';
 
 describe('Tooltip', () => {
   it('opens on focus with the design classes and closes on Escape', async () => {
@@ -65,3 +67,5 @@ describe('Tooltip', () => {
     expect(el).toBe(screen.getByTestId('t'));
   });
 });
+
+describeGalleryInThemes(gallery);

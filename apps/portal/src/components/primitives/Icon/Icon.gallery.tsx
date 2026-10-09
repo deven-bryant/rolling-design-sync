@@ -1,10 +1,10 @@
-import type { GalleryEntry } from '../gallery';
+import { inBothThemes, type GalleryEntry } from '../gallery';
 import { Icon } from './Icon';
 import { iconNames } from './figma';
 
 export default {
   component: 'Icon',
-  examples: [
+  examples: inBothThemes([
     ...iconNames.map(name => ({ figma: name, render: () => <Icon name={name} className="text-fg-secondary" /> })),
     {
       figma: 'Sizes (xs · sm · md · lg)',
@@ -17,5 +17,5 @@ export default {
         </span>
       ),
     },
-  ],
+  ]),
 } satisfies GalleryEntry;

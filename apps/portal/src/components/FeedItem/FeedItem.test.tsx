@@ -3,6 +3,8 @@ import { createRef } from 'react';
 import { describe, expect, it } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Feed, FeedItem, FileTypeIcon } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './FeedItem.gallery';
 
 const avatar = <span role="img" aria-label="Olivia Rhye" className="size-6xl" />;
 
@@ -103,3 +105,5 @@ describe('FeedItem', () => {
     expect(ref.current?.className).toContain('ml-xs');
   });
 });
+
+describeGalleryInThemes(gallery);

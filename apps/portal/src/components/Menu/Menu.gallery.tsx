@@ -1,9 +1,9 @@
-import type { GalleryEntry } from '../primitives';
+import { inBothThemes, type GalleryEntry } from '../primitives';
 import { Menu } from './Menu';
 
 export default {
   component: 'Menu',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Dropdown · Type=Icon, Open=False',
       render: () => (
@@ -37,5 +37,5 @@ export default {
         </Menu>
       ),
     },
-  ],
+  ]),
 } satisfies GalleryEntry;

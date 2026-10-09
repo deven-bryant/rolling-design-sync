@@ -1,9 +1,9 @@
-import { Icon, type GalleryEntry } from '../primitives';
+import { inBothThemes, Icon, type GalleryEntry } from '../primitives';
 import { Metric, MetricChange } from './Metric';
 
 export default {
   component: 'Metric',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Metric item: Actions=False, Type=Simple, Breakpoint=Desktop',
       render: () => (
@@ -21,5 +21,5 @@ export default {
       ),
     },
     { figma: '_Change: Type=03, Trend=Positive', render: () => <MetricChange>100%</MetricChange> },
-  ],
+  ]),
 } satisfies GalleryEntry;
