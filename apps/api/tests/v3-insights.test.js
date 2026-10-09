@@ -1017,3 +1017,101 @@ test('a large ndjson listing streams: lines reach the client before the store ha
   assert.ok(body.chunks > 1);
   assert.equal(readBeforeFirstChunk, 1, 'the first lines arrive after one store page');
 });
+
+// --- trends ----------------------------------------------------------------------
+const DAY = 24 * 60 * 60 * 1000;
+const TRENDS_NOW = Date.parse('2030-01-15T12:00:00.000Z');
+const TFK = 'TrEnDsFiLe0RuSpspQy2E3W';
+const at = ms => new Date(ms).toISOString();
+
+async function openTrends(kind, env = {}) {
+  const { store, cleanup } = await STORES[kind]();
+  const app = buildApp({ store, config: loadConfig({ RDS_PLUGIN_TOKENS: PLUGIN_TOKEN, RDS_AGENT_TOKENS: AGENT_TOKEN, RDS_VIEWER_TOKENS: VIEWER_TOKEN, ...env }) });
+  await batch(app, { fileKey: FK, fileName: 'Insights', rootNodeId: '1:1', upserts: TREE_V1(), markImplemented: true });
+  await batch(app, { fileKey: TFK, fileName: 'Trends', rootNodeId: '1:1', upserts: TREE_V1(), markImplemented: true });
+  app.nodeService.now = () => new Date(TRENDS_NOW);
+  return { app, store, close: async () => { await app.close(); await cleanup(); } };
+}
+
+/** Clears and syncs around the 7-day windows ending at TRENDS_NOW; `x` marks events outside both. */
+async function seedTrends(store) {
+  const from = TRENDS_NOW - 7 * DAY, before = TRENDS_NOW - 14 * DAY;
+  const ids = n => Array.from({ length: n }, (_, i) => `9:${i}`);
+  const clear = (fileKey, createdAt, data) => store.insertEvent({ fileKey, type: 'nodes.cleared', data: { commitRef: null, worker: null, ...data }, createdAt: at(createdAt) });
+  const sync = (fileKey, createdAt, dirty) => store.insertEvent({ fileKey, type: 'sync.completed', data: { rootNodeId: '1:1', counts: { uploaded: dirty, dirty } }, createdAt: at(createdAt) });
+  await clear(FK, from, { nodeIds: ids(500), count: 600 });
+  await clear(FK, TRENDS_NOW - 1, { nodeIds: ['2:1', '2:2'] });
+  await clear(FK, TRENDS_NOW, { nodeIds: ids(5), count: 5 }); // x
+  await clear(FK, from - 1, { nodeIds: ids(10), count: 10 });
+  await clear(FK, before, { nodeIds: ids(3), count: 3 });
+  await clear(FK, before - 1, { nodeIds: ids(100), count: 100 }); // x
+  await sync(FK, from, 50);
+  await sync(FK, from - 1, 7); // previous window: not counted
+  await sync(FK, TRENDS_NOW, 9); // x
+  await sync(FK, from + DAY, 0);
+  await clear(TFK, TRENDS_NOW - DAY, { nodeIds: ids(4), count: 4 });
+  await sync(TFK, TRENDS_NOW - 2 * DAY, 10);
+  await clear('UntrackedFile00000000000', TRENDS_NOW - DAY, { nodeIds: ids(8), count: 8 });
+}
+
+const TREND_FK = { cleared: 602, clearedPrevious: 13, clearedChangePct: 4531, dirtied: 50, netDirty: -552 };
+const TREND_TFK = { cleared: 4, clearedPrevious: 0, clearedChangePct: null, dirtied: 10, netDirty: 6 };
+
+for (const kind of Object.keys(STORES)) {
+  test(`[${kind}] GET /v3/insights/trends: half-open windows, per file and in total, viewer-readable`, async t => {
+    const { app, store, close } = await openTrends(kind);
+    t.after(close);
+    await seedTrends(store);
+
+    const body = ok(await get(app, '/v3/insights/trends', viewer));
+    assert.deepEqual(body, {
+      windowDays: 7,
+      from: at(TRENDS_NOW - 7 * DAY),
+      to: at(TRENDS_NOW),
+      complete: true,
+      retentionDays: 30,
+      total: { cleared: 606, clearedPrevious: 13, clearedChangePct: 4562, dirtied: 60, netDirty: -546 },
+      files: [{ fileKey: FK, fileName: 'Insights', ...TREND_FK }, { fileKey: TFK, fileName: 'Trends', ...TREND_TFK }],
+    });
+
+    const one = ok(await get(app, `/v3/insights/trends?fileKey=${TFK}&windowDays=7`));
+    assert.deepEqual(one.total, TREND_TFK, 'fileKey narrows the total too');
+    assert.deepEqual(one.files, [{ fileKey: TFK, fileName: 'Trends', ...TREND_TFK }]);
+
+    const day = ok(await get(app, `/v3/insights/trends?windowDays=1&fileKey=${FK}`));
+    assert.equal(day.from, at(TRENDS_NOW - DAY));
+    assert.deepEqual(day.total, { cleared: 2, clearedPrevious: 0, clearedChangePct: null, dirtied: 0, netDirty: -2 });
+
+    for (const bad of ['0', '15', '1.5', 'week']) assertProblem(await get(app, `/v3/insights/trends?windowDays=${bad}`), 400, 'invalid_parameter');
+    assertProblem(await get(app, '/v3/insights/trends?fileKey=NoSuchFile'), 404, 'file_not_found');
+    assertProblem(await get(app, '/v3/insights/trends?file=x'), 400, 'unknown_parameter');
+  });
+
+  test(`[${kind}] GET /v3/insights/trends: complete only when retention keeps two windows`, async t => {
+    const { app, close } = await openTrends(kind, { RDS_EVENT_RETENTION_DAYS: '10' });
+    t.after(close);
+    const week = ok(await get(app, '/v3/insights/trends'));
+    assert.equal(week.complete, false);
+    assert.equal(week.retentionDays, 10);
+    assert.deepEqual(week.total, { cleared: 0, clearedPrevious: 0, clearedChangePct: null, dirtied: 0, netDirty: 0 });
+    assert.equal(ok(await get(app, '/v3/insights/trends?windowDays=5')).complete, true);
+  });
+
+  test(`[${kind}] trends count real clears (data.count) and the nodes syncs made dirty`, async t => {
+    const { app, store, close } = await openTrends(kind);
+    t.after(close);
+    const now = Date.now() + 10 * 60 * 1000; // after the events this test writes
+    app.nodeService.now = () => new Date(now);
+    const rows = Array.from({ length: 520 }, (_, i) => ({ nodeId: `5:${i}`, nodeType: 'TEXT', name: `T${i}`, parentId: null, path: [], attrs: { characters: `${i}` }, contentHash: `h${i}` }));
+    await batch(app, { fileKey: TFK, upserts: rows });
+    for (const part of [rows.slice(0, 500), rows.slice(500)]) {
+      const res = ok(await app.inject({ method: 'POST', url: `/v3/files/${TFK}/clear`, headers: agent, payload: { items: part.map(r => ({ nodeId: r.nodeId, contentHash: r.contentHash })) } }));
+      assert.equal(res.totals.cleared, part.length);
+    }
+    const events = await store.listEvents({ fileKey: TFK, types: ['nodes.cleared'] });
+    assert.deepEqual(events.map(e => [e.data.count, e.data.nodeIds.length]), [[500, 500], [20, 20]]);
+    const { total } = ok(await get(app, `/v3/insights/trends?fileKey=${TFK}`));
+    assert.deepEqual(total, { cleared: 520, clearedPrevious: 0, clearedChangePct: null, dirtied: 520, netDirty: 0 });
+  });
+}
+

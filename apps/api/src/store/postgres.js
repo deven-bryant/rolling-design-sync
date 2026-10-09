@@ -917,6 +917,36 @@ class PostgresStore {
   }
 
   /** Deletes events created before `before`; returns how many. */
+  async eventTrends({ fileKey = null, from, since, until }) {
+    const { rows } = await this.query(
+      `select f.file_key, f.name,
+         coalesce(sum(e.n) filter (where e.type = 'nodes.cleared' and e.created_at >= $2), 0) as cleared,
+         coalesce(sum(e.n) filter (where e.type = 'nodes.cleared' and e.created_at < $2), 0) as cleared_previous,
+         coalesce(sum(e.n) filter (where e.type = 'sync.completed' and e.created_at >= $2), 0) as dirtied
+       from file f
+       left join lateral (
+         select ev.type, ev.created_at,
+           case when ev.type = 'nodes.cleared' then
+             case when jsonb_typeof(ev.data->'count') = 'number' then (ev.data->>'count')::numeric
+                  when jsonb_typeof(ev.data->'nodeIds') = 'array' then jsonb_array_length(ev.data->'nodeIds') else 0 end
+           else
+             case when jsonb_typeof(ev.data->'counts'->'dirty') = 'number' then (ev.data->'counts'->>'dirty')::numeric else 0 end
+           end as n
+         from event ev
+         where ev.file_key = f.file_key and ev.type in ('nodes.cleared', 'sync.completed')
+           and ev.created_at >= $1 and ev.created_at < $3
+       ) e on true
+       where ($4::text is null or f.file_key = $4)
+       group by f.file_key, f.name
+       order by f.file_key`,
+      [from, since, until, fileKey]
+    );
+    return rows.map(r => ({
+      fileKey: r.file_key, fileName: r.name ?? null,
+      cleared: Number(r.cleared), clearedPrevious: Number(r.cleared_previous), dirtied: Number(r.dirtied),
+    }));
+  }
+
   async pruneEvents(before) {
     const { rowCount } = await this.query('delete from event where created_at < $1', [before]);
     return rowCount ?? 0;

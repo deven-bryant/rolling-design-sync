@@ -4,7 +4,8 @@
  * v3 insights (docs/api-v3-phase2.md, "2. Summaries and work items"): counts of
  * the nodes a listing filter matches, and those nodes bundled into work items
  * by component or by frame. Both take every listing filter (default
- * `state=dirty`) and aggregate in the store.
+ * `state=dirty`) and aggregate in the store. Trends aggregate the event log:
+ * nodes cleared and newly dirtied per window, across files.
  */
 const { problem } = require('./problem');
 const address = require('./address');
@@ -53,6 +54,49 @@ const summary = {
           items: { type: 'object', properties: { nodeId: { type: 'string' }, name: nullableString, count: { type: 'integer' } } },
         },
         expansion,
+      },
+    },
+    ...problems,
+  },
+};
+
+const MAX_TREND_DAYS = 14;
+const DEFAULT_TREND_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const trendCounts = {
+  cleared: { type: 'integer', description: 'Nodes cleared in the window [from, to).' },
+  clearedPrevious: { type: 'integer', description: 'Nodes cleared in the window before it [from − windowDays, from).' },
+  clearedChangePct: { type: ['integer', 'null'], description: 'round((cleared − clearedPrevious) / clearedPrevious × 100); null when clearedPrevious is 0.' },
+  dirtied: { type: 'integer', description: 'Nodes newly marked dirty by syncs in [from, to): new, changed while clean, or deleted while clean.' },
+  netDirty: { type: 'integer', description: 'dirtied − cleared: positive when the backlog grew.' },
+};
+const trends = {
+  summary: 'Weekly trends',
+  description: 'How fast the backlog moves: nodes cleared and nodes newly dirtied by syncs in the last `windowDays` days (default 7) and the change in clears vs the window before, for the whole server (`total`) and each tracked file (`files`); `fileKey` narrows both to one file. '
+    + 'Counts come from the event log, so `complete` is false when RDS_EVENT_RETENTION_DAYS (`retentionDays`) keeps less than two windows — `clearedPrevious` and `clearedChangePct` may then undercount. Returns no nodes.',
+  tags, security,
+  ...agentOp('get_trends', 'trends'),
+  querystring: {
+    type: 'object',
+    properties: {
+      windowDays: { type: 'integer', minimum: 1, maximum: MAX_TREND_DAYS, default: DEFAULT_TREND_DAYS, description: `Window length in days, 1–${MAX_TREND_DAYS} (default ${DEFAULT_TREND_DAYS}).` },
+      fileKey: { type: 'string', minLength: 1, description: 'Only this tracked file (file_not_found otherwise).' },
+    },
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        windowDays: { type: 'integer' },
+        from: { type: 'string', format: 'date-time', description: 'Window start (inclusive): to − windowDays.' },
+        to: { type: 'string', format: 'date-time', description: 'Window end (exclusive): now.' },
+        complete: { type: 'boolean', description: 'False when event retention is shorter than 2 × windowDays.' },
+        retentionDays: { type: 'integer' },
+        total: { type: 'object', properties: trendCounts },
+        files: {
+          type: 'array',
+          items: { type: 'object', properties: { fileKey: { type: 'string' }, fileName: nullableString, ...trendCounts } },
+        },
       },
     },
     ...problems,
@@ -159,12 +203,21 @@ const itemOut = (group, expanded) => i => ({
 const zeros = keys => Object.fromEntries(keys.map(k => [k, 0]));
 const sortedKeys = obj => Object.fromEntries(Object.keys(obj).sort().map(k => [k, obj[k]]));
 
+/** The trend fields of `{ cleared, clearedPrevious, dirtied }`. */
+const trendOf = ({ cleared, clearedPrevious, dirtied }) => ({
+  cleared,
+  clearedPrevious,
+  clearedChangePct: clearedPrevious ? Math.round(((cleared - clearedPrevious) / clearedPrevious) * 100) : null,
+  dirtied,
+  netDirty: dirtied - cleared,
+});
+
 // --- routes ----------------------------------------------------------------------
 /**
  * @param {any} app
  * @param {{ store: import('../store/types').Store } & Record<string, any>} deps
  */
-function registerInsightRoutes(app, { store, now }) {
+function registerInsightRoutes(app, { store, now, config }) {
   async function trackedFile(fileKey) {
     const [file] = await store.listFiles({ fileKey });
     if (!file) throw address.fileNotFound(fileKey);
@@ -212,6 +265,28 @@ function registerInsightRoutes(app, { store, now }) {
       byType: sortedKeys(s.byType),
       ...(filter.under !== null && filter.under.length === 1 ? { byFrame: s.byFrame || [] } : {}),
       ...(expansion ? { expansion: expansion.meta } : {}),
+    };
+  });
+
+  app.get('/insights/trends', { schema: trends }, async (/** @type {import('./types').V3Request<'/v3/insights/trends', 'get'>} */ request) => {
+    const { windowDays = DEFAULT_TREND_DAYS, fileKey = null } = request.query;
+    if (fileKey !== null) await trackedFile(fileKey);
+    const to = now();
+    const window = windowDays * DAY_MS;
+    const from = new Date(to.getTime() - window);
+    const rows = await store.eventTrends({
+      fileKey, from: new Date(to.getTime() - 2 * window).toISOString(), since: from.toISOString(), until: to.toISOString(),
+    });
+    const retentionDays = config.eventRetentionDays;
+    const sum = key => rows.reduce((n, r) => n + r[key], 0);
+    return {
+      windowDays,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      complete: retentionDays >= 2 * windowDays,
+      retentionDays,
+      total: trendOf({ cleared: sum('cleared'), clearedPrevious: sum('clearedPrevious'), dirtied: sum('dirtied') }),
+      files: rows.map(r => ({ fileKey: r.fileKey, fileName: r.fileName, ...trendOf(r) })),
     };
   });
 
@@ -323,4 +398,4 @@ function registerInsightRoutes(app, { store, now }) {
   });
 }
 
-module.exports = { registerInsightRoutes, MAX_ITEM_NODE_IDS, GROUPS };
+module.exports = { registerInsightRoutes, MAX_ITEM_NODE_IDS, GROUPS, MAX_TREND_DAYS, DEFAULT_TREND_DAYS };

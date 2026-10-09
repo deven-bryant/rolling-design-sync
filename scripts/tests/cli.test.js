@@ -470,6 +470,7 @@ test('every generated command sends its method and path to buildApp and succeeds
     unblock: ['unblock', '2-2', '--url', FIGMA],
     summary: ['summary', '--file-key', FK],
     work: ['work', '--file-key', FK, '--group', 'component'],
+    trends: ['trends', '--window-days', '7', '--file-key', FK],
   };
   assert.deepEqual(Object.keys(argv).sort(), SPEC.commands.map(c => c.command).sort());
   for (const c of SPEC.commands) {

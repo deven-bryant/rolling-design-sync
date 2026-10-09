@@ -245,7 +245,9 @@ Each item has the component (`key`, `name`), its `nodeIds`, the
 screen); nodes outside any component form the last item, `key: null`. Build the
 components first — fixing a coded component once fixes every place it is used —
 then the screen's own nodes. Add `--format outline` for a readable version.
-`summarize` / `summary` gives the counts only.
+`summarize` / `summary` gives the counts only. For progress over time,
+`get_trends` / `trends` counts the nodes cleared and newly dirtied in the last
+`windowDays` days (default 7) per file, with the change vs the window before.
 Add `include: "progress"` / `--include progress` to get `{total, clean}` on
 each item across all states, independent of the `state` filter and the
 50-node ID cap. Other listing filters still apply.

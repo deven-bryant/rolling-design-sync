@@ -309,11 +309,11 @@ for (const kind of Object.keys(STORES)) {
       assert.equal(events.length, 2);
       const [baseline, sync] = events;
       assert.equal(baseline.type, 'sync.completed');
-      assert.deepEqual(baseline.data.counts, { uploaded: 4, changed: 0, added: 0, deleted: 0, baselined: 4 });
+      assert.deepEqual(baseline.data.counts, { uploaded: 4, changed: 0, added: 0, deleted: 0, baselined: 4, dirty: 0 });
       assert.ok(sync.id > baseline.id);
       assert.equal(sync.fileKey, FK);
       assert.equal(sync.actor, 'plugin');
-      assert.deepEqual(sync.data, { rootNodeId: '1:1', counts: { uploaded: 4, changed: 3, added: 0, deleted: 0, baselined: 0 } });
+      assert.deepEqual(sync.data, { rootNodeId: '1:1', counts: { uploaded: 4, changed: 3, added: 0, deleted: 0, baselined: 0, dirty: 3 } });
       assert.equal(typeof sync.createdAt, 'string');
     });
 
@@ -368,7 +368,7 @@ for (const kind of Object.keys(STORES)) {
       const [e] = events;
       assert.equal(e.type, 'nodes.cleared');
       assert.match(e.actor, /^token:[0-9a-f]{12}$/);
-      assert.deepEqual(e.data, { nodeIds: ['2:1', '2:2'], commitRef: 'c1', worker: 'w-2' });
+      assert.deepEqual(e.data, { nodeIds: ['2:1', '2:2'], count: 2, commitRef: 'c1', worker: 'w-2' });
     });
 
     await t.test('clearing an unclaimed node → nodes.cleared with worker null', async () => {
@@ -379,7 +379,7 @@ for (const kind of Object.keys(STORES)) {
       const e = await lastEvent(app);
       assert.equal(e.type, 'nodes.cleared');
       assert.match(e.actor, /^token:/);
-      assert.deepEqual(e.data, { nodeIds: ['2:3'], commitRef: 'c2', worker: null });
+      assert.deepEqual(e.data, { nodeIds: ['2:3'], count: 1, commitRef: 'c2', worker: null });
     });
 
     await t.test('a content change on a blocked node → node.unblocked with auto: true', async () => {
@@ -399,6 +399,19 @@ for (const kind of Object.keys(STORES)) {
       const { events } = await page(app, 'limit=1000');
       for (const e of events) assert.doesNotMatch(JSON.stringify(e.data), /paddingLeft|itemSpacing|characters|attrs/);
     });
+  });
+
+  test(`sync.completed counts.dirty counts only the nodes a batch made dirty (${kind} store)`, async t => {
+    const { app, close } = await openApp(kind);
+    t.after(close);
+    const dirtyOf = async () => (await lastEvent(app)).data.counts.dirty;
+    const [, card, header] = TREE(true);
+    await batch(app, { fileKey: FK, upserts: [card, up('2:4', 'TEXT', 'New', { characters: 'New' }, R)], deletedNodeIds: ['2:3'] });
+    assert.equal(await dirtyOf(), 3, 'a change, a new node and a deletion of clean nodes');
+    await batch(app, { fileKey: FK, upserts: [up('2:1', 'FRAME', 'Card', { paddingLeft: 32 }, R), TREE(false)[2]], deletedNodeIds: ['2:3', '2:4'] });
+    assert.equal(await dirtyOf(), 0, 'already dirty, unchanged and already deleted nodes do not count');
+    await batch(app, { fileKey: FK, upserts: [header] });
+    assert.equal(await dirtyOf(), 1);
   });
 
   test(`a failing transaction writes and publishes no event (${kind} store)`, async t => {

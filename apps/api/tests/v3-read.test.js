@@ -730,7 +730,7 @@ test('/v3/openapi.json is an OpenAPI 3 document listing every v3 route', async t
     '/v3/files/{fileKey}/claims/{claimId}/renew': ['post'], '/v3/files/{fileKey}/claims/{claimId}': ['delete'],
     '/v3/files/{fileKey}/events': ['get'],
     '/v3/files/{fileKey}/nodes/{nodeId}/block': ['post'], '/v3/files/{fileKey}/nodes/{nodeId}/unblock': ['post'],
-    '/v3/files/{fileKey}/summary': ['get'], '/v3/files/{fileKey}/work': ['get'],
+    '/v3/files/{fileKey}/summary': ['get'], '/v3/files/{fileKey}/work': ['get'], '/v3/insights/trends': ['get'],
     '/v3/files/{fileKey}/hashes': ['get'], '/v3/files/{fileKey}/sync': ['post'], '/v3/files/{fileKey}/exists': ['post'],
     '/v3/session': ['get', 'delete', 'post'],
     '/v3/status': ['get'], '/v3/tokens': ['get'], '/v3/claims': ['get'],
@@ -796,6 +796,7 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     'get /v3/files/{fileKey}/nodes/{nodeId}': ['get_node', 'nodes show'],
     'get /v3/files/{fileKey}/summary': ['summarize', 'summary'],
     'get /v3/files/{fileKey}/work': ['list_work_items', 'work'],
+    'get /v3/insights/trends': ['get_trends', 'trends'],
     'post /v3/files/{fileKey}/clear': ['clear_nodes', 'clear'],
     'post /v3/files/{fileKey}/claims': ['claim_nodes', 'claim'],
     'get /v3/files/{fileKey}/claims': ['list_claims', 'claims ls'],
@@ -825,8 +826,8 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     assert.equal(op['x-rds-mcp'], undefined, key);
     assert.equal(op['x-rds-cli'], undefined, key);
   }
-  assert.equal(new Set(Object.values(expected).map(([tool]) => tool)).size, 16);
-  assert.equal(new Set(Object.values(expected).map(([, command]) => command)).size, 16);
+  assert.equal(new Set(Object.values(expected).map(([tool]) => tool)).size, 17);
+  assert.equal(new Set(Object.values(expected).map(([, command]) => command)).size, 17);
 
   const described = s => typeof s === 'string' && s.trim().length > 0;
   for (const [key, op] of ops.filter(([k]) => expected[k])) {

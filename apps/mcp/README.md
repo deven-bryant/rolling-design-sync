@@ -65,6 +65,7 @@ of truth; a different server version may list more or fewer):
 | `resolve_url` | `GET /v3/resolve` | A Figma link → `{ fileKey, nodeId }`. |
 | `summarize` | `GET /v3/files/{fileKey}/summary` | Counts of what changed, by category, type and component. |
 | `list_work_items` | `GET /v3/files/{fileKey}/work` | Changes grouped into work items (e.g. one per component). |
+| `get_trends` | `GET /v3/insights/trends` | Nodes cleared and newly dirtied in the last `windowDays` days, per file and in total. |
 | `claim_nodes` | `POST /v3/files/{fileKey}/claims` | Lease nodes (by `nodeIds` or `filter`) to a `worker`. |
 | `renew_claim` | `POST /v3/files/{fileKey}/claims/{claimId}/renew` | Extend a lease. |
 | `release_claim` | `DELETE /v3/files/{fileKey}/claims/{claimId}` | Hand back what a claim still holds. |

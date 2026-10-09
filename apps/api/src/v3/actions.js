@@ -248,7 +248,7 @@ function registerActionRoutes(app, { store, now, config, bus = null }) {
         const worker = holders.size === 1 ? [...holders][0] : null;
         await emit(fileKey, 'nodes.cleared', {
           actor,
-          data: { nodeIds: capIds(clearedIds), commitRef: commitRef || null, worker },
+          data: { nodeIds: capIds(clearedIds), count: clearedIds.length, commitRef: commitRef || null, worker },
         });
       }
       return items.map((item, i) => {

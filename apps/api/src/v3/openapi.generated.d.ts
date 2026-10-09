@@ -3784,6 +3784,201 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v3/insights/trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Weekly trends
+         * @description How fast the backlog moves: nodes cleared and nodes newly dirtied by syncs in the last `windowDays` days (default 7) and the change in clears vs the window before, for the whole server (`total`) and each tracked file (`files`); `fileKey` narrows both to one file. Counts come from the event log, so `complete` is false when RDS_EVENT_RETENTION_DAYS (`retentionDays`) keeps less than two windows — `clearedPrevious` and `clearedChangePct` may then undercount. Returns no nodes.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Window length in days, 1–14 (default 7). */
+                    windowDays?: number;
+                    /** @description Only this tracked file (file_not_found otherwise). */
+                    fileKey?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            windowDays?: number;
+                            /**
+                             * Format: date-time
+                             * @description Window start (inclusive): to − windowDays.
+                             */
+                            from?: string;
+                            /**
+                             * Format: date-time
+                             * @description Window end (exclusive): now.
+                             */
+                            to?: string;
+                            /** @description False when event retention is shorter than 2 × windowDays. */
+                            complete?: boolean;
+                            retentionDays?: number;
+                            total?: {
+                                /** @description Nodes cleared in the window [from, to). */
+                                cleared?: number;
+                                /** @description Nodes cleared in the window before it [from − windowDays, from). */
+                                clearedPrevious?: number;
+                                /** @description round((cleared − clearedPrevious) / clearedPrevious × 100); null when clearedPrevious is 0. */
+                                clearedChangePct?: null | number;
+                                /** @description Nodes newly marked dirty by syncs in [from, to): new, changed while clean, or deleted while clean. */
+                                dirtied?: number;
+                                /** @description dirtied − cleared: positive when the backlog grew. */
+                                netDirty?: number;
+                            };
+                            files?: {
+                                fileKey?: string;
+                                fileName?: null | string;
+                                /** @description Nodes cleared in the window [from, to). */
+                                cleared?: number;
+                                /** @description Nodes cleared in the window before it [from − windowDays, from). */
+                                clearedPrevious?: number;
+                                /** @description round((cleared − clearedPrevious) / clearedPrevious × 100); null when clearedPrevious is 0. */
+                                clearedChangePct?: null | number;
+                                /** @description Nodes newly marked dirty by syncs in [from, to): new, changed while clean, or deleted while clean. */
+                                dirtied?: number;
+                                /** @description dirtied − cleared: positive when the backlog grew. */
+                                netDirty?: number;
+                            }[];
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v3/files/{fileKey}/work": {
         parameters: {
             query?: never;

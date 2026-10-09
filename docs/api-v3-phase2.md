@@ -43,8 +43,8 @@ Index on `(file_key, id)`.
 
 | Type | `data` |
 |---|---|
-| `sync.completed` | `rootNodeId`, `counts` (as `sync_event`) |
-| `nodes.cleared` | `nodeIds` (≤ 500), `commitRef`, `worker` |
+| `sync.completed` | `rootNodeId`, `counts` (as `sync_event`, plus `dirty`: nodes the batch made dirty) |
+| `nodes.cleared` | `nodeIds` (≤ 500), `count` (all cleared nodes), `commitRef`, `worker` |
 | `claim.created` / `claim.renewed` / `claim.released` | `claimId`, `worker`, `label`, `expiresAt`, `nodeIds` (≤ 500) |
 | `node.blocked` / `node.unblocked` | `nodeId`, `reason`, `by`, `auto` (true when a design change unblocked it) |
 

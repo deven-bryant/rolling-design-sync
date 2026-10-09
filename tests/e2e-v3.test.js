@@ -628,6 +628,24 @@ test('v3 events: a stream receives sync and clear live; Last-Event-ID replays on
   assert.equal(pageAfter.nextAfter, clear.id);
 });
 
+test('GET /v3/insights/trends counts the clears and newly dirty nodes of the last window, per file and in total', async () => {
+  const fileKey = newFileKey();
+  await seed(fileKey);
+  await ok(call('POST', `/v3/files/${fileKey}/clear`, { body: { commitRef: 'e2e-trends', items: ['2:1', '2:2'].map(nodeId => ({ nodeId, contentHash: hashOf(NOW, nodeId) })) } }));
+  const trend = { cleared: 2, clearedPrevious: 0, clearedChangePct: null, dirtied: DIRTY.length, netDirty: DIRTY.length - 2 };
+  const one = await ok(call('GET', '/v3/insights/trends', { headers: viewer, query: { fileKey } }));
+  assert.equal(one.windowDays, 7);
+  assert.equal(Date.parse(one.to) - Date.parse(one.from), 7 * 24 * 60 * 60 * 1000);
+  assert.equal(one.complete, one.retentionDays >= 14);
+  assert.deepEqual(one.total, trend);
+  assert.deepEqual(one.files, [{ fileKey, fileName: 'E2E File', ...trend }]);
+  const all = await ok(call('GET', '/v3/insights/trends', { headers: viewer, query: { windowDays: 1 } }));
+  assert.deepEqual(all.files.find(f => f.fileKey === fileKey), { fileKey, fileName: 'E2E File', ...trend });
+  assert.ok(all.total.cleared >= 2 && all.total.dirtied >= DIRTY.length);
+  assertProblem(await call('GET', '/v3/insights/trends', { query: { windowDays: 15 } }), 400, 'invalid_parameter');
+  assertProblem(await call('GET', '/v3/insights/trends', { query: { fileKey: newFileKey() } }), 404, 'file_not_found');
+});
+
 test('GET /v3/openapi.json is reachable without a token and lists the phase-1 routes', async () => {
   const doc = await ok(call('GET', '/v3/openapi.json', { headers: {} }));
   assert.equal(doc.openapi, '3.1.0');
@@ -648,6 +666,7 @@ test('GET /v3/openapi.json is reachable without a token and lists the phase-1 ro
     '/v3/files/{fileKey}/nodes/{nodeId}/unblock': ['post'],
     '/v3/files/{fileKey}/summary': ['get'],
     '/v3/files/{fileKey}/work': ['get'],
+    '/v3/insights/trends': ['get'],
     '/v3/files/{fileKey}/hashes': ['get'],
     '/v3/files/{fileKey}/sync': ['post'],
     '/v3/files/{fileKey}/exists': ['post'],
