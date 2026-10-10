@@ -1,26 +1,28 @@
-import type { GalleryEntry } from '../primitives';
+import { inBothThemes, type GalleryEntry } from '../primitives';
 import { Pagination } from './Pagination';
 
 const noop = () => undefined;
+/** Both theme copies render side by side, so each `nav` landmark needs its own name. */
+const named = (label: string, theme: 'light' | 'dark') => (theme === 'dark' ? `${label}, dark theme` : label);
 
 export default {
   component: 'Pagination',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Type=Card default, Shape=Square, Breakpoint=Desktop',
-      render: () => <Pagination label="Pagination, first page" page={1} pageCount={10} onPageChange={noop} />,
+      render: theme => <Pagination label={named('Pagination, first page', theme)} page={1} pageCount={10} onPageChange={noop} />,
     },
     {
       figma: 'Type=Card default · middle page (two ellipses)',
-      render: () => <Pagination label="Pagination, middle page" page={5} pageCount={10} onPageChange={noop} />,
+      render: theme => <Pagination label={named('Pagination, middle page', theme)} page={5} pageCount={10} onPageChange={noop} />,
     },
     {
       figma: 'Type=Card default · cursor mode (Page n)',
-      render: () => <Pagination label="Cursor pagination" page={2} hasNext onPageChange={noop} />,
+      render: theme => <Pagination label={named('Cursor pagination', theme)} page={2} hasNext onPageChange={noop} />,
     },
     {
       figma: '_Pagination number base · Shape=Square, State=Default / State=Hover/active',
-      render: () => <Pagination label="Page numbers" page={2} pageCount={3} onPageChange={noop} />,
+      render: theme => <Pagination label={named('Page numbers', theme)} page={2} pageCount={3} onPageChange={noop} />,
     },
-  ],
+  ]),
 } satisfies GalleryEntry;

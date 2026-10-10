@@ -60,7 +60,8 @@ not accept. `detail` names it (`querystring/limit …`, `body/items/0 must have 
 property 'contentHash'`).
 
 - **Usual cause:** a value outside its enum (`state=dirtyy`, `changeType=changed`), a
-  number out of range (`limit=0`, `limit=1000`), `depth` without `under`, `claimed=mine`
+  number out of range (`limit=0`, `limit=1000`), `depth` without `under`, more than 50 `under` ids, several `under` ids
+  with `group=frame`, `claimed=mine`
   without `worker`, a `since` that is not a date, a `changed` pattern whose `*` is not
   trailing, an unparsable `q`, a key given both in `q` and as a parameter, the `-`
   placeholder without `?url=`, or a body that misses a required member or has the wrong
@@ -182,7 +183,7 @@ the first layer and these headers are the second.
 <a id="node-not-found"></a>
 ## `node_not_found`
 
-**404.** The file is tracked, but it has no node with this id (in `{nodeId}` or `under`).
+**404.** The file is tracked, but it has no node with this id (in `{nodeId}` or `under`; with several `under` ids, `detail` names the first unknown one).
 
 - **Usual cause:** a node outside every synced scope, a node from another file, or a
   mistyped id. Both `1:2` and `1-2` are accepted, so the separator is not the cause.

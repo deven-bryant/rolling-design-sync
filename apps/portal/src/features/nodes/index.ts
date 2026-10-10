@@ -12,6 +12,7 @@ export {
   useFile,
   useScope,
   useNodePage,
+  splitUnder,
   useChildNodes,
   useNodeDetail,
   useNodeHistory,

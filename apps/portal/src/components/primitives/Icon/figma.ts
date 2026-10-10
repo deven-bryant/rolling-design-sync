@@ -4,23 +4,29 @@ import {
   ArrowUpRight,
   ChevronDown,
   ChevronRight,
+  ChartPie,
   ChevronsUpDown,
   Circle,
   CircleCheck,
   CircleHelp,
+  CopyCheck,
   EllipsisVertical,
   House,
   type LucideIcon,
   Mail,
+  Moon,
+  Rows2,
   Search,
   SquareKanban,
+  Sun,
+  Users,
   X,
 } from 'lucide-react';
 
 export interface FigmaIcon {
   /** The icon set's component that draws it. */
   component: LucideIcon;
-  /** The Figma main component (Portal file, Section 1). */
+  /** The Figma main component (Portal file, Section 1, revision 3). */
   nodeId: string;
   /** The Figma component key. */
   key: string;
@@ -30,30 +36,36 @@ export interface FigmaIcon {
 
 /** Every icon in the design file, by its Figma component name. */
 export const figmaIcons = {
-  'arrow-left': { component: ArrowLeft, nodeId: '9:2206', key: '777b9b4d7753a2035b6663fffb16c2c54fac5fb0' },
-  'arrow-right': { component: ArrowRight, nodeId: '9:2818', key: '729bfc25812fac9fbcdb4bdca0d4edf2e2d3a823' },
-  'arrow-up-right': { component: ArrowUpRight, nodeId: '24:1739', key: 'a707cbcb042a1aeb2536609275e683a282e5c399' },
+  'arrow-left': { component: ArrowLeft, nodeId: '90:8962', key: '650f4c2f034d0f8b88d444003b4c13593b84dc9e' },
+  'arrow-right': { component: ArrowRight, nodeId: '90:8970', key: '9cde613e50d96ee88077ff2c579619ed32af71fa' },
+  'arrow-up-right': { component: ArrowUpRight, nodeId: '92:24845', key: 'f13bc12ee71870f70f9b2cec6432adc9f8bc9bab' },
   'bar-chart-square-02': {
     component: SquareKanban,
-    nodeId: '9:7056',
-    key: '48ab6b6297de0d38d50738148701d35625507dc9',
+    nodeId: '92:22330',
+    key: 'e948232d17cb46f3b5deeef6eb8842dcd659622e',
     className: '-scale-y-100',
   },
-  'check-circle': { component: CircleCheck, nodeId: '9:8033', key: 'ac62425509ae8db853c3743d10cb7cdf8f3d5381' },
-  'chevron-down': { component: ChevronDown, nodeId: '9:307', key: '3e85e58688d39ca4fc7712b70fa6270adaae33a1' },
-  'chevron-right': { component: ChevronRight, nodeId: '9:6200', key: '0843d31d8fea1d274e2b9c867974dd4f3f9fe66e' },
+  'check-done-01': { component: CopyCheck, nodeId: '92:17346', key: '30ffe73a1cf3b443c6ab453d0c9a7529d79b0441' },
+  'check-circle': { component: CircleCheck, nodeId: '92:22955', key: 'a5afeebd6db1a78df56af3bef6fafe75a367b7bd' },
+  'chevron-down': { component: ChevronDown, nodeId: '92:10769', key: '6444d0bc968f40ec11020a42feb04479b11449b7' },
+  'chevron-right': { component: ChevronRight, nodeId: '92:10657', key: '33ba7af76ad66927f477e0cade1526b7b06219da' },
   'chevron-selector-vertical': {
     component: ChevronsUpDown,
-    nodeId: '9:7180',
-    key: '5f270452ec1c189bdbff7447dda0f35187ca2a5c',
+    nodeId: '92:22447',
+    key: 'd6a8ef5eb3892344c812d929513a122beaf8c40e',
   },
-  'dots-vertical': { component: EllipsisVertical, nodeId: '9:5505', key: 'c2940f5ecaac53d31b5858a074f5ed0eb6f2c8c2' },
-  'help-circle': { component: CircleHelp, nodeId: '9:29', key: '6e6a5d1a7b921d16961c844d3bb2de6cb6ea97d4' },
-  'home-line': { component: House, nodeId: '9:6005', key: '157f069e8b247dab47e3050474165fb04b5f9928' },
-  'mail-01': { component: Mail, nodeId: '9:8355', key: 'ec8c81e8922d96f12ebbc36274552866bf0cdeb3' },
-  placeholder: { component: Circle, nodeId: '9:2208', key: 'b6c7f6f6171a8a6fc66cdcc312215f3f47d89892' },
-  'search-lg': { component: Search, nodeId: '9:859', key: '65f92c2ffa2b27db5648c61fe40ed45a473fc353' },
-  'x-close': { component: X, nodeId: '9:921', key: '149c71c35bebdf2bbc48a332f35342ed578826c6' },
+  'dots-vertical': { component: EllipsisVertical, nodeId: '92:16647', key: '13b5c01a82a3088176e9e167b3342d03f648c2be' },
+  'help-circle': { component: CircleHelp, nodeId: '92:12336', key: 'cc4213aab3a0755fe9ff7815fa390d5e4cf10e58' },
+  'home-line': { component: House, nodeId: '92:10719', key: 'e512479acdc24d66c1282e729f20775afbebc04b' },
+  'mail-01': { component: Mail, nodeId: '92:17838', key: 'ce3cd2758a41935b5de6f2d988de727fd1995088' },
+  'moon-01': { component: Moon, nodeId: '121:41366', key: 'e796275a37c7b8cf745e4303bf3d0c6ac0560639' },
+  'pie-chart-03': { component: ChartPie, nodeId: '92:22402', key: 'cd989144fe8164dfe2aef1bcfd7ba0d20658bb26' },
+  placeholder: { component: Circle, nodeId: '90:8859', key: '2a70a20746e7417e58420f790c4dfad9f2cea3e7' },
+  'rows-01': { component: Rows2, nodeId: '92:10659', key: '53ee5aed82280971f9ce3f436937444a2adf4aa8' },
+  'search-lg': { component: Search, nodeId: '92:12877', key: 'd39ae03289e2aafb53d968c58a47b601ba0377f4' },
+  sun: { component: Sun, nodeId: '121:41382', key: 'c983c55630ca893381d73f470ba81f42ee462aa8' },
+  'users-01': { component: Users, nodeId: '92:10690', key: '97ca2ee36bcb4cf58f4b357f369b045b02e71eff' },
+  'x-close': { component: X, nodeId: '92:12932', key: '92bd92978c27878daa77962cabf85a96f14bc67b' },
 } as const satisfies Record<string, FigmaIcon>;
 
 export type IconName = keyof typeof figmaIcons;

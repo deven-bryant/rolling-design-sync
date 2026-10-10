@@ -245,7 +245,9 @@ Each item has the component (`key`, `name`), its `nodeIds`, the
 screen); nodes outside any component form the last item, `key: null`. Build the
 components first — fixing a coded component once fixes every place it is used —
 then the screen's own nodes. Add `--format outline` for a readable version.
-`summarize` / `summary` gives the counts only.
+`summarize` / `summary` gives the counts only. For progress over time,
+`get_trends` / `trends` counts the nodes cleared and newly dirtied in the last
+`windowDays` days (default 7) per file, with the change vs the window before.
 Add `include: "progress"` / `--include progress` to get `{total, clean}` on
 each item across all states, independent of the `state` filter and the
 50-node ID cap. Other listing filters still apply.
@@ -302,8 +304,8 @@ node scripts/rds-agent.js nodes ls "$LINK" --claimed mine --worker agent-a --fie
   | node scripts/rds-agent.js clear --url "$LINK" --commit-ref <sha> -
 ```
 
-- `claim_nodes` / `claim` takes a `filter` (the listing's filters, e.g. `under`,
-  `type`, `component`) or exact `nodeIds` (claim a work item's `nodeIds` to
+- `claim_nodes` / `claim` takes a `filter` (the listing's filters, e.g. `under` — one node
+  id, or several comma-separated for the union of their subtrees — `type`, `component`) or exact `nodeIds` (claim a work item's `nodeIds` to
   take one component). It returns only the nodes it actually leased — free,
   expired, or already yours; work on those only. An empty `nodes` means nothing
   free matched.
@@ -314,8 +316,8 @@ node scripts/rds-agent.js nodes ls "$LINK" --claimed mine --worker agent-a --fie
 - `list_claims` / `node scripts/rds-agent.js claims ls --file-key <fileKey>`
   lists unexpired claims, soonest expiry first, with worker, label, expiry,
   node count and up to 500 still-leased node IDs per claim. Call it before
-  claiming to see who holds what; the portal's Claims tab and Agents page show
-  the same leases, live.
+  claiming to see who holds what; the portal's Claims page shows the same
+  leases, live.
 - `list_nodes` with `claimed=false` shows what nobody holds; `claimed=mine`
   needs `worker` (the CLI's `nodes ls` doesn't fill it from `RDS_WORKER`).
 

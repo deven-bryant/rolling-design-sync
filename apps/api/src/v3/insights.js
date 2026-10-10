@@ -4,7 +4,8 @@
  * v3 insights (docs/api-v3-phase2.md, "2. Summaries and work items"): counts of
  * the nodes a listing filter matches, and those nodes bundled into work items
  * by component or by frame. Both take every listing filter (default
- * `state=dirty`) and aggregate in the store.
+ * `state=dirty`) and aggregate in the store. Trends aggregate the event log:
+ * nodes cleared and newly dirtied per window, across files.
  */
 const { problem } = require('./problem');
 const address = require('./address');
@@ -12,7 +13,7 @@ const schemas = require('./schemas');
 const format = require('./format');
 const {
   filterParams, buildFilter, parseChanges, nodeFields, truncateChanges, queryFingerprint, encodeCursor, decodeCursor, encodeOutlineCursor, decodeOutlineCursor, offsetAfter, FILTER_KEYS,
-  parseExpand, expandScope, isAbsolute,
+  parseExpand, expandScope, isAbsolute, resolveUnder, singleRoot,
 } = require('./read');
 
 const GROUPS = ['component', 'frame', 'set'];
@@ -32,7 +33,7 @@ const nullableString = { type: ['string', 'null'] };
 
 const summary = {
   summary: 'Summarize changes',
-  description: 'Counts of the nodes the `list_nodes` filters match (default: dirty) by state, change type, change category and node type — a cheap overview before listing or planning work. With `under` (e.g. a page), `byFrame` also counts per child frame of it. '
+  description: 'Counts of the nodes the `list_nodes` filters match (default: dirty) by state, change type, change category and node type — a cheap overview before listing or planning work. With one `under` (e.g. a page), `byFrame` also counts per child frame of it (not with several `under` ids). '
     + 'With `expand=instances` the counts cover everything the scope uses — its nodes plus the main components its instances reach, transitively (`byFrame` still counts only nodes under `under`): how big is this screen, components included? Returns no nodes; use `list_nodes` or `list_work_items` for those.',
   tags, security,
   ...agentOp('summarize', 'summary'),
@@ -53,6 +54,49 @@ const summary = {
           items: { type: 'object', properties: { nodeId: { type: 'string' }, name: nullableString, count: { type: 'integer' } } },
         },
         expansion,
+      },
+    },
+    ...problems,
+  },
+};
+
+const MAX_TREND_DAYS = 14;
+const DEFAULT_TREND_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const trendCounts = {
+  cleared: { type: 'integer', description: 'Nodes cleared in the window [from, to).' },
+  clearedPrevious: { type: 'integer', description: 'Nodes cleared in the window before it [from − windowDays, from).' },
+  clearedChangePct: { type: ['integer', 'null'], description: 'round((cleared − clearedPrevious) / clearedPrevious × 100); null when clearedPrevious is 0.' },
+  dirtied: { type: 'integer', description: 'Nodes newly marked dirty by syncs in [from, to): new, changed while clean, or deleted while clean.' },
+  netDirty: { type: 'integer', description: 'dirtied − cleared: positive when the backlog grew.' },
+};
+const trends = {
+  summary: 'Weekly trends',
+  description: 'How fast the backlog moves: nodes cleared and nodes newly dirtied by syncs in the last `windowDays` days (default 7) and the change in clears vs the window before, for the whole server (`total`) and each tracked file (`files`); `fileKey` narrows both to one file. '
+    + 'Counts come from the event log, so `complete` is false when RDS_EVENT_RETENTION_DAYS (`retentionDays`) keeps less than two windows — `clearedPrevious` and `clearedChangePct` may then undercount. Returns no nodes.',
+  tags, security,
+  ...agentOp('get_trends', 'trends'),
+  querystring: {
+    type: 'object',
+    properties: {
+      windowDays: { type: 'integer', minimum: 1, maximum: MAX_TREND_DAYS, default: DEFAULT_TREND_DAYS, description: `Window length in days, 1–${MAX_TREND_DAYS} (default ${DEFAULT_TREND_DAYS}).` },
+      fileKey: { type: 'string', minLength: 1, description: 'Only this tracked file (file_not_found otherwise).' },
+    },
+  },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        windowDays: { type: 'integer' },
+        from: { type: 'string', format: 'date-time', description: 'Window start (inclusive): to − windowDays.' },
+        to: { type: 'string', format: 'date-time', description: 'Window end (exclusive): now.' },
+        complete: { type: 'boolean', description: 'False when event retention is shorter than 2 × windowDays.' },
+        retentionDays: { type: 'integer' },
+        total: { type: 'object', properties: trendCounts },
+        files: {
+          type: 'array',
+          items: { type: 'object', properties: { fileKey: { type: 'string' }, fileName: nullableString, ...trendCounts } },
+        },
       },
     },
     ...problems,
@@ -111,7 +155,7 @@ const work = format.withFormat({
     properties: {
       ...filterQuery,
       ...schemas.expandQuery,
-      group: { type: 'string', enum: GROUPS, description: 'component (default): by nearest component; set: merge all matching variants of a known component set (best for design systems); frame: by child frame of `under` (needs `under`).' },
+      group: { type: 'string', enum: GROUPS, description: 'component (default): by nearest component; set: merge all matching variants of a known component set (best for design systems); frame: by child frame of `under` (needs exactly one `under`).' },
       changes: {
         ...listQuery.changes,
         description: 'auto (default): each item\'s `changes` has the diffs of its modified and deleted nodes; diff: of every listed node, added ones included (their full values); names: no `changes`, only `changedProps`.',
@@ -159,12 +203,21 @@ const itemOut = (group, expanded) => i => ({
 const zeros = keys => Object.fromEntries(keys.map(k => [k, 0]));
 const sortedKeys = obj => Object.fromEntries(Object.keys(obj).sort().map(k => [k, obj[k]]));
 
+/** The trend fields of `{ cleared, clearedPrevious, dirtied }`. */
+const trendOf = ({ cleared, clearedPrevious, dirtied }) => ({
+  cleared,
+  clearedPrevious,
+  clearedChangePct: clearedPrevious ? Math.round(((cleared - clearedPrevious) / clearedPrevious) * 100) : null,
+  dirtied,
+  netDirty: dirtied - cleared,
+});
+
 // --- routes ----------------------------------------------------------------------
 /**
  * @param {any} app
  * @param {{ store: import('../store/types').Store } & Record<string, any>} deps
  */
-function registerInsightRoutes(app, { store, now }) {
+function registerInsightRoutes(app, { store, now, config }) {
   async function trackedFile(fileKey) {
     const [file] = await store.listFiles({ fileKey });
     if (!file) throw address.fileNotFound(fileKey);
@@ -188,13 +241,13 @@ function registerInsightRoutes(app, { store, now }) {
     return { fileKey, filter, expand: parseExpand(query, filter) };
   }
 
-  /** Resolves `under` to a stored node id and, with `expand`, sets `filter.regions`; returns the expansion (or null). */
+  /** Resolves the `under` ids to stored node ids and, with `expand`, sets `filter.regions`; returns the expansion (or null). */
   async function resolveScope(fileKey, filter, expand) {
     await trackedFile(fileKey);
-    const underNode = filter.under === null ? null : await findNode(fileKey, filter.under);
-    if (underNode) filter.under = underNode.nodeId;
+    const underNodes = filter.under === null ? null : await resolveUnder(fileKey, filter.under, findNode);
+    if (underNodes) filter.under = underNodes.map(n => n.nodeId);
     if (!expand) return null;
-    const expansion = await expandScope(store, fileKey, underNode, expand);
+    const expansion = await expandScope(store, fileKey, underNodes, expand);
     filter.regions = expansion.regions;
     return expansion;
   }
@@ -210,8 +263,30 @@ function registerInsightRoutes(app, { store, now }) {
       byChangeType: { ...zeros(schemas.CHANGE_TYPES), ...s.byChangeType },
       byCategory: { ...zeros(schemas.CATEGORIES), ...s.byCategory },
       byType: sortedKeys(s.byType),
-      ...(filter.under !== null ? { byFrame: s.byFrame || [] } : {}),
+      ...(filter.under !== null && filter.under.length === 1 ? { byFrame: s.byFrame || [] } : {}),
       ...(expansion ? { expansion: expansion.meta } : {}),
+    };
+  });
+
+  app.get('/insights/trends', { schema: trends }, async (/** @type {import('./types').V3Request<'/v3/insights/trends', 'get'>} */ request) => {
+    const { windowDays = DEFAULT_TREND_DAYS, fileKey = null } = request.query;
+    if (fileKey !== null) await trackedFile(fileKey);
+    const to = now();
+    const window = windowDays * DAY_MS;
+    const from = new Date(to.getTime() - window);
+    const rows = await store.eventTrends({
+      fileKey, from: new Date(to.getTime() - 2 * window).toISOString(), since: from.toISOString(), until: to.toISOString(),
+    });
+    const retentionDays = config.eventRetentionDays;
+    const sum = key => rows.reduce((n, r) => n + r[key], 0);
+    return {
+      windowDays,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      complete: retentionDays >= 2 * windowDays,
+      retentionDays,
+      total: trendOf({ cleared: sum('cleared'), clearedPrevious: sum('clearedPrevious'), dirtied: sum('dirtied') }),
+      files: rows.map(r => ({ fileKey: r.fileKey, fileName: r.fileName, ...trendOf(r) })),
     };
   });
 
@@ -228,11 +303,14 @@ function registerInsightRoutes(app, { store, now }) {
     let full = false;
     for (;;) {
       const rows = new Map((await store.getNodes(fileKey, [...new Set(page.items.flatMap(i => i.nodeIds))])).map(n => [n.nodeId, n]));
-      const mainIds = [...new Set([...rows.values()].map(n => n.mainComponentId).filter(id => id && !rows.has(id)))];
+      const mainIds = [...new Set([...rows.values()].flatMap(n => (n.mainComponentId && !rows.has(n.mainComponentId) ? [n.mainComponentId] : [])))];
       const mains = new Map([...rows.values(), ...(mainIds.length ? await store.getNodes(fileKey, mainIds) : [])].map(n => [n.nodeId, n.name]));
       for (const raw of page.items) {
         const item = toItem(raw);
-        const nodes = item.nodeIds.filter(id => rows.has(id)).map(id => ({ node: nodeFields(fileKey, rows.get(id), at, 'names'), path: rows.get(id).path, absolute: isAbsolute(rows.get(id)), region: 0 }));
+        const nodes = item.nodeIds.flatMap(id => {
+          const row = rows.get(id);
+          return row ? [{ node: nodeFields(fileKey, row, at, 'names'), path: row.path, absolute: isAbsolute(row), region: 0 }] : [];
+        });
         const itemLines = [format.itemOutline(group, item), ...format.outlineTree(nodes, { base: 1, mainNames: mains })];
         if (shown && lines.length + itemLines.length > format.OUTLINE_LINES) { full = true; break; }
         lines.push(...itemLines);
@@ -243,7 +321,7 @@ function registerInsightRoutes(app, { store, now }) {
       page = await store.listWorkItems(fileKey, filter, { group, limit, after: page.next, maxIds: MAX_ITEM_NODE_IDS, progress });
     }
     const shownTo = pos.offset + shown;
-    const next = full ? { k: last.k, id: last.keyId ?? '' } : null;
+    const next = full && last ? { k: last.k, id: last.keyId ?? '' } : null;
     return format.sendOutline(reply, lines, {
       from: pos.line,
       limit: lineLimit,
@@ -269,9 +347,10 @@ function registerInsightRoutes(app, { store, now }) {
     const progress = query.include === 'progress';
     const outline = fmt === 'outline';
     const fp = queryFingerprint(filter, { route: 'work', group, changes, ...(progress ? { include: 'progress' } : {}), ...(expand ? { expand } : {}), ...(outline ? { format: fmt } : {}) });
-    const pos = outline ? decodeOutlineCursor(query.cursor, fp) : null;
+    const pos = decodeOutlineCursor(outline ? query.cursor : undefined, fp);
     const after = outline ? pos.after : query.cursor === undefined ? null : decodeCursor(query.cursor, fp);
     const expansion = await resolveScope(fileKey, filter, expand);
+    if (group === 'frame' && filter.under && filter.under.length > 1) throw singleRoot('group', `'frame' needs exactly one under (got ${filter.under.length} distinct nodes).`);
 
     const limit = outline ? format.STREAM_PAGE : format.pageSize(fmt, query.limit, schemas.DEFAULT_LIMIT);
     let truncated = false;
@@ -319,4 +398,4 @@ function registerInsightRoutes(app, { store, now }) {
   });
 }
 
-module.exports = { registerInsightRoutes, MAX_ITEM_NODE_IDS, GROUPS };
+module.exports = { registerInsightRoutes, MAX_ITEM_NODE_IDS, GROUPS, MAX_TREND_DAYS, DEFAULT_TREND_DAYS };

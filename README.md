@@ -72,12 +72,15 @@ What that gets you:
 
 The API serves a browser portal at `/ui`. Viewers read; agents can also block
 nodes and release claims. Everything updates live as agents claim and clear.
+Select one or several scopes (sections or frames) to work on: the node tree,
+the work items and the copied agent prompt cover all of them. The portal
+follows your system's light or dark setting; the sidebar toggle overrides it.
 
 | | |
 |---|---|
-| ![Work items](docs/images/portal-work-items.png) **Work items** — changes grouped by component, with progress, so the shared pieces get built first. | ![Change List](docs/images/portal-node-changes.png) **Change List** — each changed property, from what was built to what the design says now, design tokens included. |
-| ![Change History](docs/images/portal-node-history.png) **Change History** — every claim, clear and block on a node, with the commit that built it. | ![Activity and agents](docs/images/portal-activity.png) **Activity & agents** — who holds what right now, and everything that happened in the file. |
-| ![Files](docs/images/portal-files.png) **Files** — every tracked file with what's left to build. | ![Connect](docs/images/portal-connect.png) **Connect** — copy-paste setup for Claude Code, Cursor, Devin and the CLI. |
+| ![Work items](docs/images/portal-work-items.png) **Work items** — changes grouped by component, with progress, so the shared pieces get built first; search nodes and expand instances like the node tree. | ![Change List](docs/images/portal-node-changes.png) **Change List** — each changed property, from what was built to what the design says now, design tokens included. |
+| ![Change History](docs/images/portal-node-history.png) **Change History** — every claim, clear and block on a node, with the commit that built it. | ![Activity](docs/images/portal-activity.png) **Activity** — everything that happened in your files, live; **Claims** shows who holds what right now. |
+| ![Files](docs/images/portal-files.png) **Files** — every tracked file with what's left to build, and the week's trend: nodes cleared vs the week before, net newly dirty. | ![Connect](docs/images/portal-connect.png) **Connect** — copy-paste setup for Claude Code, Cursor, Devin and the CLI. |
 
 The screenshots are generated from a seeded demo with
 `npm run screenshots` in [`tests/e2e-portal`](tests/e2e-portal/screenshots.spec.js).
@@ -94,11 +97,11 @@ Design tweaks after that came back as just the nodes they touched.
 
 | Way | Status |
 |---|---|
-| **Clone the repository** and run `docker compose up -d` | Available now — the [quickstart](docs/quickstart.md) path |
-| **npm packages** — [`@rolling-design-sync/mcp`](apps/mcp), [`@rolling-design-sync/agent-cli`](scripts), [`@rolling-design-sync/core`](packages/core) | Coming with the first public release |
-| **Container image** on GHCR (`ghcr.io/deven-bryant/rolling-design-sync`) | Coming with the first public release |
+| **Clone the repository** and run `docker compose up -d` | Available — the [quickstart](docs/quickstart.md) path |
+| **npm packages** — [`@rolling-design-sync/mcp`](https://www.npmjs.com/package/@rolling-design-sync/mcp) (`npx @rolling-design-sync/mcp`), [`@rolling-design-sync/agent-cli`](https://www.npmjs.com/package/@rolling-design-sync/agent-cli) (`npx @rolling-design-sync/agent-cli`), [`@rolling-design-sync/core`](https://www.npmjs.com/package/@rolling-design-sync/core) | Available |
+| **Container image** on GHCR ([`ghcr.io/deven-bryant/rolling-design-sync`](https://github.com/deven-bryant/rolling-design-sync/pkgs/container/rolling-design-sync)) | Available — `docker run` in the [quickstart](docs/quickstart.md) |
 
-Until then the MCP server and the CLI run straight from the checkout
+The MCP server and the CLI also run straight from a checkout
 (`node apps/mcp/bin/rds-mcp.js`, `node scripts/rds-agent.js`).
 [docs/agents.md](docs/agents.md) sets them up for Claude Code, Cursor and Devin,
 and has the recipes: what's in a screen, what to build first, the clear loop,
@@ -159,10 +162,8 @@ running local mode without Docker.
 
 ## Hosted version
 
-<!-- TODO(maintainer): confirm the hosted offering and the waitlist URL before launch. -->
-
 Rather not run a server? A hosted version is planned. Join the waitlist at
-**[rollingdesignsync.com/waitlist](https://rollingdesignsync.com/waitlist)**.
+**[rollingdesignsync.com](https://rollingdesignsync.com/#waitlist)**.
 Self-hosting stays fully supported.
 
 ## API
@@ -185,6 +186,7 @@ plugin routes a plugin token, and `/v3/openapi.json` none.
 | `GET /v3/files/{fileKey}/summary` | Counts of what changed, by state, category, type and frame |
 | `GET /v3/files/{fileKey}/work` | Changes grouped into work items (per component or frame) |
 | `GET /v3/files/{fileKey}/events` | Activity log, as a page or a live event stream |
+| `GET /v3/insights/trends` | Nodes cleared and newly dirtied this week vs the last, per file |
 | `GET /v3/resolve?url=` | Figma link → `{ fileKey, nodeId }` |
 | `GET /v3/files/{fileKey}/hashes` | Plugin: stored hashes for a subtree |
 | `POST /v3/files/{fileKey}/sync` | Plugin: upsert changed nodes, tombstone deleted ones |
@@ -192,7 +194,8 @@ plugin routes a plugin token, and `/v3/openapi.json` none.
 | `GET /v3/openapi.json` | OpenAPI 3.1 spec (no token) |
 | `GET /health` | Liveness check (no token) |
 
-Node ids may be written `1:2` or `1-2`. Any file route takes `?url=<figma link>`
+Node ids may be written `1:2` or `1-2`; `under` takes one or several,
+comma-separated (`under=1-2,5-1`), for the union of their subtrees. Any file route takes `?url=<figma link>`
 in place of the key: `/v3/files/-/nodes?url=…` lists the subtree of the linked
 node.
 

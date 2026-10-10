@@ -18,7 +18,7 @@ class PostgresBus {
    * @param {object} opts.store       PostgresStore (NOTIFY and polling go through its pool)
    * @param {string} [opts.connectionString]  the listening connection
    * @param {object|boolean} [opts.ssl]
-   * @param {Function} [opts.createClient]  `config => pg.Client`-like (tests)
+   * @param {Function | null} [opts.createClient]  `config => pg.Client`-like (tests)
    * @param {number} [opts.pollMs]
    * @param {number} [opts.reconnectMs]
    * @param {number} [opts.maxReconnectMs]
@@ -62,7 +62,7 @@ class PostgresBus {
   async close() {
     this.closed = true;
     this.mode = 'stopped';
-    clearInterval(this.pollTimer);
+    clearInterval(this.pollTimer ?? undefined);
     clearTimeout(this.reconnectTimer);
     this.pollTimer = this.reconnectTimer = null;
     this.subscribers.clear();
@@ -99,7 +99,7 @@ class PostgresBus {
     this.mode = 'listening';
     this.lastError = null;
     this.reconnectDelay = this.reconnectMs;
-    clearInterval(this.pollTimer);
+    clearInterval(this.pollTimer ?? undefined);
     this.pollTimer = null;
     await this.poll(); // catch up on anything committed while not listening
     return true;

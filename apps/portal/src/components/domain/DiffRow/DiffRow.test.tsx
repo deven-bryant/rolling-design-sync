@@ -1,3 +1,4 @@
+import gallery from './DiffRow.gallery';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { expectNoAxeViolations } from '../../../test/axe';
@@ -35,5 +36,15 @@ describe('DiffRow', () => {
   it('omits the category badge when not given', () => {
     const { container } = render(<DiffRow property="fills" built="a" now="b" />);
     expect(container.querySelector('.bg-utility-gray-blue-50')).toBeNull();
+  });
+});
+
+describe('DiffRow under the dark theme', () => {
+  it('renders its gallery examples with no axe violations', async () => {
+    const dark = gallery.examples.filter(e => e.figma.endsWith('Color Mode=Dark'));
+    expect(dark.length).toBeGreaterThan(0);
+    const { container } = render(<div>{dark.map(e => <section key={e.figma} aria-label={e.figma}>{e.render()}</section>)}</div>);
+    expect(container.querySelectorAll('[data-theme="dark"]')).toHaveLength(dark.length);
+    await expectNoAxeViolations(container);
   });
 });

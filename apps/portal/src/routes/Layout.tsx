@@ -9,9 +9,11 @@ import { Badge } from '../components/Badge';
 import { Button } from '../components/Button';
 import { MainLayout } from '../components/MainLayout';
 import { Menu } from '../components/Menu';
-import { Text, VisuallyHidden } from '../components/primitives';
+import { VisuallyHidden } from '../components/primitives';
 import { SidebarNav } from '../components/SidebarNav';
+import { ThemeToggle } from '../components/ThemeToggle';
 import { useServerStatus, type ServerHealth } from '../features/connect';
+import { useTheme } from '../theme';
 import { lastFile } from './lastFile';
 import { DOCS_URL, RouteLinks } from './links';
 import { filePath } from './urlState';
@@ -31,7 +33,7 @@ export function Shell({ sidebar, children }: { sidebar: ReactNode; children: Rea
   );
 }
 
-type NavId = 'files' | 'nodes' | 'work' | 'activity' | 'agents' | 'connect';
+type NavId = 'files' | 'nodes' | 'work' | 'activity' | 'claims' | 'connect';
 
 /** The sidebar item a path belongs to. */
 export function navItemOf(pathname: string): NavId | null {
@@ -39,7 +41,7 @@ export function navItemOf(pathname: string): NavId | null {
   if (tab === 'nodes' || tab === 'work') return tab;
   if (pathname === '/files' || pathname.startsWith('/files/')) return 'files';
   const top = pathname.split('/')[1];
-  return top === 'activity' || top === 'agents' || top === 'connect' ? top : null;
+  return top === 'activity' || top === 'claims' || top === 'connect' ? top : null;
 }
 
 const cardTitle: Record<ServerHealth, string> = {
@@ -121,13 +123,10 @@ function Sidebar() {
     (claims.data ?? []).filter(c => !c.expiresAt || Date.parse(c.expiresAt) > now).map(c => c.worker),
   ).size;
   const minor = status.status?.version?.split('.').slice(0, 2).join('.');
+  const { theme, setTheme } = useTheme();
   return (
     <SidebarNav>
-      <SidebarNav.Header>
-        <Text as="p" size="xl" weight="semibold" className="px-md">
-          Rolling Design Sync
-        </Text>
-      </SidebarNav.Header>
+      <SidebarNav.Header title="Rolling Design Sync" actions={<ThemeToggle theme={theme} onChange={setTheme} />} />
       <SidebarNav.Section>
         <SidebarNav.Item href="/files" icon="home-line" current={current === 'files'}>
           Files
@@ -135,20 +134,21 @@ function Sidebar() {
         <SidebarNav.Item href={fileKey ? filePath(fileKey, 'nodes') : '/files'} icon="bar-chart-square-02" current={current === 'nodes'}>
           Nodes
         </SidebarNav.Item>
-        <SidebarNav.Item href={fileKey ? filePath(fileKey, 'work') : '/files'} current={current === 'work'}>
-          Work
+        <SidebarNav.Item href={fileKey ? filePath(fileKey, 'work') : '/files'} icon="rows-01" current={current === 'work'}>
+          Work Items
         </SidebarNav.Item>
         <SidebarNav.Item
           href="/activity"
+          icon="check-done-01"
           current={current === 'activity'}
           badge={agents > 0 ? <Badge aria-label={`${agents} active agents`}>{agents}</Badge> : undefined}
         >
           Activity
         </SidebarNav.Item>
-        <SidebarNav.Item href="/agents" current={current === 'agents'}>
-          Agents
+        <SidebarNav.Item href="/claims" icon="pie-chart-03" current={current === 'claims'}>
+          Claims
         </SidebarNav.Item>
-        <SidebarNav.Item href="/connect" current={current === 'connect'}>
+        <SidebarNav.Item href="/connect" icon="users-01" current={current === 'connect'}>
           Connect
         </SidebarNav.Item>
       </SidebarNav.Section>

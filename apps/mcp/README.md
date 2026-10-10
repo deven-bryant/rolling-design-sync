@@ -65,6 +65,7 @@ of truth; a different server version may list more or fewer):
 | `resolve_url` | `GET /v3/resolve` | A Figma link → `{ fileKey, nodeId }`. |
 | `summarize` | `GET /v3/files/{fileKey}/summary` | Counts of what changed, by category, type and component. |
 | `list_work_items` | `GET /v3/files/{fileKey}/work` | Changes grouped into work items (e.g. one per component). |
+| `get_trends` | `GET /v3/insights/trends` | Nodes cleared and newly dirtied in the last `windowDays` days, per file and in total. |
 | `claim_nodes` | `POST /v3/files/{fileKey}/claims` | Lease nodes (by `nodeIds` or `filter`) to a `worker`. |
 | `renew_claim` | `POST /v3/files/{fileKey}/claims/{claimId}/renew` | Extend a lease. |
 | `release_claim` | `DELETE /v3/files/{fileKey}/claims/{claimId}` | Hand back what a claim still holds. |
@@ -142,15 +143,14 @@ reached at startup (it needs the API running to know its tools).
 New to Rolling Design Sync? The [quickstart](https://github.com/deven-bryant/rolling-design-sync/blob/main/docs/quickstart.md) runs the
 API, the Figma plugin and this server end to end.
 
-From a checkout of the repository (Node 20+) — the supported path today:
+From npm (Node 20+): `npx @rolling-design-sync/mcp` (binary `rds-mcp`). Or
+from a checkout of the repository:
 
 ```bash
 npm install
 ```
 
-The server entry point is `apps/mcp/bin/rds-mcp.js`. The npm package
-(`npx @rolling-design-sync/mcp`, binary `rds-mcp`) is coming with the first
-public release. Setup for **Claude Code, Cursor and Devin** — with the CLI
+The server entry point is then `apps/mcp/bin/rds-mcp.js`. Setup for **Claude Code, Cursor and Devin** — with the CLI
 getting the same variables, and the agent token copied out of Docker — is in
 [docs/agents.md](https://github.com/deven-bryant/rolling-design-sync/blob/main/docs/agents.md), along with the recipes. For other clients, replace `/path/to/rolling-design-sync`
 with the absolute path of your checkout and fill in the env values. The token is

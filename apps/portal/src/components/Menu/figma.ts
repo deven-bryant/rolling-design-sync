@@ -8,8 +8,8 @@ export const figma = {
       variants: [
         {
           name: 'Type=Icon, Open=False',
-          nodeId: '9:6027',
-          key: 'd17c07d1f7ccbfdc5b5f704666676e7c2dfcab56',
+          nodeId: '111:11890',
+          key: '09834d30afed8f31ddcb27aed63de3670787e56d',
           props: {},
         },
       ],
@@ -21,20 +21,20 @@ export const figma = {
       variants: [
         {
           name: 'Type=Menu item, State=Default, Current=False',
-          nodeId: '9:7188',
-          key: '8a38b539ea79acdf2d1b135318811034a4f1f28b',
+          nodeId: '111:16715',
+          key: 'ffd914446e9f3b441ecc3ed02c99ab02fdcb4594',
           props: { type: 'menu-item' },
         },
         {
           name: 'Type=Account, State=Default, Current=False',
-          nodeId: '9:7190',
-          key: '6fd61c897aad6d845fcb712b7022b952d96b9d3b',
+          nodeId: '111:16717',
+          key: 'cf71aa3b50ede8a0ec13292445f78635a901b80a',
           props: { type: 'account' },
         },
         {
           name: 'Type=Account, State=Default, Current=True',
-          nodeId: '9:7191',
-          key: '598c363f36a636908f4fee3ba94605d3f6f09cfa',
+          nodeId: '111:16718',
+          key: '50b066889a5e90e6475da7d5e1e0c0cc407ed77a',
           props: { type: 'account', selected: true },
         },
       ],

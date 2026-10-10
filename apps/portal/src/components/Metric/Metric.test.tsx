@@ -3,6 +3,8 @@ import { createRef } from 'react';
 import { describe, expect, it } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Metric, MetricChange } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Metric.gallery';
 
 describe('Metric', () => {
   it('Type=Simple: heading, value, change and menu', async () => {
@@ -34,6 +36,14 @@ describe('Metric', () => {
     expect(screen.getByText('12')).toBeDefined();
   });
 
+  it('_Change Trend=Negative: a down arrow, labelled Down by default', () => {
+    render(<MetricChange trend="negative">-12</MetricChange>);
+    const arrow = screen.getByRole('img', { name: 'Down' });
+    expect(arrow.getAttribute('class')).toContain('rotate-90');
+    expect(arrow.getAttribute('class')).toContain('text-fg-error-secondary');
+    expect(screen.getByText('-12')).toBeDefined();
+  });
+
   it('_Change Type=03, Trend=Positive: labelled arrow and text', async () => {
     const ref = createRef<HTMLSpanElement>();
     const { container } = render(
@@ -48,3 +58,5 @@ describe('Metric', () => {
     await expectNoAxeViolations(container);
   });
 });
+
+describeGalleryInThemes(gallery);

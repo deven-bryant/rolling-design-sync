@@ -167,6 +167,48 @@ for (const kind of Object.keys(STORES)) {
       assertProblem(await nodes('under=1:1&depth=-1'), 400, 'invalid_parameter');
     });
 
+    await t.test('under takes a list of roots: their union, roots in the order given, each node once', async () => {
+      const both = ids(await nodes('under=2:2,2:1&state=all'));
+      assert.deepEqual(both, [...ids(await nodes('under=2:2&state=all')), ...ids(await nodes('under=2:1&state=all'))]);
+      assert.deepEqual(ids(await nodes('under=2-2,%202:1%20&state=all')), both);
+      assert.deepEqual(ids(await nodes('q=state:all under:2:2,2-1')), both);
+      assert.deepEqual(ids(await nodes('under=2:1,2:2&depth=0&state=all')), ['2:1', '2:2'], 'depth applies below each root');
+      assert.deepEqual(ids(await nodes('under=1:1,2:1&depth=1&state=all')), ['1:1', '2:1', '2:2', '5:1', '3:1', '3:2']);
+      const overlap = ids(await nodes('under=1:1,2:1,2-1&state=all'));
+      sameSet(overlap, ALL);
+      assert.equal(overlap.length, ALL.length);
+      const paged = [];
+      let cursor = null;
+      do {
+        const page = (await nodes(`under=2:2,2:1&state=all&limit=2${cursor ? `&cursor=${cursor}` : ''}`)).json();
+        assert.equal(page.total, both.length);
+        paged.push(...page.nodes.map(n => n.nodeId));
+        cursor = page.nextCursor;
+      } while (cursor);
+      assert.deepEqual(paged, both);
+      const outline = (await nodes('under=2:2,2:1&state=all&format=outline')).body.split('\n').filter(Boolean);
+      assert.deepEqual(outline.filter(l => !l.startsWith(' ')).map(l => l.split(' (')[0]), ['Header', 'Card']);
+      const unknown = assertProblem(await nodes('under=2:1,9-9'), 404, 'node_not_found');
+      assert.match(unknown.hint, /9:9/);
+      assert.deepEqual(ids(await nodes(`under=${Array(50).fill('2:1').join(',')}`)), ids(await nodes('under=2:1')));
+      const many = assertProblem(await nodes(`under=${Array(51).fill('2:1').join(',')}`), 400, 'invalid_parameter');
+      assert.match(many.detail, /50/);
+      assertProblem(await nodes('under=,'), 400, 'invalid_parameter');
+    });
+
+    await t.test('summary and work over several roots; frame grouping needs one', async () => {
+      const json = res => { assert.equal(res.statusCode, 200, res.body); return res.json(); };
+      const summary = json(await get(app, `/v3/files/${FK}/summary?under=2:1,2:2&state=all`));
+      assert.equal(summary.total, ids(await nodes('under=2:1,2:2&state=all')).length);
+      assert.equal(summary.byFrame, undefined);
+      assert.ok(Array.isArray(json(await get(app, `/v3/files/${FK}/summary?under=2:1&state=all`)).byFrame));
+      const work = json(await get(app, `/v3/files/${FK}/work?under=2:1,2:2&state=all&changes=names`));
+      assert.equal(work.items.reduce((sum, i) => sum + i.nodeCount, 0), summary.total);
+      const frame = assertProblem(await get(app, `/v3/files/${FK}/work?group=frame&under=2:1,2:2`), 400, 'invalid_parameter');
+      assert.match(frame.hint, /one under/);
+      json(await get(app, `/v3/files/${FK}/work?group=frame&under=2:1,2-1`));
+    });
+
     await t.test('type (OR within, case-insensitive)', async () => {
       sameSet(ids(await nodes('type=TEXT')), ['3:3', '3:4']);
       sameSet(ids(await nodes('type=text')), ['3:3', '3:4']);
@@ -688,7 +730,7 @@ test('/v3/openapi.json is an OpenAPI 3 document listing every v3 route', async t
     '/v3/files/{fileKey}/claims/{claimId}/renew': ['post'], '/v3/files/{fileKey}/claims/{claimId}': ['delete'],
     '/v3/files/{fileKey}/events': ['get'],
     '/v3/files/{fileKey}/nodes/{nodeId}/block': ['post'], '/v3/files/{fileKey}/nodes/{nodeId}/unblock': ['post'],
-    '/v3/files/{fileKey}/summary': ['get'], '/v3/files/{fileKey}/work': ['get'],
+    '/v3/files/{fileKey}/summary': ['get'], '/v3/files/{fileKey}/work': ['get'], '/v3/insights/trends': ['get'],
     '/v3/files/{fileKey}/hashes': ['get'], '/v3/files/{fileKey}/sync': ['post'], '/v3/files/{fileKey}/exists': ['post'],
     '/v3/session': ['get', 'delete', 'post'],
     '/v3/status': ['get'], '/v3/tokens': ['get'], '/v3/claims': ['get'],
@@ -754,6 +796,7 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     'get /v3/files/{fileKey}/nodes/{nodeId}': ['get_node', 'nodes show'],
     'get /v3/files/{fileKey}/summary': ['summarize', 'summary'],
     'get /v3/files/{fileKey}/work': ['list_work_items', 'work'],
+    'get /v3/insights/trends': ['get_trends', 'trends'],
     'post /v3/files/{fileKey}/clear': ['clear_nodes', 'clear'],
     'post /v3/files/{fileKey}/claims': ['claim_nodes', 'claim'],
     'get /v3/files/{fileKey}/claims': ['list_claims', 'claims ls'],
@@ -783,8 +826,8 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     assert.equal(op['x-rds-mcp'], undefined, key);
     assert.equal(op['x-rds-cli'], undefined, key);
   }
-  assert.equal(new Set(Object.values(expected).map(([tool]) => tool)).size, 16);
-  assert.equal(new Set(Object.values(expected).map(([, command]) => command)).size, 16);
+  assert.equal(new Set(Object.values(expected).map(([tool]) => tool)).size, 17);
+  assert.equal(new Set(Object.values(expected).map(([, command]) => command)).size, 17);
 
   const described = s => typeof s === 'string' && s.trim().length > 0;
   for (const [key, op] of ops.filter(([k]) => expected[k])) {

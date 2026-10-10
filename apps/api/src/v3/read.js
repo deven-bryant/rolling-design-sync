@@ -19,6 +19,21 @@ const CLAIMED = ['true', 'false', 'mine'];
 const BOOLEANS = ['true', 'false'];
 
 const csv = v => String(v).split(',').map(s => s.trim()).filter(Boolean);
+/** Most subtree roots one `under` may name. */
+const MAX_UNDER = 50;
+
+/** The `under` ids (one, or a comma-separated list), in the order given. */
+function parseUnder(value) {
+  const ids = csv(value);
+  if (!ids.length) throw invalid('under', 'needs a node id.', 'Pass under=<nodeId>, or several comma-separated: under=1:2,1:5.');
+  if (ids.length > MAX_UNDER) throw invalid('under', `at most ${MAX_UNDER} node ids (got ${ids.length}).`, `Pass up to ${MAX_UNDER} subtree roots, or a common ancestor of them.`);
+  return ids;
+}
+
+/** 400 for a feature that needs exactly one subtree root, given several. */
+function singleRoot(param, detail) {
+  return invalid(param, detail, 'Pass one under, or group by component.');
+}
 
 function invalid(param, detail, hint) {
   return problem('invalid_parameter', `${param}: ${detail}`, { hint });
@@ -95,7 +110,7 @@ function buildFilter(p, nowIso) {
   const instance = p.instance === undefined ? [] : [...new Set(oneOf('instance', csv(p.instance), BOOLEANS))];
   return {
     states: states.includes('all') ? ['dirty', 'clean', 'blocked'] : [...new Set(states)],
-    under: p.under === undefined ? null : String(p.under),
+    under: p.under === undefined ? null : parseUnder(p.under),
     depth,
     types: p.type === undefined ? [] : csv(p.type).map(t => t.toUpperCase()),
     changeTypes: p.changeType === undefined ? [] : oneOf('changeType', csv(p.changeType), schemas.CHANGE_TYPES),
@@ -138,20 +153,26 @@ function parseExpand(query, filter) {
   return { depth: query.expandDepth ?? schemas.DEFAULT_EXPAND_DEPTH };
 }
 
+/** The expansionEdges region key of scope root `i` (`''` for the first; mains use their node ids). */
+const scopeKey = i => (i === 0 ? '' : `#${i}`);
+
 /**
  * Orders the reachable mains (`expansionReach`) breadth-first: level by level,
- * each main after the region (scope = '', or an earlier main) holding its first
- * instance, then by that instance's document order. Keeps the first `limit`.
- * Returns `{ regions, vias, meta }`: `regions[0]` is the scope path (null: the
- * whole file), then each synced component's path; `vias[i]` annotates region i.
+ * each main after the region (a scope root — `scopeKey(i)` — or an earlier main)
+ * holding its first instance, then by that instance's document order. Keeps the
+ * first `limit`. `scopePaths` is the scope root path, or a list of them (one
+ * null: the whole file). Returns `{ regions, vias, meta, scopes }`: the first
+ * `scopes` regions are the scope roots' paths in order, then each synced
+ * component's path; `vias[i]` annotates region i.
  */
-function planExpansion(scopePath, reach, edges, limit) {
+function planExpansion(scopePaths, reach, edges, limit) {
+  const scopes = Array.isArray(scopePaths) ? scopePaths : [scopePaths];
   const byMain = new Map();
   for (const e of edges) {
     if (!byMain.has(e.mainComponentId)) byMain.set(e.mainComponentId, []);
     byMain.get(e.mainComponentId).push(e);
   }
-  const ordinal = new Map([['', 0]]);
+  const ordinal = new Map(scopes.map((_, i) => [scopeKey(i), i]));
   const order = (a, b) => a.o - b.o || cmp(a.e.instanceKey ?? a.e.instancePath, b.e.instanceKey ?? b.e.instancePath) || cmp(a.e.instanceId, b.e.instanceId);
   const found = [];
   const maxDepth = reach.reduce((m, r) => Math.max(m, r.depth), 0);
@@ -177,8 +198,9 @@ function planExpansion(scopePath, reach, edges, limit) {
   const components = kept.filter(c => c.path);
   const truncated = found.length > limit;
   return {
-    regions: [scopePath, ...components.map(c => c.path)],
-    vias: [null, ...components.map(c => c.via)],
+    regions: [...scopes, ...components.map(c => c.path)],
+    vias: [...scopes.map(() => null), ...components.map(c => c.via)],
+    scopes: scopes.length,
     meta: {
       components: components.length,
       truncated,
@@ -188,23 +210,55 @@ function planExpansion(scopePath, reach, edges, limit) {
   };
 }
 
-/** The expansion of a scope (`scopeNode`, or the whole file when null) over instance → main edges; see planExpansion. */
-async function expandScope(store, fileKey, scopeNode, expand) {
-  const scope = scopeNode ? scopeNode.path : null;
-  const reach = await store.expansionReach(fileKey, { scope, maxDepth: expand.depth });
+/** Merges the expansionReach of several scope roots: each main once, at its fewest hops from any root. */
+function mergeReach(reaches) {
+  const byMain = new Map();
+  for (const r of reaches.flat()) {
+    const seen = byMain.get(r.mainComponentId);
+    if (!seen || r.depth < seen.depth) byMain.set(r.mainComponentId, r);
+  }
+  return [...byMain.values()];
+}
+
+/**
+ * The expansion of a scope over instance → main edges, starting from every root
+ * of `scopeNodes` (a node or a list of nodes, in order; null or empty: the whole
+ * file); see planExpansion.
+ */
+async function expandScope(store, fileKey, scopeNodes, expand) {
+  const nodes = scopeNodes === null ? [] : Array.isArray(scopeNodes) ? scopeNodes : [scopeNodes];
+  const scopes = nodes.length ? nodes.map(n => n.path) : [null];
+  const reach = scopes.length === 1
+    ? await store.expansionReach(fileKey, { scope: scopes[0], maxDepth: expand.depth })
+    : mergeReach(await Promise.all(scopes.map(scope => store.expansionReach(fileKey, { scope, maxDepth: expand.depth }))));
   const edges = reach.length
     ? await store.expansionEdges(fileKey, {
-      regions: [{ key: '', path: scope, depth: 0 }, ...reach.filter(r => r.path).map(r => ({ key: r.mainComponentId, path: r.path, depth: r.depth }))],
+      regions: [...scopes.map((path, i) => ({ key: scopeKey(i), path, depth: 0 })), ...reach.filter(r => r.path).map(r => ({ key: r.mainComponentId, path: r.path, depth: r.depth }))],
       mains: reach.map(r => ({ mainComponentId: r.mainComponentId, depth: r.depth })),
     })
     : [];
-  return planExpansion(scope, reach, edges, schemas.EXPANSION_LIMIT);
+  return planExpansion(scopes, reach, edges, schemas.EXPANSION_LIMIT);
+}
+
+/**
+ * The stored nodes for the `under` ids (in order, each once), or a
+ * node_not_found problem naming the first unknown id. `find(fileKey, raw)` is
+ * the route's single-id lookup.
+ */
+async function resolveUnder(fileKey, ids, find) {
+  const out = [];
+  for (const raw of ids) {
+    const node = await find(fileKey, raw);
+    if (!out.some(n => n.nodeId === node.nodeId)) out.push(node);
+  }
+  return out;
 }
 
 // --- cursors -----------------------------------------------------------------
 /** A fingerprint of the query a cursor belongs to (filter without the clock, and sort). */
 function queryFingerprint(filter, sort) {
   const { now, ...rest } = filter;
+  if (Array.isArray(rest.under) && rest.under.length === 1) rest.under = rest.under[0];
   return core.sha256(core.stable({ rest, sort })).slice(0, 16);
 }
 
@@ -226,6 +280,8 @@ function decodeCursor(cursor, fp) {
 /**
  * A format=outline cursor: `line` of the outline rendered from the row after
  * `after` (null: the first), `offset` rows before that row.
+ * @param {string} fp
+ * @param {{ after?: { k: string, id: string } | null, offset?: number, line?: number }} position
  */
 const encodeOutlineCursor = (fp, { after = null, offset = 0, line = 0 }) =>
   Buffer.from(JSON.stringify({ f: fp, l: line, o: offset, ...(after ? { k: after.k, id: after.id } : {}) }), 'utf8').toString('base64url');
@@ -255,22 +311,31 @@ const offsetAfter = (after, count) => (after === null ? count : after.offset ===
  * `expansion`): each expanded region is attached to its host instance, found
  * among the rows or read from the store.
  */
-async function outlineNodes(store, fileKey, rows, expansion, at, sort) {
+async function outlineNodes(store, fileKey, rows, expansion, at, sort, roots = []) {
+  // Store regions: the scope roots (0 … scopes - 1), then the components. Outline regions: 0 = every scope root, then the components.
+  const scopes = expansion ? expansion.scopes ?? 1 : Math.max(roots.length, 1);
+  const rootOrd = n => roots.findIndex(r => n.path && isDescendant(n.path, r.path));
+  const regionOf = ord => (ord < scopes ? 0 : ord - scopes + 1);
+  const viaOf = region => expansion.vias[region + scopes - 1];
   const keyOf = n => (sort === 'path' ? n.path : documentSortKey(n));
-  const out = rows.map(n => ({ node: nodeFields(fileKey, n, at, 'names'), path: n.path, key: keyOf(n), absolute: isAbsolute(n), region: expansion ? n.expandOrd ?? 0 : 0 }));
+  const rootKey = (ord, key) => (scopes > 1 && ord < scopes ? `${String(ord).padStart(4, '0')} ${key}` : key);
+  const out = rows.map(n => {
+    const ord = expansion ? n.expandOrd ?? 0 : scopes > 1 ? Math.max(rootOrd(n), 0) : 0;
+    return { node: nodeFields(fileKey, n, at, 'names'), path: n.path, key: rootKey(ord, keyOf(n)), absolute: isAbsolute(n), region: regionOf(ord) };
+  });
   const byId = new Map(rows.map(n => [n.nodeId, n]));
-  const hostIds = expansion ? [...new Set(out.filter(r => r.region > 0).map(r => expansion.vias[r.region].instanceId))] : [];
+  const hostIds = expansion ? [...new Set(out.filter(r => r.region > 0).map(r => viaOf(r.region).instanceId))] : [];
   const mainIds = [...new Set(out.map(r => r.node.mainComponentId).filter(Boolean))];
   const missing = [...new Set([...hostIds, ...mainIds])].filter(id => !byId.has(id));
   for (const n of missing.length ? await store.getNodes(fileKey, missing) : []) byId.set(n.nodeId, n);
   const attach = new Map();
   for (const r of new Set(out.map(o => o.region))) {
     if (r === 0) continue;
-    const via = expansion.vias[r];
+    const via = viaOf(r);
     const host = byId.get(via.instanceId);
     const hostPath = host ? host.path : null;
-    const hostRegion = hostPath ? expansion.regions.findIndex(p => p !== null && isDescendant(hostPath, p)) : -1;
-    attach.set(r, { mainId: via.mainComponentId, hostId: via.instanceId, hostPath, hostKey: host ? keyOf(host) : null, hostRegion: hostRegion < 0 ? null : hostRegion });
+    const hostOrd = hostPath ? expansion.regions.findIndex(p => p !== null && isDescendant(hostPath, p)) : -1;
+    attach.set(r, { mainId: via.mainComponentId, hostId: via.instanceId, hostPath, hostKey: host ? rootKey(hostOrd, keyOf(host)) : null, hostRegion: hostOrd < 0 ? null : regionOf(hostOrd) });
   }
   const mainNames = new Map(mainIds.filter(id => byId.has(id) && byId.get(id).name).map(id => [id, byId.get(id).name]));
   return format.outlineTree(out, { attach, mainNames });
@@ -438,13 +503,13 @@ function registerReadRoutes(app, { store, now }) {
     const outline = fmt === 'outline';
     const limit = outline ? format.STREAM_PAGE : format.pageSize(fmt, query.limit, schemas.DEFAULT_LIMIT);
     const fp = queryFingerprint(filter, { sort, desc, fields, view, counts, changes, ...(expand ? { expand } : {}), ...(outline ? { format: fmt } : {}) });
-    const pos = outline ? decodeOutlineCursor(query.cursor, fp) : null;
+    const pos = decodeOutlineCursor(outline ? query.cursor : undefined, fp);
     const after = outline ? pos.after : query.cursor === undefined ? null : decodeCursor(query.cursor, fp);
 
     await trackedFile(fileKey);
-    const underNode = filter.under === null ? null : await findNode(fileKey, filter.under);
-    if (underNode) filter.under = underNode.nodeId;
-    const expansion = expand ? await expandScope(store, fileKey, underNode, expand) : null;
+    const underNodes = filter.under === null ? null : await resolveUnder(fileKey, filter.under, findNode);
+    if (underNodes) filter.under = underNodes.map(n => n.nodeId);
+    const expansion = expand ? await expandScope(store, fileKey, underNodes, expand) : null;
     if (expansion) filter.regions = expansion.regions;
 
     const result = await store.listNodes(fileKey, filter, { sort, desc, limit, after, counts });
@@ -470,7 +535,7 @@ function registerReadRoutes(app, { store, now }) {
         next = r.next;
       }
       const shownTo = pos.offset + rows.length;
-      return format.sendOutline(reply, await outlineNodes(store, fileKey, rows, expansion, at, sort), {
+      return format.sendOutline(reply, await outlineNodes(store, fileKey, rows, expansion, at, sort, expansion ? [] : underNodes || []), {
         from: pos.line,
         limit: query.limit ?? null,
         cursorAt: line => encodeOutlineCursor(fp, { after, offset: pos.offset, line }),
@@ -515,6 +580,6 @@ function registerReadRoutes(app, { store, now }) {
 }
 
 module.exports = {
-  registerReadRoutes, parseQ, filterParams, buildFilter, parseChanges, nodeFields, truncateChanges, pick, FILTER_KEYS,
-  queryFingerprint, encodeCursor, decodeCursor, encodeOutlineCursor, decodeOutlineCursor, offsetAfter, parseExpand, planExpansion, expandScope, isAbsolute,
+  registerReadRoutes, parseQ, filterParams, buildFilter, parseChanges, nodeFields, truncateChanges, pick, FILTER_KEYS, MAX_UNDER,
+  singleRoot, resolveUnder, mergeReach, queryFingerprint, encodeCursor, decodeCursor, encodeOutlineCursor, decodeOutlineCursor, offsetAfter, parseExpand, planExpansion, expandScope, isAbsolute,
 };

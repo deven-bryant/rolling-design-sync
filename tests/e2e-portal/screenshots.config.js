@@ -30,13 +30,14 @@ module.exports = defineConfig({
   expect: { timeout: 15_000 },
   reporter: 'list',
   webServer: {
-    command: 'node ../../apps/api/src/server.js',
+    command: 'node -r ./clock.js ../../apps/api/src/server.js',
     url: `${API_URL}/health`,
     reuseExistingServer: false,
     timeout: 120_000,
     env: {
       RDS_STORE: 'local',
       RDS_DATA_DIR: env.RDS_SCREENSHOTS_DATA_DIR,
+      RDS_SCREENSHOTS_CLOCK_FILE: path.join(env.RDS_SCREENSHOTS_DATA_DIR, 'clock'),
       HOST: '127.0.0.1',
       PORT,
       RDS_PLUGIN_TOKENS: `figma:${env.RDS_PLUGIN_TOKEN}`,

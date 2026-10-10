@@ -20,6 +20,7 @@ describe('layerOf', () => {
     ['components/domain/NodeCell/NodeCell.tsx', 'domain'],
     ['features/nodes/NodeTable.tsx', 'features'],
     ['api/client.ts', 'api'],
+    ['theme/ThemeProvider.tsx', 'theme'],
     ['routes/router.tsx', 'routes'],
     ['test/axe.ts', 'test'],
     ['figma-file.ts', 'tokens'],

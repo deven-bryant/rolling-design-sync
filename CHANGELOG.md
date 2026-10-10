@@ -7,6 +7,56 @@ are cut.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-10
+
+A redesigned portal, several scopes at once, weekly trends, and clearer plugin
+feedback.
+
+### Added
+- **Light and dark themes** in the portal: the first visit follows the system
+  setting; the sidebar toggle overrides it and is remembered. No flash of the
+  wrong theme on load.
+- **Several scopes at once:** `under` takes a comma-separated list of up to 50
+  node ids (`under=1-2,5-1`) meaning the union of their subtrees, on node
+  listings, outlines, summaries, work items and claim filters (MCP and CLI
+  included). `group=frame` still needs one root; a summary over several roots
+  omits `byFrame`. In the portal, the scope table on Nodes and Work Items is
+  multi-select and the copied agent prompt covers every selected scope.
+- **Weekly trends:** `GET /v3/insights/trends` (MCP `get_trends`, CLI `trends`)
+  reports nodes cleared in the last N days (default 7) vs the N before, and
+  nodes newly marked dirty, per file and in total. The portal's Files page shows
+  *Cleared this week* and the net change in dirty nodes. `nodes.cleared` events
+  now carry `count` and `sync.completed` events `counts.dirty`; trends count
+  newly dirtied nodes from syncs made with this version on.
+- **Plugin:** a progress bar (with totals while uploading and checking main
+  components), the previous message cleared when an upload starts, and a green
+  success message that stays until the next upload.
+- **Portal:** a scope panel with search on Nodes and Work Items (replacing the
+  Scopes tab), Files summary cards and an *Implemented* progress column, Work
+  Items search, progress and *Expand instances*, and a node drawer with *Copy
+  node prompt*. README and docs screenshots exist in both themes.
+
+### Changed
+- **Portal navigation:** the sidebar replaces the file tabs (Files, Nodes, Work
+  Items, Activity, Claims, Connect). The Agents page is now **Claims** at
+  `/claims`; `/agents` and the old file tab URLs redirect. The file pages no
+  longer show breadcrumbs.
+- **New palette** (teal brand) across the portal and the plugin; the plugin
+  header shows the product name and its real version.
+- **Agent prompts** copied from the portal lead with MCP, then the CLI, and walk
+  the agent through claim, build, clear (with content hash and commit) and block.
+- Security reports go to `security@rollingdesignsync.com` (or GitHub private
+  vulnerability reporting).
+- Stricter type checking (`strictNullChecks`) over the JavaScript; dependency
+  updates (Vitest 5, GitHub Actions v7).
+
+### Upgrade notes
+- No migration.
+- Re-open the Figma plugin after updating (its bundle changed). Node content
+  hashes are unchanged.
+- Links to the portal's `/agents` page and file tabs keep working through
+  redirects.
+
 ## [0.12.0] - 2026-10-03
 
 First public release (beta). Earlier entries are kept below for reference.

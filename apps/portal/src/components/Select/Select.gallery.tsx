@@ -1,4 +1,4 @@
-import type { GalleryEntry } from '../primitives';
+import { inBothThemes, type GalleryEntry } from '../primitives';
 import { Icon } from '../primitives';
 import { Select } from './Select';
 import { SelectSearch } from './SelectSearch';
@@ -11,7 +11,7 @@ const team = [
 
 export default {
   component: 'Select',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Size=sm, Type=Default, State=Default',
       render: () => (
@@ -63,5 +63,5 @@ export default {
         </SelectSearch>
       ),
     },
-  ],
+  ]),
 } satisfies GalleryEntry;

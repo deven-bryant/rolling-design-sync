@@ -47,7 +47,7 @@ const isColor = (v: unknown): boolean => isObject(v) && typeof v.r === 'number' 
 
 const num = (n: unknown) => (typeof n === 'number' ? String(Math.round(n * 100) / 100) : '0');
 
-/** A raw property value as designers read it: `#F9FAFB`, `0 1 2 #0A0D120D`, `16`. */
+/** A raw property value as designers read it: `#F7FBFC`, `0 1 2 #0A0D0F0D`, `16`. */
 export function formatValue(value: unknown): string {
   if (value === null || value === undefined) return '—';
   if (typeof value === 'number') return num(value);
@@ -134,22 +134,27 @@ export function timeUntil(iso: string | null | undefined, now: number): string {
   return `in ${plural(Math.round(ms / DAY), 'day', 'days')}`;
 }
 
-/** A prompt an agent can start from: the file key, the node id and the CLI / MCP calls for it. */
+/** A prompt an agent can start from on one node: MCP tools first, the CLI as the fallback. */
 export function nodePrompt({ fileKey, nodeId, name }: { fileKey: string; nodeId: string; name?: string | null }): string {
   const label = name ? `"${name}" (${nodeId})` : nodeId;
+  const cli = 'node scripts/rds-agent.js';
   return [
     `Implement the Figma node ${label} in file ${fileKey}, tracked by Rolling Design Sync.`,
+    'Use the rds MCP tools if you have them; otherwise run the CLI from a checkout of rolling-design-sync (needs RDS_API_BASE_URL and RDS_AGENT_TOKEN).',
     '',
-    'Read what changed since it was last built:',
-    `- CLI: node scripts/rds-agent.js nodes show ${nodeId} --file-key ${fileKey}`,
-    `- MCP: get_node { "fileKey": "${fileKey}", "nodeId": "${nodeId}" }`,
-    '',
-    'Claim it before you start when other agents share the file:',
-    `- CLI: node scripts/rds-agent.js claim --file-key ${fileKey} --node-ids ${nodeId}`,
-    `- MCP: claim_nodes { "fileKey": "${fileKey}", "nodeIds": ["${nodeId}"] }`,
-    '',
-    'When the code matches the design, clear it with the contentHash you read:',
-    `- CLI: node scripts/rds-agent.js clear ${nodeId}=<contentHash> --file-key ${fileKey}`,
-    `- MCP: clear_nodes { "fileKey": "${fileKey}", "items": [{ "nodeId": "${nodeId}", "contentHash": "<contentHash>" }] }`,
+    '1. Claim it with a stable worker id when other agents share the file:',
+    `   - MCP: claim_nodes { "fileKey": "${fileKey}", "nodeIds": ["${nodeId}"], "worker": "<worker>" }`,
+    `   - CLI: ${cli} claim --file-key ${fileKey} --node-ids ${nodeId} --worker <worker>`,
+    "2. Read what changed since it was last built and its contentHash:",
+    `   - MCP: get_node { "fileKey": "${fileKey}", "nodeId": "${nodeId}" }`,
+    `   - CLI: ${cli} nodes show ${nodeId} --file-key ${fileKey}`,
+    '3. Implement the changes and commit them.',
+    '4. Clear it with the contentHash you read and the commit SHA:',
+    `   - MCP: clear_nodes { "fileKey": "${fileKey}", "items": [{ "nodeId": "${nodeId}", "contentHash": "<contentHash>" }], "commitRef": "<sha>" }`,
+    `   - CLI: ${cli} clear ${nodeId}=<contentHash> --file-key ${fileKey} --commit-ref <sha>`,
+    '   A stale result means the design changed after you read it: re-read it with get_node, implement the new change and clear it with the new contentHash.',
+    '5. If you cannot build it, block it with a reason a person can act on:',
+    `   - MCP: block_node { "fileKey": "${fileKey}", "nodeId": "${nodeId}", "reason": "<why>" }`,
+    `   - CLI: ${cli} block ${nodeId} --file-key ${fileKey} --reason "<why>"`,
   ].join('\n');
 }

@@ -196,8 +196,8 @@ All on the v3 router, with OpenAPI schemas, model-facing descriptions, and
 | `POST/GET/DELETE /v3/session` | Sign-in | Above. Not exposed as MCP tools. |
 | `GET /v3/status` | Connect, sidebar | `{ version, store: 'postgres' \| 'local' \| 'memory', events: 'listening' \| 'polling', replayHours, plugin: { lastSyncAt, client } }`. Viewer readable. |
 | `GET /v3/tokens` | Connect | `[{ class, label, lastUsedAt }]` — labels and last use only, never values. `lastUsedAt` is tracked in memory per instance (best effort; reset on restart). Viewer readable. |
-| `GET /v3/files/{fileKey}/claims` | Agents, Node tree, drawer | Active claims: `{ claimId, worker, label, expiresAt, createdAt, nodeCount, nodeIds (≤ 500) }`, soonest expiry first. MCP tool `list_claims`. |
-| `GET /v3/claims` | Agents (all files) | The same across files, with `fileKey`. |
+| `GET /v3/files/{fileKey}/claims` | Claims, Node tree, drawer | Active claims: `{ claimId, worker, label, expiresAt, createdAt, nodeCount, nodeIds (≤ 500) }`, soonest expiry first. MCP tool `list_claims`. |
+| `GET /v3/claims` | Claims (all files) | The same across files, with `fileKey`. |
 | `GET /v3/events` | Activity | The event stream and JSON page across all files (each event has `fileKey`); same parameters as the per-file route plus `fileKey=` to narrow. |
 | `nodeId=` on both events routes | Drawer history | Events whose `data` mentions the node (`nodeId`, or `nodeIds` containing it). |
 | `since=` on both events JSON pages | Files metrics | ISO time lower bound, for "cleared this week". |
@@ -205,24 +205,68 @@ All on the v3 router, with OpenAPI schemas, model-facing descriptions, and
 
 ## Screens
 
-Each screen maps to the Figma frame of the same name. Data comes from the routes
-listed; live updates from the event stream of the file in view (or `/v3/events`
-on Files and Activity).
+Each screen maps to the Figma frame of the same name, in a light and a dark
+variant. Data comes from the routes listed; live updates from the event stream
+of the file in view (or `/v3/events` on Files and Activity).
+
+Navigation is the sidebar only: Files · Nodes · Work Items · Activity · Claims ·
+Connect. Nodes and Work Items open the last visited file. Older links redirect,
+keeping their query: `/ui/agents` → `/ui/claims`, `/ui/files/:fileKey` and its
+`/scopes` → its Nodes, its `/claims` and `/activity` → the global pages.
+
+The sidebar header holds the theme toggle (light / dark). The choice is saved
+per browser (`localStorage['rds-theme']`); with no saved choice the portal
+follows the OS `prefers-color-scheme`, live.
 
 ### Files — `/ui/files` (home)
-- Metrics: dirty nodes (sum of `GET /v3/files` counts), cleared this week
-  (`GET /v3/events?types=nodes.cleared&since=…`, summed `nodeIds`), active claims
-  (`GET /v3/claims` count, distinct workers).
+- Metrics, in this order: **Dirty nodes** (sum of `GET /v3/files` counts),
+  **Cleared this week** and **Active claims** (unexpired `GET /v3/claims`, with
+  the count of distinct agents).
+- Trends come from `GET /v3/insights/trends` (7-day windows, all files):
+  *Cleared this week* is `total.cleared`, with a `±N%` chip from
+  `clearedChangePct` (none when it is `null`: nothing was cleared the week
+  before); *Dirty nodes* gets a signed chip from `netDirty` (newly dirtied minus
+  cleared this week, e.g. `+31`; up means more dirty, no chip at `0`). The
+  numbers come from the event log, so while it holds less than two windows
+  (`complete: false`, see `RDS_EVENT_RETENTION_DAYS`) every chip is hidden and
+  only the values show. Refreshed on `sync.completed` and `nodes.cleared`.
 - Table: `GET /v3/files` — name and key, scopes (`/scopes`), dirty, implemented
   % (`clean / total`), last sync (time + `client`), agents (from claims).
 - A file with no scopes shows "Run the plugin on a frame" with a link to Connect.
 
+### Scope panel — on Nodes and Work Items
+- `GET /v3/files/:fileKey/scopes` (deleted scopes left out), 10 per page: name
+  and type, node id, last sync, child nodes (total, dirty, blocked) and an
+  **Open** link to the scope in Figma. **Search Scope** filters by name or node
+  id (`1:2` or `1-2`).
+- Several scopes can be selected: each row has a checkbox (a row click toggles
+  it too), and the header checkbox selects or clears every scope on the page
+  (indeterminate when some are). At least one scope stays selected. The
+  selection is `?under=` as comma-separated node ids in the panel's order
+  (`?under=58:4508,33:3540`); the screen below lists the union of their
+  subtrees, and the header and **Copy agent prompt** follow it. A single id
+  (`?under=1:2`, older links) selects one scope; without `?under=` the most
+  recently synced scope is selected. The card header shows *N selected*;
+  **View Nodes** (Work Items) opens Nodes on the selection; Nodes and Work Items
+  show an *N Scope(s) Viewed* badge beside their search field.
+- With one scope the page header shows it as below. With several, the title is
+  "N scopes", the meta line is the latest sync and the summed node and
+  component counts (`N scopes · last synced … · N nodes, N components`),
+  *Open in Figma* is hidden, and **Copy agent prompt** names every selected
+  scope and passes the list as `under`.
+- **View Scopes** shows or hides the panel; shown by default, remembered per
+  browser.
+
 ### Node tree — `/ui/files/:fileKey/nodes?under=&…`
 - Header: file and scope name, last sync, node and component counts
-  (`/files/:fileKey`, `/scopes`). "Copy agent prompt" copies a ready-made prompt
-  naming the file key, scope, and the `list_nodes` / `list_work_items` calls to
-  start from. "Open in Figma" links the scope.
-- Tabs: Nodes · Work items · Activity · Claims · Scopes (all within the file).
+  (`/files/:fileKey`, `/scopes`). "Copy agent prompt" copies a self-contained
+  prompt for the scope: MCP tools first, the CLI (run from a checkout of
+  rolling-design-sync) second — list its work items with `expand=instances`,
+  build leaves first, claim each item's `nodeIds`, read the changes
+  (`list_nodes` / `get_node`), commit, clear every node with its `contentHash`
+  and the commit SHA, re-read stale results, block what cannot be built.
+  "Open in Figma" links the scope.
+- The scope panel above the filters.
 - Filters map one-to-one to listing parameters (`q`, `state`, `changeType`,
   `category`, `type`); the **Expand instances** toggle adds `expand=instances`.
   Filters live in the URL so views can be shared.
@@ -240,6 +284,7 @@ on Files and Activity).
   Animations respect `prefers-reduced-motion`.
 
 ### Node detail drawer — `?node=<nodeId>` on the Node tree
+- 583px wide (the Change List tab widens it).
 - `GET /v3/files/:fileKey/nodes/:nodeId?changes=diff`: header (name, type, id,
   `→ main`), status badges, **What changed** (Diff rows: built → now as token
   chips, raw values beneath, category badge; "since cleared at <commit> (<age>)").
@@ -247,23 +292,32 @@ on Files and Activity).
   session) → `DELETE /v3/files/:fileKey/claims/:claimId`, confirming first when
   the claim covers other nodes.
 - **History:** `GET /v3/files/:fileKey/events?nodeId=…` as a feed.
-- Footer: Copy node prompt · **Block…** (agent session; reason required, 1–500
+- Footer: Copy node prompt (the scope prompt's steps for this node) · **Block…** (agent session; reason required, 1–500
   chars) or **Unblock** · Open in Figma.
 - Viewer sessions see the same drawer without the action buttons.
 
 ### Work items — `/ui/files/:fileKey/work`
-- `GET /v3/files/:fileKey/work?group=component|frame&expand=instances&include=progress&under=<scope>`;
-  group switch (By component · By frame · Flat list = the Nodes tab).
+- `GET /v3/files/:fileKey/work?group=component|frame&expand=instances&include=progress&under=<scopes>`,
+  `under` passed as selected (comma-separated for several scopes).
+- Above the table, as on the Node tree: the node search field (`?q=`, the same
+  name / node id / `key:value` parsing as Nodes) with the *N Scope(s) Viewed*
+  badge, then the group switch (By component · By frame) and **Expand
+  instances** (on by default; off is `?expand=none` and drops
+  `expand=instances`). *By frame* needs one root: with several scopes it is
+  disabled with a tooltip and the list is grouped by component.
 - Columns: component (name, key, variants), placements in this screen / in file,
   dirty of total, categories, progress (`clean / total`), agent (from claims).
+  Long component names and agent names truncate so the table fits 1440 px.
 - A row opens the Node tree filtered to that component (`under=<key>`).
 
-### Activity & agents — `/ui/activity` (all files) and the file's Activity tab
+### Activity — `/ui/activity` (all files)
 - Live feed: `GET /v3/events` stream (or the file's), newest first, grouped by
   minute; each entry links to its file / nodes. A "Pause live" toggle buffers new
   events with a count until resumed.
-- Agents: `GET /v3/claims` grouped by worker — nodes held, files, soonest lease
-  expiry, and a per-claim **Release** (agent session).
+
+### Claims — `/ui/claims` (all files)
+- `GET /v3/claims` grouped by worker — nodes held, files, soonest lease expiry,
+  and a per-claim **Release** (agent session).
 
 ### Connect — `/ui/connect`
 - Health metrics from `GET /v3/status` (server version, events listening /
@@ -293,7 +347,7 @@ on Files and Activity).
 - Clearing nodes, editing tokens or server settings, uploading from the browser.
 - Accounts, multiple users with roles, teams — the self-hosted portal has token
   sessions only.
-- Dark mode and mobile layouts (the tokens support them later).
+- Mobile layouts.
 
 Parallel portal work owns disjoint folders; to keep it conflict-free there is no
 shared barrel file (each folder has its own `index.ts`) and gallery entries are

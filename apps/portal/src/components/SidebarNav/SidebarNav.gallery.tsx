@@ -1,109 +1,108 @@
+import { useState, type ReactNode } from 'react';
 import { Menu } from '../Menu';
-import type { GalleryEntry } from '../primitives';
+import type { GalleryEntry, GalleryExample } from '../primitives';
 import { Text } from '../primitives';
+import { ThemeToggle, type ThemeToggleTheme } from '../ThemeToggle';
 import { SidebarNav } from './SidebarNav';
 
 const identity = (
   <span className="flex flex-col">
-    <Text size="sm" weight="semibold" color="secondary">
-      Olivia Rhye
+    <Text size="sm" weight="semibold" color="primary">
+      Viewer
     </Text>
     <Text size="sm" color="tertiary">
-      olivia@untitledui.com
+      Read + block / release
     </Text>
   </span>
 );
 
+function HeaderToggle({ initial }: { initial: ThemeToggleTheme }) {
+  const [theme, setTheme] = useState(initial);
+  return <ThemeToggle theme={theme} onChange={setTheme} />;
+}
+
+const themes = [
+  ['Light', undefined],
+  ['Dark', 'dark'],
+] as const;
+
+/** One example per theme: `Color Mode` is the `data-theme` the example renders under, never a prop. */
+const bothThemes = (figma: string, render: (mode: string) => ReactNode): GalleryExample[] =>
+  themes.map(([mode, theme]) => ({
+    figma: `${figma} · Color Mode=${mode}`,
+    render: () => (
+      <div data-theme={theme} className="bg-primary">
+        {render(mode)}
+      </div>
+    ),
+  }));
+
 export default {
   component: 'SidebarNav',
   examples: [
-    {
-      figma: 'Open=False, Style=Simple, Breakpoint=Desktop',
-      render: () => (
-        <div className="flex h-240">
-          <SidebarNav>
-            <SidebarNav.Header>
-              <Text size="lg" weight="semibold">
-                Logo slot
-              </Text>
-              <SidebarNav.Search>
-                <Text size="md" color="placeholder">
-                  Search slot
-                </Text>
-              </SidebarNav.Search>
-            </SidebarNav.Header>
+    ...bothThemes('Open=False, Style=Simple, Breakpoint=Desktop', mode => (
+      <div className="flex h-240">
+        <SidebarNav aria-label={`Main (${mode})`}>
+          <SidebarNav.Header
+            title="Rolling Design Sync"
+            actions={<HeaderToggle initial={mode === 'Dark' ? 'dark' : 'light'} />}
+          />
+          <SidebarNav.Section>
+            <SidebarNav.Item href="#files" icon="home-line">
+              Files
+            </SidebarNav.Item>
+            <SidebarNav.Item href="#nodes" icon="bar-chart-square-02" current>
+              Nodes
+            </SidebarNav.Item>
+            <SidebarNav.Item href="#activity" icon="placeholder" badge={<Text size="xs">3</Text>}>
+              Activity
+            </SidebarNav.Item>
+          </SidebarNav.Section>
+          <SidebarNav.Footer>
             <SidebarNav.Section>
-              <SidebarNav.Item icon="home-line" items={<SidebarNav.Item href="#overview">Overview</SidebarNav.Item>}>
-                Home
-              </SidebarNav.Item>
-              <SidebarNav.Item icon="bar-chart-square-02" items={<SidebarNav.Item href="#reports">Reports</SidebarNav.Item>}>
-                Dashboard
+              <SidebarNav.Item href="#docs" icon="help-circle">
+                Docs
               </SidebarNav.Item>
             </SidebarNav.Section>
-            <SidebarNav.Footer>
-              <SidebarNav.Section>
-                <SidebarNav.Item href="#support" icon="help-circle">
-                  Support
-                </SidebarNav.Item>
-              </SidebarNav.Section>
-              <SidebarNav.FeatureCard title="Used space" onDismiss={() => undefined}>
-                Your team has used 80% of your available space. Need more?
-              </SidebarNav.FeatureCard>
-              <SidebarNav.Account menu={<Menu.Item id="sign-out">Sign out</Menu.Item>}>{identity}</SidebarNav.Account>
-            </SidebarNav.Footer>
-          </SidebarNav>
-        </div>
-      ),
-    },
-    {
-      figma: '_Nav item base · Current=False, State=Default (+ current page)',
-      render: () => (
-        <SidebarNav aria-label="Nav items" className="h-auto pt-none">
-          <SidebarNav.Section>
-            <SidebarNav.Item href="#dashboard" icon="bar-chart-square-02">
-              Dashboard
-            </SidebarNav.Item>
-            <SidebarNav.Item href="#inbox" icon="mail-01" current badge={<Text size="xs">10</Text>}>
-              Inbox
-            </SidebarNav.Item>
-          </SidebarNav.Section>
+            <SidebarNav.FeatureCard
+              title="API connected"
+              onDismiss={() => undefined}
+              actions={<Text size="sm" weight="semibold" color="tertiary">Actions slot</Text>}
+            >
+              Agents read this server through rds-mcp.
+            </SidebarNav.FeatureCard>
+            <SidebarNav.Account menu={<Menu.Item id="sign-out">Sign out</Menu.Item>}>{identity}</SidebarNav.Account>
+          </SidebarNav.Footer>
         </SidebarNav>
-      ),
-    },
-    {
-      figma: '_Nav item dropdown base · Open=False, Current=False',
-      render: () => (
-        <SidebarNav aria-label="Dropdown items" className="h-auto pt-none">
-          <SidebarNav.Section>
-            <SidebarNav.Item icon="home-line" items={<SidebarNav.Item href="#overview">Overview</SidebarNav.Item>}>
-              Home
-            </SidebarNav.Item>
-          </SidebarNav.Section>
-        </SidebarNav>
-      ),
-    },
-    {
-      figma: '_Nav featured card · Type=Progress bar',
-      render: () => (
-        <div className="w-68">
-          <SidebarNav.FeatureCard
-            title="Used space"
-            onDismiss={() => undefined}
-            progress={<Text size="xs" color="tertiary">Progress bar slot</Text>}
-            actions={<Text size="sm" weight="semibold" color="tertiary">Dismiss</Text>}
-          >
-            Your team has used 80% of your available space. Need more?
-          </SidebarNav.FeatureCard>
-        </div>
-      ),
-    },
-    {
-      figma: '_Nav account card · Type=Card, Open=True, Breakpoint=Desktop',
-      render: () => (
-        <div className="w-70">
-          <SidebarNav.Account menu={<Menu.Item id="profile" icon="placeholder">View profile</Menu.Item>}>{identity}</SidebarNav.Account>
-        </div>
-      ),
-    },
+      </div>
+    )),
+    ...bothThemes('_Nav item base · Current=False, State=Default (+ current page)', mode => (
+      <SidebarNav aria-label={`Nav items (${mode})`} className="h-auto pt-none">
+        <SidebarNav.Section>
+          <SidebarNav.Item href="#dashboard" icon="bar-chart-square-02">
+            Dashboard
+          </SidebarNav.Item>
+          <SidebarNav.Item href="#inbox" icon="mail-01" current badge={<Text size="xs">10</Text>}>
+            Inbox
+          </SidebarNav.Item>
+        </SidebarNav.Section>
+      </SidebarNav>
+    )),
+    ...bothThemes('_Nav featured card · Type=Progress bar (no progress bar)', () => (
+      <div className="w-68 p-md">
+        <SidebarNav.FeatureCard
+          title="API connected"
+          onDismiss={() => undefined}
+          actions={<Text size="sm" weight="semibold" color="tertiary">Dismiss</Text>}
+        >
+          Agents read this server through rds-mcp.
+        </SidebarNav.FeatureCard>
+      </div>
+    )),
+    ...bothThemes('_Nav account card · Type=Card, Open=True, Breakpoint=Desktop', () => (
+      <div className="w-70 p-md">
+        <SidebarNav.Account menu={<Menu.Item id="profile" icon="placeholder">View profile</Menu.Item>}>{identity}</SidebarNav.Account>
+      </div>
+    )),
   ],
 } satisfies GalleryEntry;

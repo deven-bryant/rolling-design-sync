@@ -3,6 +3,8 @@ import { createRef } from 'react';
 import { describe, expect, it } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { figmaProgressBar, ProgressBar } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './ProgressBar.gallery';
 
 const classesOf = (el: Element | null) => el?.getAttribute('class')?.split(' ') ?? [];
 const part = (bar: HTMLElement, slot: string) => bar.querySelector<HTMLElement>(`[data-slot="${slot}"]`);
@@ -55,3 +57,5 @@ describe('ProgressBar', () => {
     expect(classesOf(ref.current)).not.toContain('w-full');
   });
 });
+
+describeGalleryInThemes(gallery);

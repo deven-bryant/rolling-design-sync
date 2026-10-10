@@ -2,7 +2,7 @@
 
 export const figma = {
   'Table cell': {
-    setId: '15:1700',
+    setId: '111:12084',
     axes: {
       Type: {
         Text: '<TextCell>',
@@ -17,19 +17,19 @@ export const figma = {
     },
     properties: { 'Lead action': 'TextCell leadAction={<LeadAction />}' },
     variants: [
-      { nodeId: '15:1709', key: 'd102de94d452bb4ebee66a777446fe5d291fd276', name: 'Type=Text, Size=md, State=Default' },
+      { nodeId: '111:12093', key: '5d25ec13ffe98d883c3337e36cbbef897f373099', name: 'Type=Text, Size=md, State=Default' },
       { nodeId: '15:1745', key: 'd310de32114d9dae0df5f3ffaea0bf3ffb1f340e', name: 'Type=Text, Size=md, State=Hover/selected' },
-      { nodeId: '15:1701', key: 'bedef3ae551488f6a14bb1949c5b6f94f73b848c', name: 'Type=Badge, Size=md, State=Default' },
+      { nodeId: '111:12085', key: 'cef203b28437208dae1d4ad09bd2e192c7e9e74b', name: 'Type=Badge, Size=md, State=Default' },
       { nodeId: '15:1753', key: '48f0479cf70be50cf156d98ff9440e1b1b2ff263', name: 'Type=Badge, Size=md, State=Hover/selected' },
-      { nodeId: '15:1707', key: '2cdbea62094195cdd7b60a67932dad624d606006', name: 'Type=Badges multiple, Size=md, State=Default' },
+      { nodeId: '111:12091', key: '04c711f34e99cd4d6772b21064274a0c4da1e3d4', name: 'Type=Badges multiple, Size=md, State=Default' },
       { nodeId: '15:1759', key: 'b1b061adc034ffb856d92d7b394e0b1d846ea1d1', name: 'Type=Badges multiple, Size=md, State=Hover/selected' },
-      { nodeId: '15:1721', key: '7e0b8ca9b5e74b8725b6eacdd6ffca58aa39943e', name: 'Type=Progress bar, Size=md, State=Default' },
-      { nodeId: '15:1711', key: 'f571dd2ae9b358c949978703afb1c105225f6f6e', name: 'Type=Avatar, Size=md, State=Default' },
-      { nodeId: '15:1729', key: '47e050b42e4285047253b3688d5779581b80dbf0', name: 'Type=Action icons, Size=md, State=Default' },
+      { nodeId: '111:12105', key: '5ece57eb65e6cb8119984525429fcbf8d0444d13', name: 'Type=Progress bar, Size=md, State=Default' },
+      { nodeId: '111:12095', key: 'da70eae1f84f67b6a8642fcf3f967df5d4820ecc', name: 'Type=Avatar, Size=md, State=Default' },
+      { nodeId: '111:12113', key: 'de35dfdb43f4f59139e3ef49f5e7e91a7de6c800', name: 'Type=Action icons, Size=md, State=Default' },
     ],
   },
   'Table header cell': {
-    setId: '15:642',
+    setId: '111:16427',
     axes: {
       Size: { md: 'the only size' },
       Text: {
@@ -39,24 +39,24 @@ export const figma = {
       Checkbox: { False: 'no checkbox prop' },
     },
     variants: [
-      { nodeId: '15:645', key: 'a4fcb0b46bf6576647d4eb1b9994eb5a33fdca43', name: 'Size=md, Text=True, Checkbox=False' },
-      { nodeId: '15:647', key: '992bd1d14e64f6e08d16541ae4346eec75f81372', name: 'Size=md, Text=False, Checkbox=False' },
+      { nodeId: '111:16430', key: '13cf409e33acd3be7da735d98d8f8a6d0d340343', name: 'Size=md, Text=True, Checkbox=False' },
+      { nodeId: '111:16432', key: '5be4f0a5051605587129c5255e73f7ee9652ef4c', name: 'Size=md, Text=False, Checkbox=False' },
     ],
   },
   '_Table header label': {
-    setId: '15:589',
+    setId: '111:16374',
     axes: {
       'Help icon': { False: '' },
       Arrow: { False: 'no arrow prop' },
       State: { Default: '' },
     },
     variants: [
-      { nodeId: '15:590', key: '3a31da2a72f2afc16166ba64a6f599a41d67683a', name: 'Help icon=False, Arrow=False, State=Default' },
+      { nodeId: '111:16375', key: 'f5be66a5fb6fed5e6caa1832b3b0a62b85710766', name: 'Help icon=False, Arrow=False, State=Default' },
     ],
   },
   'Table cell lead action': {
-    setId: '15:658',
+    setId: '111:8430',
     axes: { Type: { Checkbox: '<LeadAction type="checkbox" />' } },
-    variants: [{ nodeId: '15:661', key: '49bbfc0f7ad48dfd43bb0be33a8a41fab6ff35cf', name: 'Type=Checkbox' }],
+    variants: [{ nodeId: '111:8433', key: '674d0fafc55f06a39159ee0ae182f5cc7cd114f7', name: 'Type=Checkbox' }],
   },
 } as const;

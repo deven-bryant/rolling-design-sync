@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Tabs, type TabsProps } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Tabs.gallery';
 
 function Example(props: Omit<TabsProps, 'children'>) {
   return (
@@ -131,3 +133,5 @@ describe('Tabs', () => {
     expect(screen.getByRole('tabpanel').className).toContain('pt-xl');
   });
 });
+
+describeGalleryInThemes(gallery);

@@ -3,6 +3,8 @@ import { createRef } from 'react';
 import { describe, expect, it } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Avatar, AvatarLabelGroup, figmaAvatar, figmaOnlineIndicator, OnlineIndicator } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Avatar.gallery';
 
 const classesOf = (el: Element | null) => el?.getAttribute('class')?.split(' ') ?? [];
 
@@ -104,3 +106,5 @@ describe('AvatarLabelGroup', () => {
     await expectNoAxeViolations(container);
   });
 });
+
+describeGalleryInThemes(gallery);

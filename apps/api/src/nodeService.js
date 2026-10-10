@@ -76,6 +76,10 @@ function pathInput(value) {
 const EXISTS_MAX_IDS = 5000;
 
 class NodeSyncService {
+  /**
+   * @param {import('./store/types').Store} store
+   * @param {{ now?: () => Date, existsMaxIds?: number, bus?: import('./events/bus').MemoryBus | import('./events/postgres').PostgresBus | null }} [options]
+   */
   constructor(store, { now = () => new Date(), existsMaxIds = EXISTS_MAX_IDS, bus = null } = {}) {
     this.store = store;
     this.bus = bus;
@@ -132,7 +136,8 @@ class NodeSyncService {
    * bumped on every batch; optional `fileName` / `rootNodeId` also name the
    * file and record a `sync_event` with this batch's counts.
    *
-   * Events: one `sync.completed` per batch, and a `node.unblocked` (`auto`)
+   * Events: one `sync.completed` per batch (its `counts.dirty`: nodes the
+   * batch made dirty — new, or clean before), and a `node.unblocked` (`auto`)
    * for each blocked node whose content hash changed.
    */
   async batchUpsert(body) {
@@ -176,6 +181,7 @@ class NodeSyncService {
       const counts = { uploaded: rows.length, changed: 0, added: 0, deleted: 0, baselined: 0 };
       const upserted = [];
       const unblocked = [];
+      let dirtied = 0;
       const reorderParents = new Set();
       for (const row of rows) {
         const ancestors = await ancestorsOf(row);
@@ -213,11 +219,14 @@ class NodeSyncService {
         if (existing && existing.parentId && existing.parentId !== node.parentId) reorderParents.add(existing.parentId);
         if (!existing || existing.deletedAt || orderInputsChanged(existing.attrs, node.attrs)) reorderParents.add(node.nodeId);
         if (existing && existing.blockedAt && !node.blockedAt) unblocked.push(existing);
+        if (node.dirty && !(existing && existing.dirty)) dirtied += 1;
 
         if (!existing) counts[node.baselined ? 'baselined' : 'added'] += 1;
         else if (existing.deletedAt || existing.contentHash !== row.contentHash) counts.changed += 1;
       }
+      const wasDirty = new Set((deletedNodeIds.length ? await tx.getNodes(fileKey, [...new Set(deletedNodeIds)]) : []).filter(n => n.dirty).map(n => n.nodeId));
       const tombstoned = await tx.tombstoneNodes(fileKey, deletedNodeIds, nowIso);
+      dirtied += tombstoned.filter(n => !wasDirty.has(n.nodeId)).length;
       for (const node of tombstoned) await tx.updateNode(fileKey, node.nodeId, changeColumns(node));
       counts.deleted = tombstoned.length;
       for (const node of tombstoned) if (node.parentId) reorderParents.add(node.parentId);
@@ -238,7 +247,7 @@ class NodeSyncService {
       };
       if (markImplemented) summary.baselined = upserted.filter(n => n.baselined).length;
 
-      await emit(fileKey, 'sync.completed', { actor: 'plugin', data: { rootNodeId, counts } });
+      await emit(fileKey, 'sync.completed', { actor: 'plugin', data: { rootNodeId, counts: { ...counts, dirty: dirtied } } });
       for (const n of unblocked) {
         await emit(fileKey, 'node.unblocked', { actor: 'plugin', data: { nodeId: n.nodeId, reason: n.blockedReason ?? null, by: null, auto: true } });
       }

@@ -4,6 +4,8 @@ import { createRef } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Checkbox, CheckboxBase, Radio, RadioGroup } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Checkbox.gallery';
 
 const base = (container: Element) => container.querySelector('[aria-hidden="true"]');
 
@@ -145,3 +147,5 @@ describe('Checkbox.Radio', () => {
     await expectNoAxeViolations(container);
   });
 });
+
+describeGalleryInThemes(gallery);

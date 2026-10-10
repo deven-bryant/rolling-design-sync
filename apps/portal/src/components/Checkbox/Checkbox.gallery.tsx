@@ -1,10 +1,10 @@
-import type { GalleryEntry } from '../primitives';
+import { inBothThemes, type GalleryEntry } from '../primitives';
 import { Checkbox, RadioGroup, Radio } from './Checkbox';
 import { CheckboxBase } from './CheckboxBase';
 
 export default {
   component: 'Checkbox',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Checked=False, Indeterminate=False, Size=md, Type=Checkbox, Text=False, State=Default',
       render: () => <Checkbox size="md" aria-label="Select row" />,
@@ -43,5 +43,5 @@ export default {
       figma: '_Checkbox base: Checked=False, Size=md, Type=Checkbox',
       render: () => <CheckboxBase size="md" type="checkbox" />,
     },
-  ],
+  ]),
 } satisfies GalleryEntry;

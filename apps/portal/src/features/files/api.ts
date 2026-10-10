@@ -1,25 +1,22 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type ApiResponse } from '../../api/client';
 import { claimsQueryKey, type Claim } from '../../api/hooks/useClaims';
-import { useNow } from '../../api/hooks/useNow';
 import { useEventStream, type StreamEvent, type StreamState } from '../../api/useEventStream';
-import { clearedNodeCount } from './metrics';
 
 export type TrackedFile = NonNullable<ApiResponse<'/v3/files'>['files']>[number];
 export type FileScope = NonNullable<ApiResponse<'/v3/files/{fileKey}/scopes'>['scopes']>[number];
 export type { Claim };
+export type Trends = ApiResponse<'/v3/insights/trends'>;
 export type ApiEvent = NonNullable<ApiResponse<'/v3/events'>['events']>[number];
 
 const EVENT_PAGE = 1000;
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
 
 export const filesKeys = {
   list: ['files'] as const,
   scopes: (fileKey: string) => ['files', fileKey, 'scopes'] as const,
   lastSync: (fileKey: string) => ['files', fileKey, 'last-sync'] as const,
+  trends: ['insights', 'trends'] as const,
   claims: claimsQueryKey,
-  cleared: ['events', 'nodes.cleared'] as const,
 };
 
 /** `GET /v3/files`: every tracked file with its counts. */
@@ -31,35 +28,20 @@ export function useFiles() {
   });
 }
 
+/** `GET /v3/insights/trends`: the server's nodes cleared and dirtied this week (7-day windows) vs the week before. */
+export function useTrends() {
+  return useQuery({
+    queryKey: filesKeys.trends,
+    queryFn: ({ signal }) => api.get('/v3/insights/trends', { signal }),
+  });
+}
+
 /** `GET /v3/files/{fileKey}/scopes`: the file's synced scopes, deleted ones left out. */
 export function useFileScopes(fileKey: string) {
   return useQuery({
     queryKey: filesKeys.scopes(fileKey),
     queryFn: ({ signal }) => api.get('/v3/files/{fileKey}/scopes', { path: { fileKey }, signal }),
     select: data => (data.scopes ?? []).filter(scope => !scope.deleted),
-  });
-}
-
-/** The start of the last seven days, on the hour so the query key holds still between renders. */
-export const weekAgo = (now: number = Date.now()): string => new Date(Math.floor((now - WEEK_MS) / HOUR_MS) * HOUR_MS).toISOString();
-
-/** Nodes cleared in the last seven days: `GET /v3/events?types=nodes.cleared&since=`, every page, summed `nodeIds`. */
-export function useClearedThisWeek(since?: string) {
-  const now = useNow();
-  const from = since ?? weekAgo(now);
-  return useQuery({
-    queryKey: [...filesKeys.cleared, from],
-    queryFn: async ({ signal }) => {
-      let after = 0;
-      let count = 0;
-      for (;;) {
-        const page = await api.get('/v3/events', { signal, query: { types: 'nodes.cleared', since: from, after, limit: EVENT_PAGE } });
-        const events = page.events ?? [];
-        count += clearedNodeCount(events);
-        if (events.length < EVENT_PAGE || page.nextAfter === undefined || page.nextAfter <= after) return count;
-        after = page.nextAfter;
-      }
-    },
   });
 }
 
@@ -87,7 +69,7 @@ export function eventFileKey(event: StreamEvent): string | null {
 
 /**
  * Keeps the Files queries current from the `/v3/events` stream: `sync.completed` refetches the file list and
- * that file's scopes and last sync, `nodes.cleared` the counts and the cleared total, `claim.*` the claims.
+ * that file's scopes and last sync, `nodes.cleared` the counts, `claim.*` the claims.
  * Hooks sharing the stream don't cancel each other's refetches.
  */
 export function useFilesLive(): StreamState {
@@ -98,6 +80,7 @@ export function useFilesLive(): StreamState {
   return useEventStream('/v3/events', {
     'sync.completed': event => {
       refresh(filesKeys.list, true);
+      refresh(filesKeys.trends, true);
       const fileKey = eventFileKey(event);
       if (fileKey) {
         refresh(filesKeys.scopes(fileKey));
@@ -106,7 +89,7 @@ export function useFilesLive(): StreamState {
     },
     'nodes.cleared': () => {
       refresh(filesKeys.list, true);
-      refresh(filesKeys.cleared);
+      refresh(filesKeys.trends, true);
     },
     'claim.created': claims,
     'claim.renewed': claims,

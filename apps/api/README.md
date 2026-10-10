@@ -93,6 +93,7 @@ than the path is `400 url_mismatch`; a URL pasted as the key is
 | `GET /v3/events` | Same event parameters plus `fileKey?` | `{events: [event], nextAfter}` (or `nextBefore` with `order=desc`) or SSE across files; every event includes `fileKey`, and on JSON pages `fileName` |
 | `GET /v3/files/{fileKey}/summary` | listing filters, `url?` | `{fileKey, total, byState, byChangeType, byCategory, byType, byFrame?}` |
 | `GET /v3/files/{fileKey}/work` | listing filters, `group?` (`component` \| `set` \| `frame`), `changes?`, `include=progress?`, `limit`, `cursor`, `format?`, `url?` | `{fileKey, group, items: [item], nextCursor, total, truncated?}` |
+| `GET /v3/insights/trends` | `windowDays?` (1–14, default 7), `fileKey?` | `{windowDays, from, to, complete, retentionDays, total: trend, files: [{fileKey, fileName, …trend}]}`; trend is `{cleared, clearedPrevious, clearedChangePct, dirtied, netDirty}` |
 | `GET /v3/resolve` | `url` | `{fileKey, nodeId}` (`nodeId` null without `node-id`) |
 | `GET /v3/openapi.json` | — | OpenAPI 3.1 document (no token) |
 
@@ -180,7 +181,9 @@ Shapes:
 
 Listing filters (AND across parameters, comma-separated values OR'd within
 one): `state` (`dirty` default, `clean`, `blocked`, `all`), `under` (node id;
-subtree including the node), `depth` (with `under`), `type`, `changeType`,
+subtree including the node; or up to 50 comma-separated ids: the union of
+their subtrees, each node once, roots in the order given), `depth` (with
+`under`; levels below each root), `type`, `changeType`,
 `changed` (property names, trailing `*` for a prefix: `padding*`), `category`,
 `component` (instances of a main component), `instance` (`true`: instances
 only, `false`: none), `name` (case-insensitive, `*`
@@ -225,9 +228,10 @@ every listing filter (default `state=dirty`) and aggregate in the store (SQL
 
 - Summary: `byState` `{dirty, clean, blocked}`, `byChangeType` `{added,
   modified, deleted}`, `byCategory` (a node counts once per category it has),
-  `byType` (node type → count). With `under` (or a `?url=` link),
+  `byType` (node type → count). With one `under` (or a `?url=` link),
   `byFrame: [{nodeId, name, count}]` groups by the ancestor one level below
-  `under`, in document order; the `under` node itself is in none.
+  `under`, in document order; the `under` node itself is in none. With
+  several `under` ids there is no `byFrame`.
 - Work items: `group=component` (default) keys each node by its nearest
   component ancestor-or-self, with `set: { id, key, name }` when known.
   `group=set` merges variants into one item named like their Figma component
@@ -238,8 +242,8 @@ every listing filter (default `state=dirty`) and aggregate in the store (SQL
   components and unknown sets keep component grouping.
   This uses the nearest `COMPONENT` / `COMPONENT_SET` ancestor-or-self;
   `group=frame` groups by the
-  ancestor one level below `under` — required, else `400 invalid_parameter`
-  with a hint. Nodes without a key form one `key: null` item, listed last.
+  ancestor one level below `under` — exactly one `under` is required, else
+  `400 invalid_parameter` with a hint (several: pass one, or group by component). Nodes without a key form one `key: null` item, listed last.
   `item` is `{key, name, type, nodeCount, categories, changedProps, changes?,
   placements?, nodeIds, more, progress?}`: `changes` is `{nodeId: diff}` for the listed
   `nodeIds` per `changes=` (absent with `names`); `placements` (component grouping only) counts
@@ -271,7 +275,8 @@ events JSON page take `format` (`outline`: the listing and work items only):
   section 5) — `text/plain`, an indented tree with one line per node:
   `Name (TYPE) · modified (3: fills, paddingLeft, …)` (`clean` / `added` /
   `deleted`, `· blocked`; an instance shows `(INSTANCE → <mainComponentId>
-  <main name>)`). Two spaces per level below `under`; a node whose ancestors
+  <main name>)`). Two spaces per level below `under` (several `under` ids: each root's tree
+  in the order given, each root at the left margin); a node whose ancestors
   the filters leave out is indented under its nearest shown ancestor (no
   placeholder lines). With `expand=instances` a component's subtree is nested
   (`↳ Name (COMPONENT)`) under the first instance that reached it, and other
@@ -296,7 +301,16 @@ Events (`docs/api-v3-phase2.md`, section 1):
   `sync.completed`, `nodes.cleared`, `claim.created`, `claim.renewed`,
   `claim.released`, `node.blocked`, `node.unblocked`. `event` is `{id, fileKey,
   type, actor, data, createdAt}`; `data` carries ids and counts only (node ids
-  capped at 500), never design content.
+  capped at 500), never design content. `nodes.cleared` has `count` (all
+  cleared nodes, beyond the id cap); `sync.completed` `counts.dirty` is the
+  number of nodes the batch made dirty (new, or changed / deleted while clean).
+- Trends (`GET /v3/insights/trends`) sum those counts over the half-open
+  window `[from, to)` = the last `windowDays` days, and `clearedPrevious` over
+  the window before. `clearedChangePct` is `round((cleared − clearedPrevious)
+  / clearedPrevious × 100)`, null when `clearedPrevious` is 0; `netDirty` is
+  `dirtied − cleared`. Older `nodes.cleared` events without `count` count
+  their `nodeIds`. `complete` is false when `RDS_EVENT_RETENTION_DAYS` is under
+  `2 × windowDays` (the previous window may be pruned). Viewer tokens may read it.
 - JSON: `after` (event id, exclusive), `types` (comma-separated), `limit`
   1–1000 (default 100); pass `nextAfter` back as `after` to page.
 - SSE: messages are `id: <event id>`, `event: <type>`, `data: <event>`.
@@ -347,7 +361,7 @@ src/store/memory.js in-memory data layer (tests, RDS_STORE=memory)
 src/nodeService.js  NodeSyncService — per-node sync (hashes / sync / exists)
 src/ltree.js        Figma node id <-> ltree label/path helpers
 src/maintenance.js  startup repair steps (runMaintenance), run by server.js before listen
-src/v3/             API v3: index (auth, problems, OpenAPI), read, actions, events, block, insights (summary, work items), plugin (hashes, sync, exists), format (ndjson / md / outline), address, schemas, problem, legacy (hints for removed v1/v2 paths)
+src/v3/             API v3: index (auth, problems, OpenAPI), read, actions, events, block, insights (summary, work items, trends), plugin (hashes, sync, exists), format (ndjson / md / outline), address, schemas, problem, legacy (hints for removed v1/v2 paths)
 src/events/         event outbox (withEvents), buses (memory, Postgres LISTEN/NOTIFY + polling), retention
 src/store/postgres.js node-postgres data layer (same interface)
 tests/              DB-free unit tests (node --test)

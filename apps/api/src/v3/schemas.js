@@ -52,7 +52,7 @@ const problem = {
   },
   additionalProperties: true,
 };
-const problemResponses = statuses => Object.fromEntries(statuses.map(s => [s, { description: 'Problem details', ...problem }]));
+const problemResponses = statuses => Object.fromEntries(statuses.map(s => [s, problem]));
 const AUTH_ERRORS = [400, 401, 403];
 
 const counts = {
@@ -180,8 +180,8 @@ const listQuery = {
   type: 'object',
   properties: {
     state: str(`Comma-separated: ${STATES.join(', ')}. Default dirty (changed since last built, not blocked); \`all\` for every state.`),
-    under: str("Only this node's subtree, the node included (1:2 or 1-2). Defaults to the `url` link's node-id."),
-    depth: { type: 'integer', minimum: 0, description: 'Needs `under`: at most this many levels below it (1 = direct children).' },
+    under: str("Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id."),
+    depth: { type: 'integer', minimum: 0, description: 'Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children).' },
     type: str('Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME.'),
     changeType: str(`Comma-separated: ${CHANGE_TYPES.join(', ')} (dirty nodes only).`),
     changed: str('Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*).'),
@@ -192,7 +192,7 @@ const listQuery = {
     claimed: str('Comma-separated: true (leased), false (free), mine (leased to `worker`).'),
     worker: str('Your worker id; needed with `claimed=mine`.'),
     instance: { type: 'string', enum: ['true', 'false'], description: 'true: only component instances (`isInstance`); false: only other nodes.' },
-    q: str('All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills`; quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter.'),
+    q: str('All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter.'),
     view: { type: 'string', enum: ['compact', 'full'], description: 'compact (default: state, changes, hash, claim, block) or full (adds attrs, implementedAttrs, path; change values never truncated).' },
     changes: {
       type: 'string', enum: CHANGES_MODES,
@@ -251,7 +251,7 @@ const listNodes = {
   summary: 'List nodes',
   description: [
     'Nodes of a file with their property-level changes — by default the dirty ones (design changed since last built), compact, in document order (the design\'s layer order), 100 per page.',
-    'The main read for implementation work: filter by subtree (`under`, or a `url` with node-id), type, change, category, component or name; values within a parameter are OR, parameters are AND.',
+    'The main read for implementation work: filter by subtree (`under` — one node id or several comma-separated — or a `url` with node-id), type, change, category, component or name; values within a parameter are OR, parameters are AND.',
     'Each node\'s `changes` is `{ prop: { built, now } }` and `contentHash` is what `clear_nodes` needs. For counts only use `summarize`; to work component by component use `list_work_items`.',
     'Every node carries `changedProps` and, for instances, `isInstance` / `mainComponentId` (`instance=true` lists only instances). By default (`changes=auto`) `added` nodes have no `changes` — on a fresh sync every node is added, so pages stay small; get their values with `changes=diff`, `view=full` or `get_node`.',
     'Change values over 1 KB are replaced by `{ truncated: true, bytes }` and the page has `truncated: true`; `view=full` or `get_node` returns them whole.',

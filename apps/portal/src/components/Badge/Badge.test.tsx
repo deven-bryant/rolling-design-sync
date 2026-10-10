@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { Icon } from '../primitives';
 import { Badge, BadgeDot, FeaturedIcon, figmaBadge, figmaBadgeDot, figmaFeaturedIcon } from '.';
+import { describeGalleryInThemes } from '../../test/theme';
+import gallery from './Badge.gallery';
 
 const classesOf = (el: Element | null) => el?.getAttribute('class')?.split(' ') ?? [];
 
@@ -124,3 +126,5 @@ describe('FeaturedIcon', () => {
     expect(classesOf(ref.current)).not.toContain('shadow-xs');
   });
 });
+
+describeGalleryInThemes(gallery);

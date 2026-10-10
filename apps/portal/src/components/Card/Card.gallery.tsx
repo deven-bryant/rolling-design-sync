@@ -1,4 +1,4 @@
-import { Icon, type GalleryEntry } from '../primitives';
+import { inBothThemes, Icon, type GalleryEntry } from '../primitives';
 import { Badge } from '../Badge';
 import { Card } from './Card';
 
@@ -6,7 +6,7 @@ const button = 'rounded-md border border-primary bg-primary px-3.5 py-2.5 text-s
 
 export default {
   component: 'Card',
-  examples: [
+  examples: inBothThemes([
     {
       figma: 'Card header: Avatar=False, Breakpoint=Desktop',
       render: () => (
@@ -45,5 +45,5 @@ export default {
         </Card>
       ),
     },
-  ],
+  ]),
 } satisfies GalleryEntry;

@@ -1,6 +1,6 @@
 # Rolling Design Sync — Figma plugin
 
-Version 0.12.0. A runnable JavaScript development plugin with editable source and
+Version 0.13.0. A runnable JavaScript development plugin with editable source and
 no build step required for installation.
 
 Setting it up for the first time? The
@@ -143,9 +143,16 @@ while typing.
 3. Paste this file's **Figma file URL** (`https://www.figma.com/design/…`). Its
    file key identifies the tracked scope on the server; the plugin can't verify
    the URL belongs to the current file, so check it.
-4. Click **Upload snapshot**. Pause design edits while it scans — the plugin
-   captures the scope (with a verification pass), fetches the stored hashes,
-   compares, and uploads only the delta in batches.
+4. Click **Upload snapshot**. This clears any previous message and result.
+   Pause design edits while it scans — the plugin captures the scope (with a
+   verification pass), fetches the stored hashes, compares, and uploads only
+   the delta in batches. A progress bar under the status line follows each
+   phase: phases with a known size (verifying the scan, checking main
+   components, uploading) fill a determinate bar with counts such as
+   `Uploading: 1,200 / 3,400 nodes`; scanning shows a moving bar (static
+   with reduced motion) and the running node count. A successful sync ends
+   with a green **Sync complete** message that stays until the next upload or
+   an error.
 5. Read the **3 · Sync result** panel: counts of **changed**, **new** and
    **deleted** nodes uploaded, plus **unchanged** (skipped because the hash
    matched), **instances recorded**, **inside instances skipped** (layers
@@ -189,7 +196,7 @@ and shared-component impact in the running app.
 | `../../packages/core/index.js` | Pure normalization / diff / link helpers (shared with the API) |
 | `src/core.js` | Re-export of `@rolling-design-sync/core` for the plugin tests |
 | `src/plugin.js` | Figma traversal, dependency resolution, snapshot capture, hash delta + batched upload, UI actions |
-| `ui.html` | Plugin interface (Settings, scope, sync result) |
+| `ui.html` | Plugin interface (Settings, scope, progress, sync result) |
 | `code.js` | Ready-to-run bundle used by Figma |
 | `build.js` | Dependency-free source bundler (`packages/core` + `src/plugin.js`) |
 | `tests/plugin.test.js` | Node tests with a mocked Figma runtime + mocked network |

@@ -31,8 +31,8 @@ jobs:
       RDS_VIEWER_TOKEN: e2e-viewer-token
       RDS_SESSION_SECRET: e2e-session-secret
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -72,7 +72,7 @@ jobs:
         run: npx playwright test
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-postgres
           path: |
@@ -95,8 +95,8 @@ jobs:
       RDS_AGENT_TOKEN: e2e-agent-token
       RDS_VIEWER_TOKEN: e2e-viewer-token
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -132,8 +132,8 @@ jobs:
       VOLUME: rds-e2e-data
       RDS_API_URL: http://127.0.0.1:8787
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -219,8 +219,8 @@ jobs:
       VOLUME: rds-portal-data
       RDS_API_URL: http://127.0.0.1:8787
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -259,7 +259,7 @@ jobs:
         run: npx playwright test
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report-container
           path: |

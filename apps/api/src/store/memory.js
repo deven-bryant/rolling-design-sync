@@ -14,6 +14,9 @@ const clone = v => (v === undefined ? undefined : structuredClone(v));
 // --- v3 read helpers (mirror store/postgres.js v3Where) ----------------------
 const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 const v3State = n => (n.blockedAt ? 'blocked' : n.dirty ? 'dirty' : n.deletedAt ? null : 'clean');
+const isCount = v => Number.isInteger(v) && v >= 0;
+const eventClearedCount = data => (isCount(data && data.count) ? data.count : Array.isArray(data && data.nodeIds) ? data.nodeIds.length : 0);
+const eventDirtyCount = data => (data && data.counts && isCount(data.counts.dirty) ? data.counts.dirty : 0);
 const V3_SORT_KEY = { document: documentSortKey, path: n => n.path || '', name: n => n.name || '', updatedAt: n => new Date(n.updatedAt).toISOString() };
 const globRegex = g => new RegExp(`^${String(g).split('').map(c => (c === '*' ? '.*' : c === '?' ? '.' : c.replace(/[.+^${}()|[\]\\]/g, '\\$&'))).join('')}$`, 'is');
 
@@ -36,6 +39,9 @@ const framePath = (n, level) => {
 /** Index in `regions` (0 = the scope, then each expanded component) of the first one containing `n`, or -1; mirrors v3RegionOrdSql. */
 const regionOf = (n, regions) => regions.findIndex(r => r === null || (!!n.path && isDescendant(n.path, r)));
 const inRoot = (n, root) => !root || (!!n.path && isDescendant(n.path, root.path));
+/** `n` is in `root`'s subtree, at most `depth` levels below it (any depth when null). */
+const inSubtree = (n, root, depth) => !!n.path && isDescendant(n.path, root.path)
+  && (depth === null || depth === undefined || n.path.split('.').length <= root.path.split('.').length + depth);
 
 function v3Counts(nodes) {
   const counts = { total: 0, dirty: 0, blocked: 0 };
@@ -49,13 +55,13 @@ function v3Counts(nodes) {
   return counts;
 }
 
-function v3Matches(n, f, root) {
+/** `roots`: the `under` nodes (none: the whole file). */
+function v3Matches(n, f, roots) {
   if (!f.states.includes(v3State(n))) return false;
   if (f.regions) {
     if (regionOf(n, f.regions) < 0) return false;
-  } else if (root) {
-    if (!n.path || !isDescendant(n.path, root.path)) return false;
-    if (f.depth !== null && f.depth !== undefined && n.path.split('.').length > root.path.split('.').length + f.depth) return false;
+  } else if (roots.length) {
+    if (!roots.some(root => inSubtree(n, root, f.depth))) return false;
   }
   if (f.types.length && !f.types.includes(n.nodeType)) return false;
   if (f.changeTypes.length && !f.changeTypes.includes(n.changeType)) return false;
@@ -131,6 +137,8 @@ class MemoryStore {
    * `baselined: true` when that happened. `changeType` / `changedProps` /
    * `changeCategories` are stored as given; a content-hash change clears the
    * block columns.
+   *
+   * @param {Parameters<Store['upsertNode']>[2]} [baseline]
    */
   async upsertNode(fileKey, row, baseline = null) {
     const key = this._nodeKey(fileKey, row.nodeId);
@@ -264,6 +272,8 @@ class MemoryStore {
    * Up to `limit` rows (tombstoned included) with a `changeType` but no
    * `changedProps`, in `(fileKey, nodeId)` order after `after`
    * (`{ fileKey, nodeId }`, exclusive).
+   *
+   * @param {Parameters<Store['listChangeRepairCandidates']>[0]} options
    */
   async listChangeRepairCandidates({ after = null, limit }) {
     const past = n => !after || cmp(n.fileKey, after.fileKey) > 0 || (n.fileKey === after.fileKey && cmp(n.nodeId, after.nodeId) > 0);
@@ -297,6 +307,8 @@ class MemoryStore {
    * Up to `limit` rows (tombstoned included) without an `orderKey`, parents
    * before children: in `(fileKey, depth, nodeId)` order after `after`
    * (`{ fileKey, depth, nodeId }`, exclusive). Rows carry `depth`.
+   *
+   * @param {Parameters<Store['listOrderKeyCandidates']>[0]} options
    */
   async listOrderKeyCandidates({ after = null, limit }) {
     const depth = n => (n.path ? n.path.split('.').length : 0);
@@ -350,18 +362,21 @@ class MemoryStore {
     return out;
   }
 
+  /** The stored `under` nodes that have a path, in order; [] without `under`. */
+  _roots(fileKey, filter) {
+    return (filter.under || []).map(id => this.nodes.get(this._nodeKey(fileKey, id))).filter(n => n && n.path);
+  }
+
   async listNodes(fileKey, filter, page) {
     const all = this._fileNodes(fileKey);
-    let root = null;
-    if (filter.under) {
-      root = this.nodes.get(this._nodeKey(fileKey, filter.under));
-      if (!root || !root.path) return { nodes: [], total: 0, next: null };
-    }
-    const ord = filter.regions ? n => (filter.regions[0] === null ? 0 : regionOf(n, filter.regions)) : null;
+    const roots = this._roots(fileKey, filter);
+    if (filter.under && !roots.length) return { nodes: [], total: 0, next: null };
+    const ord = filter.regions ? n => (filter.regions[0] === null ? 0 : regionOf(n, filter.regions))
+      : roots.length > 1 ? n => roots.findIndex(root => inSubtree(n, root, filter.depth)) : null;
     const tree = page.sort === 'path' || page.sort === 'document' ? V3_SORT_KEY[page.sort] : null;
     const key = ord && tree ? n => `${String(ord(n)).padStart(4, '0')} ${tree(n)}` : V3_SORT_KEY[page.sort];
     const dir = page.desc ? -1 : 1;
-    const matched = all.filter(n => v3Matches(n, filter, root))
+    const matched = all.filter(n => v3Matches(n, filter, roots))
       .map(n => ({ n, k: key(n) }))
       .sort((a, b) => dir * (cmp(a.k, b.k) || cmp(a.n.nodeId, b.n.nodeId)));
     const after = page.after;
@@ -369,7 +384,7 @@ class MemoryStore {
     const pageRows = rest.slice(0, page.limit);
     const last = pageRows[pageRows.length - 1];
     return {
-      nodes: pageRows.map(({ n }) => (ord ? { ...this._nodeV3(n, all, page.counts), expandOrd: ord(n) } : this._nodeV3(n, all, page.counts))),
+      nodes: pageRows.map(({ n }) => (filter.regions && ord ? { ...this._nodeV3(n, all, page.counts), expandOrd: ord(n) } : this._nodeV3(n, all, page.counts))),
       total: matched.length,
       next: rest.length > page.limit ? { k: last.k, id: last.n.nodeId } : null,
     };
@@ -434,8 +449,8 @@ class MemoryStore {
     return claim && claim.fileKey === fileKey ? clone(claim) : null;
   }
 
-  /** @param {{ fileKey?: string | null, nowIso?: string }} [options] */
-  async listClaims({ fileKey = null, nowIso } = {}) {
+  /** @param {Parameters<Store['listClaims']>[0]} options */
+  async listClaims({ fileKey = null, nowIso }) {
     return [...this.claims.values()]
       .filter(c => (fileKey === null || c.fileKey === fileKey) && Date.parse(c.expiresAt) > Date.parse(nowIso))
       .sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt) || cmp(a.claimId, b.claimId))
@@ -525,17 +540,15 @@ class MemoryStore {
   // --- v3 events (same contract as PostgresStore) -----------------------------
   /** Appends an event; ids are monotonic per store. Returns the stored row. */
   // --- v3 insights (same contract as PostgresStore) ---------------------------
-  /** `{ all, byPath, root, matched }` for a v3 filter; `root` is the `under` node (null without one). */
+  /** `{ all, byPath, root, matched }` for a v3 filter; `root` is the `under` node when there is exactly one (else null). */
   _v3Match(fileKey, filter) {
     const all = this._fileNodes(fileKey);
     const byPath = new Map();
     for (const n of all) if (n.path && !byPath.has(n.path)) byPath.set(n.path, n);
-    let root = null;
-    if (filter.under) {
-      root = this.nodes.get(this._nodeKey(fileKey, filter.under)) || null;
-      if (!root || !root.path) return { all, byPath, root, matched: [] };
-    }
-    return { all, byPath, root, matched: all.filter(n => v3Matches(n, filter, root)) };
+    const roots = this._roots(fileKey, filter);
+    const root = filter.under && filter.under.length === 1 ? roots[0] || null : null;
+    if (filter.under && !roots.length) return { all, byPath, root, matched: [] };
+    return { all, byPath, root, matched: all.filter(n => v3Matches(n, filter, roots)) };
   }
 
   async summarizeNodes(fileKey, filter) {
@@ -557,11 +570,11 @@ class MemoryStore {
       const frame = level === null || !inRoot(n, root) ? null : framePath(n, level);
       if (frame) frames.set(frame, (frames.get(frame) || 0) + 1);
     }
-    const byFrame = filter.under
+    const byFrame = root
       ? [...frames.entries()]
         .map(([p, count]) => [p, count, byPath.has(p) ? documentSortKey(byPath.get(p)) : null])
         .sort((a, b) => Number(a[2] === null) - Number(b[2] === null) || cmp(a[2] ?? '', b[2] ?? '') || cmp(a[0], b[0]))
-        .map(([p, count]) => ({ nodeId: pathNodeIds(p).pop(), name: byPath.get(p)?.name ?? null, count }))
+        .map(([p, count]) => ({ nodeId: /** @type {string} */ (pathNodeIds(p).pop()), name: byPath.get(p)?.name ?? null, count })) // a frame path is never empty
       : null;
     return { total: matched.length, byState, byChangeType, byCategory, byType, byFrame };
   }
@@ -723,6 +736,8 @@ class MemoryStore {
   /**
    * Events with `after < id < before`, oldest first (`order: 'desc'`: newest first), each with its file's `fileName`;
    * `fileKey` (or all files when null), `types`, `nodeId` and `since` narrow them.
+   *
+   * @param {Parameters<Store['listEvents']>[0]} [options]
    */
   async listEvents({ fileKey = null, after = 0, before = null, order = 'asc', types = [], nodeId = null, since = null, limit = 100 } = {}) {
     const out = [];
@@ -760,6 +775,26 @@ class MemoryStore {
   }
 
   /** Deletes events created before `before`; returns how many. */
+  async eventTrends({ fileKey = null, from, since, until }) {
+    const out = new Map([...this.files.values()]
+      .filter(f => fileKey === null || f.fileKey === fileKey)
+      .sort((a, b) => cmp(a.fileKey, b.fileKey))
+      .map(f => [f.fileKey, { fileKey: f.fileKey, fileName: f.name ?? null, cleared: 0, clearedPrevious: 0, dirtied: 0 }]));
+    const [lo, mid, hi] = [from, since, until].map(t => Date.parse(t));
+    for (const e of this.events.values()) {
+      const row = out.get(e.fileKey);
+      const at = Date.parse(e.createdAt);
+      if (!row || at < lo || at >= hi) continue;
+      if (e.type === 'nodes.cleared') {
+        const n = eventClearedCount(e.data);
+        if (at >= mid) row.cleared += n; else row.clearedPrevious += n;
+      } else if (e.type === 'sync.completed' && at >= mid) {
+        row.dirtied += eventDirtyCount(e.data);
+      }
+    }
+    return [...out.values()];
+  }
+
   async pruneEvents(before) {
     let n = 0;
     for (const [id, e] of this.events) {

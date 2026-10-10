@@ -192,7 +192,7 @@ async function v3Routes(v3, { config, store, now, bus, nodes }) {
     registerActionRoutes(authed, { store, now, config, bus });
     registerEventRoutes(authed, { store, now, config, bus });
     registerBlockRoutes(authed, { store, now, bus });
-    registerInsightRoutes(authed, { store, now });
+    registerInsightRoutes(authed, { store, now, config });
     registerStatusRoutes(authed, { store, config, bus });
     tokenRoutes(authed);
   });

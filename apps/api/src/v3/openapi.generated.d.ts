@@ -859,16 +859,16 @@ export interface paths {
         };
         /**
          * List nodes
-         * @description Nodes of a file with their property-level changes — by default the dirty ones (design changed since last built), compact, in document order (the design's layer order), 100 per page. The main read for implementation work: filter by subtree (`under`, or a `url` with node-id), type, change, category, component or name; values within a parameter are OR, parameters are AND. Each node's `changes` is `{ prop: { built, now } }` and `contentHash` is what `clear_nodes` needs. For counts only use `summarize`; to work component by component use `list_work_items`. Every node carries `changedProps` and, for instances, `isInstance` / `mainComponentId` (`instance=true` lists only instances). By default (`changes=auto`) `added` nodes have no `changes` — on a fresh sync every node is added, so pages stay small; get their values with `changes=diff`, `view=full` or `get_node`. Change values over 1 KB are replaced by `{ truncated: true, bytes }` and the page has `truncated: true`; `view=full` or `get_node` returns them whole. `expand=instances` returns everything a screen uses in one call: with `under` = the screen, it adds the main components its instances point at (and theirs, transitively), each once; filters apply to that union (`expand=instances&state=dirty` = every dirty node the screen uses). Scope nodes come first, then each component in discovery order; expanded nodes carry `via` (the instance that reached them), and `expansion` reports the count, `truncated` and `unresolved` (unsynced) components. Page with `nextCursor` → `cursor`. On `unknown_parameter` / `invalid_parameter` follow `hint`; on `invalid_cursor` keep every other parameter unchanged or drop `cursor`.
+         * @description Nodes of a file with their property-level changes — by default the dirty ones (design changed since last built), compact, in document order (the design's layer order), 100 per page. The main read for implementation work: filter by subtree (`under` — one node id or several comma-separated — or a `url` with node-id), type, change, category, component or name; values within a parameter are OR, parameters are AND. Each node's `changes` is `{ prop: { built, now } }` and `contentHash` is what `clear_nodes` needs. For counts only use `summarize`; to work component by component use `list_work_items`. Every node carries `changedProps` and, for instances, `isInstance` / `mainComponentId` (`instance=true` lists only instances). By default (`changes=auto`) `added` nodes have no `changes` — on a fresh sync every node is added, so pages stay small; get their values with `changes=diff`, `view=full` or `get_node`. Change values over 1 KB are replaced by `{ truncated: true, bytes }` and the page has `truncated: true`; `view=full` or `get_node` returns them whole. `expand=instances` returns everything a screen uses in one call: with `under` = the screen, it adds the main components its instances point at (and theirs, transitively), each once; filters apply to that union (`expand=instances&state=dirty` = every dirty node the screen uses). Scope nodes come first, then each component in discovery order; expanded nodes carry `via` (the instance that reached them), and `expansion` reports the count, `truncated` and `unresolved` (unsynced) components. Page with `nextCursor` → `cursor`. On `unknown_parameter` / `invalid_parameter` follow `hint`; on `invalid_cursor` keep every other parameter unchanged or drop `cursor`.
          */
         get: {
             parameters: {
                 query?: {
                     /** @description Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. */
                     state?: string;
-                    /** @description Only this node's subtree, the node included (1:2 or 1-2). Defaults to the `url` link's node-id. */
+                    /** @description Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. */
                     under?: string;
-                    /** @description Needs `under`: at most this many levels below it (1 = direct children). */
+                    /** @description Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children). */
                     depth?: number;
                     /** @description Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. */
                     type?: string;
@@ -890,7 +890,7 @@ export interface paths {
                     worker?: string;
                     /** @description true: only component instances (`isInstance`); false: only other nodes. */
                     instance?: "true" | "false";
-                    /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills`; quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
+                    /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
                     q?: string;
                     /** @description compact (default: state, changes, hash, claim, block) or full (adds attrs, implementedAttrs, path; change values never truncated). */
                     view?: "compact" | "full";
@@ -912,7 +912,7 @@ export interface paths {
                     expand?: "instances";
                     /** @description With `expand=instances`: at most this many instance → main hops (default 10, max 20; 1 = only the components the scope uses directly). */
                     expandDepth?: number;
-                    /** @description json (default); ndjson — one JSON object per line, streamed; md — a markdown checklist, one line per row, streamed. ndjson and md return every match from `cursor` on (up to `limit` when given) instead of one page. outline — text/plain, an indented tree with one line per node: use this first to see a screen's structure (under=<the screen>, and expand=instances for the components inside). Line: `Name (TYPE) · added` — `clean`, `added`, `deleted`, or `modified (3: fills, paddingLeft, …)` (changed property count and the first names), `· blocked` when blocked; an instance shows `(INSTANCE → <mainComponentId> <main name>)`. Two spaces per level of the tree below `under` (the `under` node itself, when it matches, is at the left margin). A node whose ancestors the filters leave out is indented under its nearest shown ancestor (at the margin when none is shown) — no placeholder lines. With expand=instances, a component's subtree is nested, as `↳ Name (COMPONENT) · …`, under the first instance that reached it; other instances of it show `→ <mainComponentId> (shown above)` (or `(shown below)`). Always in document order (the design's layer order; `sort=path` for node-id path order); nodes positioned absolutely in an auto-layout parent are marked `(absolute)`. Lines are the `fields`-independent summary. The whole result (up to 2000 rows, in order) is rendered once, then paged by rendered lines, so nesting and `(shown above)` read the same at any page size: `limit` is lines per page (default: every line), and when lines remain the response has an `X-RDS-Next-Cursor` header — pass it as `cursor`, with every other parameter unchanged, for the next lines. Past the 2000-row cap the outline's last line (counted like any other) is `… N more (use cursor/limit) — cursor=<c>` (the same cursor is in the header), which continues after the rendered part. */
+                    /** @description json (default); ndjson — one JSON object per line, streamed; md — a markdown checklist, one line per row, streamed. ndjson and md return every match from `cursor` on (up to `limit` when given) instead of one page. outline — text/plain, an indented tree with one line per node: use this first to see a screen's structure (under=<the screen>, and expand=instances for the components inside). Line: `Name (TYPE) · added` — `clean`, `added`, `deleted`, or `modified (3: fills, paddingLeft, …)` (changed property count and the first names), `· blocked` when blocked; an instance shows `(INSTANCE → <mainComponentId> <main name>)`. Two spaces per level of the tree below `under` (the `under` node itself, when it matches, is at the left margin; with several `under` ids, the tree of each root follows that of the previous root, in the order given, each root at the left margin). A node whose ancestors the filters leave out is indented under its nearest shown ancestor (at the margin when none is shown) — no placeholder lines. With expand=instances, a component's subtree is nested, as `↳ Name (COMPONENT) · …`, under the first instance that reached it; other instances of it show `→ <mainComponentId> (shown above)` (or `(shown below)`). Always in document order (the design's layer order; `sort=path` for node-id path order); nodes positioned absolutely in an auto-layout parent are marked `(absolute)`. Lines are the `fields`-independent summary. The whole result (up to 2000 rows, in order) is rendered once, then paged by rendered lines, so nesting and `(shown above)` read the same at any page size: `limit` is lines per page (default: every line), and when lines remain the response has an `X-RDS-Next-Cursor` header — pass it as `cursor`, with every other parameter unchanged, for the next lines. Past the 2000-row cap the outline's last line (counted like any other) is `… N more (use cursor/limit) — cursor=<c>` (the same cursor is in the header), which continues after the rendered part. */
                     format?: "json" | "ndjson" | "md" | "outline";
                 };
                 header?: never;
@@ -1710,15 +1710,15 @@ export interface paths {
                         limit?: number;
                         /** @description Exact node ids to claim (1:2 or 1-2); unknown ids are skipped. */
                         nodeIds?: string[];
-                        /** @description The `list_nodes` filters (`q` included) selecting the nodes to claim, e.g. `{ "under": "1:2", "category": "color" }`; `claimed` and `worker` are implied. `{}` = the dirty nodes. */
+                        /** @description The `list_nodes` filters (`q` included) selecting the nodes to claim, e.g. `{ "under": "1:2", "category": "color" }` (`under` may list several roots: `"1:2,1:5"`); `claimed` and `worker` are implied. `{}` = the dirty nodes. */
                         filter?: {
-                            /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills`; quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
+                            /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
                             q?: string;
                             /** @description Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. */
                             state?: string;
-                            /** @description Only this node's subtree, the node included (1:2 or 1-2). Defaults to the `url` link's node-id. */
+                            /** @description Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. */
                             under?: string;
-                            /** @description Needs `under`: at most this many levels below it (1 = direct children). */
+                            /** @description Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children). */
                             depth?: number;
                             /** @description Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. */
                             type?: string;
@@ -3564,16 +3564,16 @@ export interface paths {
         };
         /**
          * Summarize changes
-         * @description Counts of the nodes the `list_nodes` filters match (default: dirty) by state, change type, change category and node type — a cheap overview before listing or planning work. With `under` (e.g. a page), `byFrame` also counts per child frame of it. With `expand=instances` the counts cover everything the scope uses — its nodes plus the main components its instances reach, transitively (`byFrame` still counts only nodes under `under`): how big is this screen, components included? Returns no nodes; use `list_nodes` or `list_work_items` for those.
+         * @description Counts of the nodes the `list_nodes` filters match (default: dirty) by state, change type, change category and node type — a cheap overview before listing or planning work. With one `under` (e.g. a page), `byFrame` also counts per child frame of it (not with several `under` ids). With `expand=instances` the counts cover everything the scope uses — its nodes plus the main components its instances reach, transitively (`byFrame` still counts only nodes under `under`): how big is this screen, components included? Returns no nodes; use `list_nodes` or `list_work_items` for those.
          */
         get: {
             parameters: {
                 query?: {
                     /** @description Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. */
                     state?: string;
-                    /** @description Only this node's subtree, the node included (1:2 or 1-2). Defaults to the `url` link's node-id. */
+                    /** @description Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. */
                     under?: string;
-                    /** @description Needs `under`: at most this many levels below it (1 = direct children). */
+                    /** @description Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children). */
                     depth?: number;
                     /** @description Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. */
                     type?: string;
@@ -3595,7 +3595,7 @@ export interface paths {
                     claimed?: string;
                     /** @description Your worker id; needed with `claimed=mine`. */
                     worker?: string;
-                    /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills`; quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
+                    /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
                     q?: string;
                     /** @description A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. */
                     url?: string;
@@ -3784,6 +3784,201 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v3/insights/trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Weekly trends
+         * @description How fast the backlog moves: nodes cleared and nodes newly dirtied by syncs in the last `windowDays` days (default 7) and the change in clears vs the window before, for the whole server (`total`) and each tracked file (`files`); `fileKey` narrows both to one file. Counts come from the event log, so `complete` is false when RDS_EVENT_RETENTION_DAYS (`retentionDays`) keeps less than two windows — `clearedPrevious` and `clearedChangePct` may then undercount. Returns no nodes.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Window length in days, 1–14 (default 7). */
+                    windowDays?: number;
+                    /** @description Only this tracked file (file_not_found otherwise). */
+                    fileKey?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            windowDays?: number;
+                            /**
+                             * Format: date-time
+                             * @description Window start (inclusive): to − windowDays.
+                             */
+                            from?: string;
+                            /**
+                             * Format: date-time
+                             * @description Window end (exclusive): now.
+                             */
+                            to?: string;
+                            /** @description False when event retention is shorter than 2 × windowDays. */
+                            complete?: boolean;
+                            retentionDays?: number;
+                            total?: {
+                                /** @description Nodes cleared in the window [from, to). */
+                                cleared?: number;
+                                /** @description Nodes cleared in the window before it [from − windowDays, from). */
+                                clearedPrevious?: number;
+                                /** @description round((cleared − clearedPrevious) / clearedPrevious × 100); null when clearedPrevious is 0. */
+                                clearedChangePct?: null | number;
+                                /** @description Nodes newly marked dirty by syncs in [from, to): new, changed while clean, or deleted while clean. */
+                                dirtied?: number;
+                                /** @description dirtied − cleared: positive when the backlog grew. */
+                                netDirty?: number;
+                            };
+                            files?: {
+                                fileKey?: string;
+                                fileName?: null | string;
+                                /** @description Nodes cleared in the window [from, to). */
+                                cleared?: number;
+                                /** @description Nodes cleared in the window before it [from − windowDays, from). */
+                                clearedPrevious?: number;
+                                /** @description round((cleared − clearedPrevious) / clearedPrevious × 100); null when clearedPrevious is 0. */
+                                clearedChangePct?: null | number;
+                                /** @description Nodes newly marked dirty by syncs in [from, to): new, changed while clean, or deleted while clean. */
+                                dirtied?: number;
+                                /** @description dirtied − cleared: positive when the backlog grew. */
+                                netDirty?: number;
+                            }[];
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v3/files/{fileKey}/work": {
         parameters: {
             query?: never;
@@ -3800,9 +3995,9 @@ export interface paths {
                 query?: {
                     /** @description Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. */
                     state?: string;
-                    /** @description Only this node's subtree, the node included (1:2 or 1-2). Defaults to the `url` link's node-id. */
+                    /** @description Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. */
                     under?: string;
-                    /** @description Needs `under`: at most this many levels below it (1 = direct children). */
+                    /** @description Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children). */
                     depth?: number;
                     /** @description Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. */
                     type?: string;
@@ -3824,7 +4019,7 @@ export interface paths {
                     claimed?: string;
                     /** @description Your worker id; needed with `claimed=mine`. */
                     worker?: string;
-                    /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills`; quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
+                    /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
                     q?: string;
                     /** @description A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. */
                     url?: string;
@@ -3832,7 +4027,7 @@ export interface paths {
                     expand?: "instances";
                     /** @description With `expand=instances`: at most this many instance → main hops (default 10, max 20; 1 = only the components the scope uses directly). */
                     expandDepth?: number;
-                    /** @description component (default): by nearest component; set: merge all matching variants of a known component set (best for design systems); frame: by child frame of `under` (needs `under`). */
+                    /** @description component (default): by nearest component; set: merge all matching variants of a known component set (best for design systems); frame: by child frame of `under` (needs exactly one `under`). */
                     group?: "component" | "frame" | "set";
                     /** @description auto (default): each item's `changes` has the diffs of its modified and deleted nodes; diff: of every listed node, added ones included (their full values); names: no `changes`, only `changedProps`. */
                     changes?: "auto" | "diff" | "names";

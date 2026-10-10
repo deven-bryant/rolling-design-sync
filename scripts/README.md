@@ -6,8 +6,8 @@ Intended for non-interactive use from a worker session: list what changed in
 Figma since it was last built, lease it, and clear it once it's committed.
 
 From a checkout of the repository, run it as `node scripts/rds-agent.js` —
-nothing to install. The npm package (`npx @rolling-design-sync/agent-cli`,
-binary `rds-agent`) is coming with the first public release. New to Rolling
+nothing to install — or use the npm package (`npx @rolling-design-sync/agent-cli`,
+binary `rds-agent`). New to Rolling
 Design Sync? Start with the [quickstart](https://github.com/deven-bryant/rolling-design-sync/blob/main/docs/quickstart.md).
 
 The commands, their flags and the requests they send come from
@@ -152,6 +152,7 @@ Generated from the API's OpenAPI document (API 3.0.0) — one command per `x-rds
 | [`block`](#rds-agent-block) | `POST /v3/files/{fileKey}/nodes/{nodeId}/block` | Block a node |
 | [`unblock`](#rds-agent-unblock) | `POST /v3/files/{fileKey}/nodes/{nodeId}/unblock` | Unblock a node |
 | [`summary`](#rds-agent-summary) | `GET /v3/files/{fileKey}/summary` | Summarize changes |
+| [`trends`](#rds-agent-trends) | `GET /v3/insights/trends` | Weekly trends |
 | [`work`](#rds-agent-work) | `GET /v3/files/{fileKey}/work` | List work items |
 
 ### rds-agent files ls
@@ -186,14 +187,14 @@ The scopes (sections/frames) the plugin has synced in a file: each root's name, 
 
 `GET /v3/files/{fileKey}/nodes`
 
-Nodes of a file with their property-level changes — by default the dirty ones (design changed since last built), compact, in document order (the design's layer order), 100 per page. The main read for implementation work: filter by subtree (`under`, or a `url` with node-id), type, change, category, component or name; values within a parameter are OR, parameters are AND. Each node's `changes` is `{ prop: { built, now } }` and `contentHash` is what `clear_nodes` needs. For counts only use `summarize`; to work component by component use `list_work_items`. Every node carries `changedProps` and, for instances, `isInstance` / `mainComponentId` (`instance=true` lists only instances). By default (`changes=auto`) `added` nodes have no `changes` — on a fresh sync every node is added, so pages stay small; get their values with `changes=diff`, `view=full` or `get_node`. Change values over 1 KB are replaced by `{ truncated: true, bytes }` and the page has `truncated: true`; `view=full` or `get_node` returns them whole. `expand=instances` returns everything a screen uses in one call: with `under` = the screen, it adds the main components its instances point at (and theirs, transitively), each once; filters apply to that union (`expand=instances&state=dirty` = every dirty node the screen uses). Scope nodes come first, then each component in discovery order; expanded nodes carry `via` (the instance that reached them), and `expansion` reports the count, `truncated` and `unresolved` (unsynced) components. Page with `nextCursor` → `cursor`. On `unknown_parameter` / `invalid_parameter` follow `hint`; on `invalid_cursor` keep every other parameter unchanged or drop `cursor`.
+Nodes of a file with their property-level changes — by default the dirty ones (design changed since last built), compact, in document order (the design's layer order), 100 per page. The main read for implementation work: filter by subtree (`under` — one node id or several comma-separated — or a `url` with node-id), type, change, category, component or name; values within a parameter are OR, parameters are AND. Each node's `changes` is `{ prop: { built, now } }` and `contentHash` is what `clear_nodes` needs. For counts only use `summarize`; to work component by component use `list_work_items`. Every node carries `changedProps` and, for instances, `isInstance` / `mainComponentId` (`instance=true` lists only instances). By default (`changes=auto`) `added` nodes have no `changes` — on a fresh sync every node is added, so pages stay small; get their values with `changes=diff`, `view=full` or `get_node`. Change values over 1 KB are replaced by `{ truncated: true, bytes }` and the page has `truncated: true`; `view=full` or `get_node` returns them whole. `expand=instances` returns everything a screen uses in one call: with `under` = the screen, it adds the main components its instances point at (and theirs, transitively), each once; filters apply to that union (`expand=instances&state=dirty` = every dirty node the screen uses). Scope nodes come first, then each component in discovery order; expanded nodes carry `via` (the instance that reached them), and `expansion` reports the count, `truncated` and `unresolved` (unsynced) components. Page with `nextCursor` → `cursor`. On `unknown_parameter` / `invalid_parameter` follow `hint`; on `invalid_cursor` keep every other parameter unchanged or drop `cursor`.
 
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
 | `--state` | string | query `state` | Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. |
-| `--under` | string | query `under` | Only this node's subtree, the node included (1:2 or 1-2). Defaults to the `url` link's node-id. |
-| `--depth` | integer | query `depth` | Needs `under`: at most this many levels below it (1 = direct children). |
+| `--under` | string | query `under` | Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. |
+| `--depth` | integer | query `depth` | Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children). |
 | `--type` | string | query `type` | Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. |
 | `--change-type` | string | query `changeType` | Comma-separated: added, modified, deleted (dirty nodes only). |
 | `--changed` | string | query `changed` | Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). |
@@ -204,7 +205,7 @@ Nodes of a file with their property-level changes — by default the dirty ones 
 | `--claimed` | string | query `claimed` | Comma-separated: true (leased), false (free), mine (leased to `worker`). |
 | `--worker` | string | query `worker` | Your worker id; needed with `claimed=mine`. |
 | `--instance` | true\|false | query `instance` | true: only component instances (`isInstance`); false: only other nodes. |
-| `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills`; quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
+| `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
 | `--view` | compact\|full | query `view` | compact (default: state, changes, hash, claim, block) or full (adds attrs, implementedAttrs, path; change values never truncated). |
 | `--changes` | auto\|diff\|names | query `changes` | auto (default): the built→now diff for modified and deleted nodes, omitted for added ones (their property names are in `changedProps`) — keeps fresh-sync pages small; diff: the diff for every node, including added ones' full values; names: never `changes`, only `changedProps`. Ask for `changes=diff` (or `get_node`) when you need the values of added nodes. |
 | `--fields` | string | query `fields` | Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, via (`via` needs `expand=instances`). |
@@ -267,10 +268,10 @@ Leases nodes to `worker` so parallel agents do not implement the same nodes. Cla
 | `--ttl-seconds` | integer | body `ttlSeconds` | Lease length in seconds (default: the server's RDS_CLAIM_TTL_SECONDS; capped at 86400 = 24 h). |
 | `--limit` | integer | body `limit` | At most this many nodes (default 100 with a filter; every listed id with nodeIds). |
 | `--node-ids` | string,… | body `nodeIds` | Exact node ids to claim (1:2 or 1-2); unknown ids are skipped. |
-| `--q` | string | body `filter.q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills`; quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
+| `--q` | string | body `filter.q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
 | `--state` | string | body `filter.state` | Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. |
-| `--under` | string | body `filter.under` | Only this node's subtree, the node included (1:2 or 1-2). Defaults to the `url` link's node-id. |
-| `--depth` | integer | body `filter.depth` | Needs `under`: at most this many levels below it (1 = direct children). |
+| `--under` | string | body `filter.under` | Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. |
+| `--depth` | integer | body `filter.depth` | Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children). |
 | `--type` | string | body `filter.type` | Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. |
 | `--change-type` | string | body `filter.changeType` | Comma-separated: added, modified, deleted (dirty nodes only). |
 | `--changed` | string | body `filter.changed` | Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). |
@@ -367,14 +368,14 @@ Removes a node's block once its blocker is resolved: it is dirty again (back in 
 
 `GET /v3/files/{fileKey}/summary`
 
-Counts of the nodes the `list_nodes` filters match (default: dirty) by state, change type, change category and node type — a cheap overview before listing or planning work. With `under` (e.g. a page), `byFrame` also counts per child frame of it. With `expand=instances` the counts cover everything the scope uses — its nodes plus the main components its instances reach, transitively (`byFrame` still counts only nodes under `under`): how big is this screen, components included? Returns no nodes; use `list_nodes` or `list_work_items` for those.
+Counts of the nodes the `list_nodes` filters match (default: dirty) by state, change type, change category and node type — a cheap overview before listing or planning work. With one `under` (e.g. a page), `byFrame` also counts per child frame of it (not with several `under` ids). With `expand=instances` the counts cover everything the scope uses — its nodes plus the main components its instances reach, transitively (`byFrame` still counts only nodes under `under`): how big is this screen, components included? Returns no nodes; use `list_nodes` or `list_work_items` for those.
 
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
 | `--state` | string | query `state` | Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. |
-| `--under` | string | query `under` | Only this node's subtree, the node included (1:2 or 1-2). Defaults to the `url` link's node-id. |
-| `--depth` | integer | query `depth` | Needs `under`: at most this many levels below it (1 = direct children). |
+| `--under` | string | query `under` | Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. |
+| `--depth` | integer | query `depth` | Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children). |
 | `--type` | string | query `type` | Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. |
 | `--change-type` | string | query `changeType` | Comma-separated: added, modified, deleted (dirty nodes only). |
 | `--changed` | string | query `changed` | Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). |
@@ -385,10 +386,21 @@ Counts of the nodes the `list_nodes` filters match (default: dirty) by state, ch
 | `--since` | string | query `since` | ISO 8601 time: only nodes changed at or after it. |
 | `--claimed` | string | query `claimed` | Comma-separated: true (leased), false (free), mine (leased to `worker`). |
 | `--worker` | string | query `worker` | Your worker id; needed with `claimed=mine`. |
-| `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills`; quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
+| `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--expand` | instances | query `expand` | `instances`: also include the subtree of every main component the scope's instances use (the scope is `under`, or the whole file) — transitively through instances inside those components, breadth-first, each component once. Use it for "everything this screen uses" / "which components do I build for this screen". Other filters apply after expansion; `depth` cannot be combined with it. |
 | `--expand-depth` | integer | query `expandDepth` | With `expand=instances`: at most this many instance → main hops (default 10, max 20; 1 = only the components the scope uses directly). |
+
+### rds-agent trends
+
+`GET /v3/insights/trends`
+
+How fast the backlog moves: nodes cleared and nodes newly dirtied by syncs in the last `windowDays` days (default 7) and the change in clears vs the window before, for the whole server (`total`) and each tracked file (`files`); `fileKey` narrows both to one file. Counts come from the event log, so `complete` is false when RDS_EVENT_RETENTION_DAYS (`retentionDays`) keeps less than two windows — `clearedPrevious` and `clearedChangePct` may then undercount. Returns no nodes.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--window-days` | integer | query `windowDays` | Default `7`. Window length in days, 1–14 (default 7). |
+| `--file-key` | string | query `fileKey` | Only this tracked file (file_not_found otherwise). |
 
 ### rds-agent work
 
@@ -400,8 +412,8 @@ The nodes the `list_nodes` filters match (default: dirty) bundled into work item
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
 | `--state` | string | query `state` | Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. |
-| `--under` | string | query `under` | Only this node's subtree, the node included (1:2 or 1-2). Defaults to the `url` link's node-id. |
-| `--depth` | integer | query `depth` | Needs `under`: at most this many levels below it (1 = direct children). |
+| `--under` | string | query `under` | Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. |
+| `--depth` | integer | query `depth` | Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children). |
 | `--type` | string | query `type` | Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. |
 | `--change-type` | string | query `changeType` | Comma-separated: added, modified, deleted (dirty nodes only). |
 | `--changed` | string | query `changed` | Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). |
@@ -412,11 +424,11 @@ The nodes the `list_nodes` filters match (default: dirty) bundled into work item
 | `--since` | string | query `since` | ISO 8601 time: only nodes changed at or after it. |
 | `--claimed` | string | query `claimed` | Comma-separated: true (leased), false (free), mine (leased to `worker`). |
 | `--worker` | string | query `worker` | Your worker id; needed with `claimed=mine`. |
-| `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills`; quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
+| `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--expand` | instances | query `expand` | `instances`: also include the subtree of every main component the scope's instances use (the scope is `under`, or the whole file) — transitively through instances inside those components, breadth-first, each component once. Use it for "everything this screen uses" / "which components do I build for this screen". Other filters apply after expansion; `depth` cannot be combined with it. |
 | `--expand-depth` | integer | query `expandDepth` | With `expand=instances`: at most this many instance → main hops (default 10, max 20; 1 = only the components the scope uses directly). |
-| `--group` | component\|frame\|set | query `group` | component (default): by nearest component; set: merge all matching variants of a known component set (best for design systems); frame: by child frame of `under` (needs `under`). |
+| `--group` | component\|frame\|set | query `group` | component (default): by nearest component; set: merge all matching variants of a known component set (best for design systems); frame: by child frame of `under` (needs exactly one `under`). |
 | `--changes` | auto\|diff\|names | query `changes` | auto (default): each item's `changes` has the diffs of its modified and deleted nodes; diff: of every listed node, added ones included (their full values); names: no `changes`, only `changedProps`. |
 | `--limit` | integer | query `limit` | Items per page (default 100, max 1000). With format=outline: rendered lines per page (default: every line). |
 | `--cursor` | string | query `cursor` | The previous page's `nextCursor`, unchanged, with all other parameters the same (else `invalid_cursor`). With format=outline: the previous response's `X-RDS-Next-Cursor` header (a line position in the rendered outline). |

@@ -10,5 +10,6 @@ export {
   type WorkPage,
   type WorkQuery,
 } from './api';
+export { WorkFiltersBar, type WorkFilters, type WorkFiltersBarProps } from './WorkFiltersBar';
 export { WorkGroupSwitch, type WorkGroupSwitchProps } from './WorkGroupSwitch';
 export { itemProgress, nodesSummary, WorkTable, type WorkTableProps } from './WorkTable';

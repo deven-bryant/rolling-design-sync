@@ -6,7 +6,7 @@
  */
 export const figmaCheckbox = {
   component: 'Checkbox',
-  setId: '9:5664',
+  setId: '111:8157',
   properties: {
     Checked: 'isSelected',
     Indeterminate: 'isIndeterminate',
@@ -17,20 +17,20 @@ export const figmaCheckbox = {
   },
   variants: [
     {
-      nodeId: '9:5717',
-      key: '50dbd945cfa0cd8c5143c8ea405fe671bdc6f0b8',
+      nodeId: '111:8210',
+      key: '0bf54b33758dc2d536b700bd486582289c69d8e0',
       name: 'Checked=True, Indeterminate=False, Size=sm, Type=Radio, Text=False, State=Default',
       code: '<Checkbox.Radio size="sm" value="…" aria-label="…" /> (selected)',
     },
     {
-      nodeId: '9:5734',
-      key: 'd578449228a7e3ae5bdd31ddfb078574df70dff5',
+      nodeId: '111:8227',
+      key: 'fd342419445e9e5b3412ae861b1c7ba96ea757b7',
       name: 'Checked=False, Indeterminate=False, Size=sm, Type=Radio, Text=False, State=Default',
       code: '<Checkbox.Radio size="sm" value="…" aria-label="…" />',
     },
     {
-      nodeId: '9:5735',
-      key: '6d1b91000ccf8bd9fa729ea55f465c7b5f002cfb',
+      nodeId: '111:8228',
+      key: '3210e4c9a64a893e68bf5d0d460be97897ab41a2',
       name: 'Checked=False, Indeterminate=False, Size=md, Type=Checkbox, Text=False, State=Default',
       code: '<Checkbox size="md" aria-label="…" />',
     },
@@ -39,24 +39,24 @@ export const figmaCheckbox = {
 
 export const figmaCheckboxBase = {
   component: 'Checkbox.Base',
-  setId: '9:5599',
+  setId: '111:8092',
   properties: { Checked: 'checked', Indeterminate: 'indeterminate', Size: 'size', Type: 'type' },
   variants: [
     {
-      nodeId: '9:5601',
-      key: '71e4e58b6f4f077307c37d15d36941b0b8c0ebab',
+      nodeId: '111:8094',
+      key: 'e95d2be401557359391c8b76be1c880ae3bc0104',
       name: 'Checked=False, Indeterminate=False, Size=sm, Type=Radio, State=Default',
       code: '<Checkbox.Base size="sm" type="radio" />',
     },
     {
-      nodeId: '9:5610',
-      key: 'c933c319c745f05bf644265dec533c6a354c3cab',
+      nodeId: '111:8103',
+      key: 'f0fd5a19cb8b19db2f8d3d88418f3634f294977a',
       name: 'Checked=True, Indeterminate=False, Size=sm, Type=Radio, State=Default',
       code: '<Checkbox.Base size="sm" type="radio" checked />',
     },
     {
-      nodeId: '9:5620',
-      key: 'c1a7ba7972a40c31fa96755b5eb26c533381c31c',
+      nodeId: '111:8113',
+      key: 'b61300c6dd27da4e7ac841582cc9518797a217d4',
       name: 'Checked=False, Indeterminate=False, Size=md, Type=Checkbox, State=Default',
       code: '<Checkbox.Base size="md" type="checkbox" />',
     },

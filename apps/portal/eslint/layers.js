@@ -3,7 +3,7 @@
 // below features knows about the API or the query cache.
 import path from 'node:path';
 
-/** @typedef {'tokens' | 'primitives' | 'components' | 'domain' | 'features' | 'api' | 'routes' | 'test' | 'app'} Layer */
+/** @typedef {'tokens' | 'primitives' | 'components' | 'domain' | 'features' | 'api' | 'theme' | 'routes' | 'test' | 'app'} Layer */
 
 /** What each layer may import from inside `src/`. */
 const allowed = {
@@ -13,9 +13,10 @@ const allowed = {
   domain: ['tokens', 'primitives', 'components', 'domain'],
   features: ['tokens', 'primitives', 'components', 'domain', 'features', 'api'],
   api: ['api'],
-  routes: ['tokens', 'primitives', 'components', 'domain', 'features', 'api', 'routes'],
+  theme: ['theme'],
+  routes: ['tokens', 'primitives', 'components', 'domain', 'features', 'api', 'theme', 'routes'],
   test: ['test'],
-  app: ['tokens', 'primitives', 'components', 'domain', 'features', 'api', 'routes', 'app'],
+  app: ['tokens', 'primitives', 'components', 'domain', 'features', 'api', 'theme', 'routes', 'app'],
 };
 
 /** Packages the presentational layers must not use: they get data and callbacks as props. */
@@ -44,6 +45,8 @@ export function layerOf(file, src) {
       return 'features';
     case 'api':
       return 'api';
+    case 'theme':
+      return 'theme';
     case 'routes':
       return 'routes';
     case 'test':

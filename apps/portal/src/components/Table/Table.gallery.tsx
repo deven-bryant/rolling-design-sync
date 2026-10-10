@@ -1,4 +1,4 @@
-import { Icon, type GalleryEntry } from '../primitives';
+import { inBothThemes, Icon, type GalleryEntry } from '../primitives';
 import { Avatar } from '../Avatar';
 import { Badge } from '../Badge';
 import { ButtonUtility } from '../Button';
@@ -71,9 +71,9 @@ function AvatarActionsExample() {
 
 export default {
   component: 'Table',
-  examples: [
+  examples: inBothThemes([
     { figma: 'State=Default (Type=Text · Badge · Badges multiple · Progress bar) · Table header cell', render: () => <Example /> },
     { figma: 'State=Hover/selected', render: () => <Example selected /> },
     { figma: 'Type=Avatar · Type=Action icons · Table header cell Text=False', render: () => <AvatarActionsExample /> },
-  ],
+  ]),
 } satisfies GalleryEntry;

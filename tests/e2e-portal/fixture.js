@@ -68,6 +68,14 @@ async function seedFile() {
   return { fileKey, fileName };
 }
 
+/** Syncs a second scope into `fileKey`: Section `50:1` "Settings" with Frame `50:2` "Panel". */
+const SECOND = '50:1';
+const syncSecondScope = fileKey =>
+  api('POST', `/v3/files/${fileKey}/sync`, TOKENS.plugin, {
+    rootNodeId: SECOND,
+    upserts: [upsert(SECOND, 'SECTION', 'Settings', { width: 800 }), upsert('50:2', 'FRAME', 'Panel', { paddingTop: 8 }, [SECOND])],
+  });
+
 const claim = (fileKey, nodeIds, worker) => api('POST', `/v3/files/${fileKey}/claims`, TOKENS.agent, { worker, ttlSeconds: 300, nodeIds });
 
 const clear = (fileKey, nodeIds) =>
@@ -75,4 +83,4 @@ const clear = (fileKey, nodeIds) =>
     items: nodeIds.map(nodeId => ({ nodeId, contentHash: TREE.find(n => n.nodeId === nodeId).contentHash })),
   });
 
-module.exports = { TOKENS, ROOT, FRAME, INSTANCE, MAIN, MAIN_CHILD, seedFile, claim, clear };
+module.exports = { TOKENS, ROOT, FRAME, INSTANCE, MAIN, MAIN_CHILD, SECOND, seedFile, syncSecondScope, claim, clear };

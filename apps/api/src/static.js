@@ -56,7 +56,10 @@ function registerPortalRoutes(app, { config }) {
 
   const missing = reply => reply.code(404).type('text/html; charset=utf-8').send(missingPage(root));
 
-  const sendIndex = reply => (stat(index) && stat(index).isFile() ? sendFile(reply, index) : missing(reply));
+  const sendIndex = reply => {
+    const found = stat(index);
+    return found && found.isFile() ? sendFile(reply, index) : missing(reply);
+  };
 
   app.get('/', async (request, reply) => reply.redirect('/ui/'));
   app.get('/ui', async (request, reply) => sendIndex(reply));

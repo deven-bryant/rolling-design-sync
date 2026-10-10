@@ -370,6 +370,7 @@ export function NodeDrawer({ fileKey, nodeId, onClose, role }: NodeDrawerProps) 
       onOpenChange={open => !open && onClose()}
       aria-label="Node"
       size={tab === 'change-list' ? 'wide' : 'narrow'}
+      className={tab === 'change-list' ? undefined : 'w-145.75'}
     >
       {nodeId && (
         <NodeDrawerContent

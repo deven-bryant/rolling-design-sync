@@ -2,7 +2,7 @@
 
 export const figma = {
   'Card header': {
-    setId: '9:6090',
+    setId: '111:18804',
     axes: {
       Avatar: { False: 'no avatar' },
       Breakpoint: { Desktop: 'the only layout' },
@@ -15,6 +15,6 @@ export const figma = {
       'Dropdown icon': '<Card.Header menu={…}>',
       Divider: '<Card.Header divider>',
     },
-    variants: [{ nodeId: '9:6091', key: '7889f3194421086570e70e8dc72d083c0cb2d1eb', name: 'Avatar=False, Breakpoint=Desktop' }],
+    variants: [{ nodeId: '111:18805', key: '1a82d4ef2e99cb940edcf1a71b53bdf30a294de7', name: 'Avatar=False, Breakpoint=Desktop' }],
   },
 } as const;

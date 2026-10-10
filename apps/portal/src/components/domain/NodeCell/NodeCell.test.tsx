@@ -1,3 +1,4 @@
+import gallery from './NodeCell.gallery';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
@@ -54,5 +55,15 @@ describe('NodeCell', () => {
     rerender(<NodeCell name="Branch" expandable expanded onToggle={onToggle} toggleLabel="Toggle Branch" />);
     await user.keyboard('{Enter}');
     expect(onToggle).toHaveBeenLastCalledWith(false);
+  });
+});
+
+describe('NodeCell under the dark theme', () => {
+  it('renders its gallery examples with no axe violations', async () => {
+    const dark = gallery.examples.filter(e => e.figma.endsWith('Color Mode=Dark'));
+    expect(dark.length).toBeGreaterThan(0);
+    const { container } = render(<div>{dark.map(e => <section key={e.figma} aria-label={e.figma}>{e.render()}</section>)}</div>);
+    expect(container.querySelectorAll('[data-theme="dark"]')).toHaveLength(dark.length);
+    await expectNoAxeViolations(container);
   });
 });

@@ -3,7 +3,7 @@ import { Badge } from '../../Badge';
 import { Card } from '../../Card';
 import { Feed, FeedItem } from '../../FeedItem';
 import { Pagination } from '../../Pagination';
-import { cx, Text } from '../../primitives';
+import { cx, Text, VisuallyHidden } from '../../primitives';
 import { SectionHeader } from '../../SectionHeader';
 import { Table, TextCell } from '../../Table';
 import { Tabs } from '../../Tabs';
@@ -48,7 +48,7 @@ export interface NodeDetailsProps extends Omit<HTMLAttributes<HTMLElement>, 'tit
   description?: ReactNode;
   /** Header `Actions` (e.g. the drawer's close button). */
   actions?: ReactNode;
-  /** `Status`: the node's badges, after a `Status` label. */
+  /** `Status`: the node's badges, named by a visually hidden `Status` label. */
   status?: ReactNode;
   /** Content under the status row (a block notice, the block form). */
   children?: ReactNode;
@@ -72,6 +72,8 @@ export interface NodeDetailsProps extends Omit<HTMLAttributes<HTMLElement>, 'tit
   changesEmpty?: ReactNode;
   /** Rows per table page. */
   pageSize?: number;
+  /** The change list's pagination landmark name; make it unique when a page shows more than one `NodeDetails`. */
+  paginationLabel?: string;
   /** `Change History` feed items, newest first. */
   history: readonly NodeDetailsEvent[];
   /** Shown instead of the feed when there are no items (loading, error, empty). */
@@ -87,12 +89,14 @@ function ChangeList({
   menu,
   empty,
   pageSize,
+  paginationLabel,
 }: {
   changes: readonly NodeDetailsChange[];
   description?: ReactNode;
   menu?: ReactNode;
   empty?: ReactNode;
   pageSize: number;
+  paginationLabel: string;
 }) {
   const [page, setPage] = useState(1);
   const pageCount = Math.max(1, Math.ceil(changes.length / pageSize));
@@ -113,8 +117,8 @@ function ChangeList({
             <Table aria-label="Change list">
               <Table.Header>
                 <Table.HeaderCell className="w-0 bg-secondary">Attribute</Table.HeaderCell>
-                <Table.HeaderCell className="w-1/2 bg-secondary">From</Table.HeaderCell>
-                <Table.HeaderCell className="w-1/2 bg-secondary">To</Table.HeaderCell>
+                <Table.HeaderCell className="bg-secondary">From</Table.HeaderCell>
+                <Table.HeaderCell className="bg-secondary">To</Table.HeaderCell>
               </Table.Header>
               <Table.Body>
                 {rows.map(change => (
@@ -127,7 +131,7 @@ function ChangeList({
               </Table.Body>
             </Table>
           </div>
-          <Pagination label="Change list pages" page={current} pageCount={pageCount} onPageChange={setPage} />
+          <Pagination label={paginationLabel} page={current} pageCount={pageCount} onPageChange={setPage} />
         </>
       ) : (
         <Card.Body className="px-3xl py-xl">
@@ -141,7 +145,8 @@ function ChangeList({
 /**
  * Figma `Node Details` (`State=Change List` · `State=Change History`): a node's header, status badges and
  * claim, then its changes as a table or its history as a feed, switched by `button-gray` tabs. It fills its
- * container; `Change History` is compact (status and feed hug, the claim row is space-between, `gap-6xl`).
+ * container; status, claim text and table columns hug, and the claim row is space-between (`gap-4xl`, or
+ * `gap-6xl` in `Change History`).
  */
 export function NodeDetails({
   state,
@@ -162,6 +167,7 @@ export function NodeDetails({
   changesMenu,
   changesEmpty = 'Nothing changed.',
   pageSize = 10,
+  paginationLabel = 'Change list pages',
   history,
   historyEmpty = 'No history yet.',
   className,
@@ -182,18 +188,16 @@ export function NodeDetails({
       </SectionHeader>
       {status != null && (
         <div className="flex items-center gap-lg py-xxs">
-          <Text id={statusId} weight="medium">
-            Status
-          </Text>
-          <div aria-labelledby={statusId} role="group" className={cx('flex flex-wrap items-center gap-md', !compact && 'flex-1')}>
+          <VisuallyHidden id={statusId}>Status</VisuallyHidden>
+          <div aria-labelledby={statusId} role="group" className="flex flex-wrap items-center gap-md">
             {status}
           </div>
         </div>
       )}
       {children}
       <div role="group" aria-labelledby={claimId} className="flex flex-col gap-lg">
-        <div className={cx('flex items-start', compact ? 'justify-between gap-6xl' : 'gap-md')}>
-          <div className={cx('flex min-w-0 flex-col gap-md', !compact && 'flex-1')}>
+        <div className={cx('flex items-start justify-between', compact ? 'gap-6xl' : 'gap-4xl')}>
+          <div className="flex min-w-0 flex-col gap-md">
             <Text as="h3" id={claimId} size="lg" weight="semibold">
               {claimTitle}
             </Text>
@@ -227,7 +231,7 @@ export function NodeDetails({
           <Tabs.Tab id="change-history">Change History</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel id="change-list" className="px-md">
-          <ChangeList changes={changes} description={changesDescription} menu={changesMenu} empty={changesEmpty} pageSize={pageSize} />
+          <ChangeList changes={changes} description={changesDescription} menu={changesMenu} empty={changesEmpty} pageSize={pageSize} paginationLabel={paginationLabel} />
         </Tabs.Panel>
         <Tabs.Panel id="change-history" className="px-md">
           {history.length ? (
