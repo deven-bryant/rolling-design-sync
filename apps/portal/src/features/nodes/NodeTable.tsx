@@ -408,8 +408,8 @@ function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
       <Table.Body aria-busy={query.isFetching || undefined}>{body}</Table.Body>
       <tfoot>
         <tr>
-          <td colSpan={colSpan} className="px-3xl pt-lg pb-xl">
-            <Pagination label="Node pages" page={page} onPageChange={onPageChange} hasNext={!!nextCursor} />
+          <td colSpan={colSpan} className="p-0">
+            <Pagination label="Node pages" page={page} onPageChange={onPageChange} hasNext={!!nextCursor} className="border-t-0" />
           </td>
         </tr>
       </tfoot>

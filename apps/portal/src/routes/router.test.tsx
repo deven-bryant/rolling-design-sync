@@ -149,12 +149,10 @@ describe('routes', () => {
     expect(await screen.findByText('Sandbox')).toBeDefined();
   });
 
-  it('shows the file header, scope meta and the scope panel, without file tabs', async () => {
+  it('shows the file header, scope meta and the scope panel, without file tabs or breadcrumbs', async () => {
     renderAt(`/files/${FILE}/nodes?under=1:2`);
     expect(await screen.findByText(/Section 1:2 · synced 12 min ago · 281 nodes, 37 components/)).toBeDefined();
-    const crumbs = within(screen.getByRole('navigation', { name: 'Breadcrumbs' }));
-    expect(crumbs.getByRole('link', { name: 'Files' }).getAttribute('href')).toBe('/files');
-    expect(crumbs.getByText('Sandbox')).toBeDefined();
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumbs' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Open in Figma' }).getAttribute('href')).toBe(scope.figmaUrl);
     expect(screen.queryByRole('tablist')).toBeNull();
     const table = within(await screen.findByRole('table', { name: 'Scopes' }));
