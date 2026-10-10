@@ -143,7 +143,7 @@ reached at startup (it needs the API running to know its tools).
 New to Rolling Design Sync? The [quickstart](https://github.com/deven-bryant/rolling-design-sync/blob/main/docs/quickstart.md) runs the
 API, the Figma plugin and this server end to end.
 
-From npm (Node 20+): `npx @rolling-design-sync/mcp` (binary `rds-mcp`). Or
+From npm (Node 22.22+): `npx @rolling-design-sync/mcp` (binary `rds-mcp`). Or
 from a checkout of the repository:
 
 ```bash

@@ -15,7 +15,7 @@ Agents have two ways in, and both read the same variables:
   operations as shell commands (`nodes ls`, `work`, `claim`, `clear`, …).
   Details: [scripts/README.md](../scripts/README.md).
 
-Both need a checkout of this repo with Node 20+; run `npm install` in it once
+Both need a checkout of this repo with Node 22.22+; run `npm install` in it once
 for the MCP server (the CLI needs nothing installed).
 
 ## 1. The variables
