@@ -1,6 +1,6 @@
 {
   "name": "@rolling-design-sync/api",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "private": true,
   "license": "FSL-1.1-ALv2",
   "description": "Standalone Fastify service: snapshot upload + agent work queue, server-side diff + verified-baseline reconciliation.",
