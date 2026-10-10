@@ -40,10 +40,9 @@ Treat them like passwords: paste them into user-level config, never into a file
 you commit.
 
 <details>
-<summary>Prefer a published image? (coming with the first public release)</summary>
+<summary>Prefer the published image?</summary>
 
-Once the image is published on GHCR, the same hardened container runs without a
-checkout:
+The same hardened container runs from GHCR without a checkout:
 
 ```bash
 docker run -d --name rds -p 127.0.0.1:8787:8787 -v rds-data:/data \

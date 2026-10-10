@@ -97,11 +97,11 @@ Design tweaks after that came back as just the nodes they touched.
 
 | Way | Status |
 |---|---|
-| **Clone the repository** and run `docker compose up -d` | Available now — the [quickstart](docs/quickstart.md) path |
-| **npm packages** — [`@rolling-design-sync/mcp`](apps/mcp), [`@rolling-design-sync/agent-cli`](scripts), [`@rolling-design-sync/core`](packages/core) | Coming with the first public release |
-| **Container image** on GHCR (`ghcr.io/deven-bryant/rolling-design-sync`) | Coming with the first public release |
+| **Clone the repository** and run `docker compose up -d` | Available — the [quickstart](docs/quickstart.md) path |
+| **npm packages** — [`@rolling-design-sync/mcp`](https://www.npmjs.com/package/@rolling-design-sync/mcp) (`npx @rolling-design-sync/mcp`), [`@rolling-design-sync/agent-cli`](https://www.npmjs.com/package/@rolling-design-sync/agent-cli) (`npx @rolling-design-sync/agent-cli`), [`@rolling-design-sync/core`](https://www.npmjs.com/package/@rolling-design-sync/core) | Available |
+| **Container image** on GHCR ([`ghcr.io/deven-bryant/rolling-design-sync`](https://github.com/deven-bryant/rolling-design-sync/pkgs/container/rolling-design-sync)) | Available — `docker run` in the [quickstart](docs/quickstart.md) |
 
-Until then the MCP server and the CLI run straight from the checkout
+The MCP server and the CLI also run straight from a checkout
 (`node apps/mcp/bin/rds-mcp.js`, `node scripts/rds-agent.js`).
 [docs/agents.md](docs/agents.md) sets them up for Claude Code, Cursor and Devin,
 and has the recipes: what's in a screen, what to build first, the clear loop,
@@ -162,10 +162,8 @@ running local mode without Docker.
 
 ## Hosted version
 
-<!-- TODO(maintainer): confirm the hosted offering and the waitlist URL before launch. -->
-
 Rather not run a server? A hosted version is planned. Join the waitlist at
-**[rollingdesignsync.com/waitlist](https://rollingdesignsync.com/waitlist)**.
+**[rollingdesignsync.com](https://rollingdesignsync.com/#waitlist)**.
 Self-hosting stays fully supported.
 
 ## API
