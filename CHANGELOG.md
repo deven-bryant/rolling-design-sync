@@ -7,6 +7,19 @@ are cut.
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-10
+
+### Security
+- **MCP server:** `@modelcontextprotocol/sdk` updated from 1.30.1 to 1.32.0
+  for [GHSA-6qxp-vccf-f47h](https://github.com/advisories/GHSA-6qxp-vccf-f47h)
+  (the SDK's OAuth client could send credentials to an authorization server
+  chosen by the MCP server). `rds-mcp` uses only the SDK's server and stdio
+  transport, not its OAuth client, so it wasn't exploitable; the update clears
+  the `npm audit` warning for installs.
+
+### Upgrade notes
+- No migration. Other packages are unchanged apart from the version.
+
 ## [0.13.0] - 2026-10-10
 
 A redesigned portal, several scopes at once, weekly trends, and clearer plugin
