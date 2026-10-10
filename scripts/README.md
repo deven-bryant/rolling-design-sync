@@ -6,8 +6,8 @@ Intended for non-interactive use from a worker session: list what changed in
 Figma since it was last built, lease it, and clear it once it's committed.
 
 From a checkout of the repository, run it as `node scripts/rds-agent.js` —
-nothing to install. The npm package (`npx @rolling-design-sync/agent-cli`,
-binary `rds-agent`) is coming with the first public release. New to Rolling
+nothing to install — or use the npm package (`npx @rolling-design-sync/agent-cli`,
+binary `rds-agent`). New to Rolling
 Design Sync? Start with the [quickstart](https://github.com/deven-bryant/rolling-design-sync/blob/main/docs/quickstart.md).
 
 The commands, their flags and the requests they send come from
