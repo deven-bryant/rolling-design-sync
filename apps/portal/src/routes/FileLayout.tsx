@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router';
 import { useNow } from '../api/hooks/useNow';
-import { Breadcrumbs } from '../components/Breadcrumbs';
 import { Button } from '../components/Button';
 import { PageHeader } from '../components/PageHeader';
 import { formatCount, timeAgo, useLastSyncClient } from '../features/files';
@@ -138,16 +137,6 @@ export function FileLayout() {
   return (
     <>
       <PageHeader divider>
-        <PageHeader.Breadcrumbs>
-          <Breadcrumbs>
-            <Breadcrumbs.Item home href="/files">
-              Home
-            </Breadcrumbs.Item>
-            <Breadcrumbs.Item href="/files">Files</Breadcrumbs.Item>
-            <Breadcrumbs.Item href={filePath(fileKey)}>{fileName}</Breadcrumbs.Item>
-            {title && <Breadcrumbs.Item>{title}</Breadcrumbs.Item>}
-          </Breadcrumbs>
-        </PageHeader.Breadcrumbs>
         <PageHeader.Title>{title ?? fileName}</PageHeader.Title>
         <PageHeader.Description>
           {several ? (
