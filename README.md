@@ -12,7 +12,7 @@ Figma plugin records what the design says, coding agents mark nodes as
 implemented once the code matches, and what's left is exactly the design work
 that hasn't been built — node by node, property by property.
 
-> **Status: 0.12 beta.** It works end to end, but the API, plugin protocol,
+> **Status: 0.13 beta.** It works end to end, but the API, plugin protocol,
 > MCP tools and CLI may still change between minor releases until 1.0. What's promised, and when, is in the
 > [compatibility policy](docs/compatibility.md).
 
