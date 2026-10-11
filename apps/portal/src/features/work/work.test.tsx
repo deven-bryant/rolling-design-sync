@@ -284,4 +284,13 @@ describe('WorkGroupSwitch with one root required', () => {
     const group = screen.getByRole('radiogroup', { name: 'Group work items' });
     expect(document.getElementById(group.getAttribute('aria-describedby') ?? '')?.textContent).toBe('Select one scope to group by frame.');
   });
+
+  it('shows the reason in a tooltip on hover without crashing', async () => {
+    const user = userEvent.setup();
+    render(<WorkGroupSwitch group="component" onGroupChange={vi.fn()} frameDisabledReason="Select one scope to group by frame." />);
+    await user.hover(screen.getByRole('radio', { name: 'By frame' }).parentElement!);
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Select one scope to group by frame.');
+    await user.unhover(screen.getByRole('radio', { name: 'By frame' }).parentElement!);
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+  });
 });
