@@ -1,5 +1,6 @@
-import { useId, useRef, useState } from 'react';
-import type { Key } from 'react-aria-components';
+import { useId, useRef } from 'react';
+import { TooltipTriggerStateContext, type Key } from 'react-aria-components';
+import { useTooltipTriggerState } from 'react-stately';
 import { ButtonGroup } from '../../components/ButtonGroup';
 import { Tooltip } from '../../components/Tooltip';
 import { VisuallyHidden } from '../../components/primitives';
@@ -19,7 +20,7 @@ const isGroup = (key: Key): key is WorkGroup => key === 'component' || key === '
 export function WorkGroupSwitch({ group, onGroupChange, frameDisabledReason, className }: WorkGroupSwitchProps) {
   const reasonId = useId();
   const frameRef = useRef<HTMLSpanElement>(null);
-  const [open, setOpen] = useState(false);
+  const tooltip = useTooltipTriggerState({ delay: 0, closeDelay: 0 });
   return (
     <>
       <ButtonGroup
@@ -37,8 +38,8 @@ export function WorkGroupSwitch({ group, onGroupChange, frameDisabledReason, cla
           <span
             ref={frameRef}
             className="-ml-px inline-flex"
-            onPointerEnter={() => setOpen(true)}
-            onPointerLeave={() => setOpen(false)}
+            onPointerEnter={() => tooltip.open(true)}
+            onPointerLeave={() => tooltip.close(true)}
           >
             <ButtonGroup.Item id="frame" isDisabled className="pointer-events-none">
               By frame
@@ -51,9 +52,9 @@ export function WorkGroupSwitch({ group, onGroupChange, frameDisabledReason, cla
       {frameDisabledReason && (
         <>
           <VisuallyHidden id={reasonId}>{frameDisabledReason}</VisuallyHidden>
-          <Tooltip triggerRef={frameRef} isOpen={open} onOpenChange={setOpen}>
-            {frameDisabledReason}
-          </Tooltip>
+          <TooltipTriggerStateContext.Provider value={tooltip}>
+            <Tooltip triggerRef={frameRef}>{frameDisabledReason}</Tooltip>
+          </TooltipTriggerStateContext.Provider>
         </>
       )}
     </>
