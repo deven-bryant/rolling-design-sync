@@ -154,6 +154,9 @@ interface RowContextValue {
   live: NodeLiveUpdates;
   claims: ReadonlyMap<string, FileClaim>;
   now: number;
+  /** Rows the user opened or closed, by row key; others fall back to their default. */
+  expansion: ReadonlyMap<string, boolean>;
+  setExpanded: (rowKey: string, expanded: boolean) => void;
 }
 
 const RowContext = createContext<RowContextValue | null>(null);
@@ -273,11 +276,16 @@ function StatusRow({ children, depth = 0 }: { children: ReactNode; depth?: numbe
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : 'Something went wrong.');
 
+/** A row's expansion key: its node id, prefixed by the instances it was reached through (`1:2>1:50`). */
+const rowKeyOf = (instances: string, nodeId: string) => `${instances}${nodeId}`;
+
 interface TreeRowProps {
   node: NodeItem;
   depth: number;
   /** The instance this main-component row was reached through. */
   via?: string;
+  /** The instances (`<id>>` each) the row was reached through under *Expand instances*. */
+  instances?: string;
   /** Children already loaded with this row (the scope root's page, a main component's subtree). */
   preloaded?: NodeItem[];
   more?: ReactNode;
@@ -285,9 +293,10 @@ interface TreeRowProps {
 }
 
 /** A row and, once expanded, its lazily loaded children. */
-function TreeRow({ node, depth, via, preloaded, more, defaultExpanded = false }: TreeRowProps) {
-  const { filters } = useRowContext();
-  const [expanded, setExpanded] = useState(defaultExpanded);
+function TreeRow({ node, depth, via, instances = '', preloaded, more, defaultExpanded = false }: TreeRowProps) {
+  const { filters, expansion, setExpanded } = useRowContext();
+  const rowKey = rowKeyOf(instances, node.nodeId ?? '');
+  const expanded = expansion.get(rowKey) ?? defaultExpanded;
   const followMain = !!filters.expandInstances && !!node.isInstance && !!node.mainComponentId && !via;
   const expandable = preloaded ? preloaded.length > 0 : followMain || (node.descendants?.total ?? 0) > 0;
   let children: ReactNode = null;
@@ -296,17 +305,24 @@ function TreeRow({ node, depth, via, preloaded, more, defaultExpanded = false }:
       children = (
         <>
           {preloaded.map(child => (
-            <TreeRow key={child.nodeId} node={child} depth={depth + 1} />
+            <TreeRow key={child.nodeId} node={child} depth={depth + 1} instances={instances} />
           ))}
           {more}
         </>
       );
-    } else if (followMain) children = <MainComponentRows instance={node} depth={depth + 1} />;
-    else children = <ChildRows parentId={node.nodeId ?? ''} depth={depth + 1} />;
+    } else if (followMain) children = <MainComponentRows instance={node} depth={depth + 1} instances={instances} />;
+    else children = <ChildRows parentId={node.nodeId ?? ''} depth={depth + 1} instances={instances} />;
   }
   return (
     <>
-      <NodeRowView node={node} depth={depth} via={via} expandable={expandable} expanded={expanded && expandable} onToggle={setExpanded} />
+      <NodeRowView
+        node={node}
+        depth={depth}
+        via={via}
+        expandable={expandable}
+        expanded={expanded && expandable}
+        onToggle={open => setExpanded(rowKey, open)}
+      />
       {children}
     </>
   );
@@ -335,7 +351,7 @@ function MoreRow({ loading, onMore }: { loading: boolean; onMore: () => void }) 
   );
 }
 
-function ChildRows({ parentId, depth }: { parentId: string; depth: number }) {
+function ChildRows({ parentId, depth, instances }: { parentId: string; depth: number; instances: string }) {
   const { query, nodes, more } = useLevel(parentId);
   const children = nodes.filter(n => n.nodeId !== parentId);
   if (query.isPending) return <StatusRow depth={depth}>Loading…</StatusRow>;
@@ -344,7 +360,7 @@ function ChildRows({ parentId, depth }: { parentId: string; depth: number }) {
   return (
     <>
       {children.map(n => (
-        <TreeRow key={n.nodeId} node={n} depth={depth} />
+        <TreeRow key={n.nodeId} node={n} depth={depth} instances={instances} />
       ))}
       {more}
     </>
@@ -352,21 +368,22 @@ function ChildRows({ parentId, depth }: { parentId: string; depth: number }) {
 }
 
 /** *Expand instances*: an instance's main component (`↳ … via <instanceId>`) and its children. */
-function MainComponentRows({ instance, depth }: { instance: NodeItem; depth: number }) {
+function MainComponentRows({ instance, depth, instances }: { instance: NodeItem; depth: number; instances: string }) {
   const mainId = instance.mainComponentId ?? '';
+  const through = rowKeyOf(instances, `${instance.nodeId ?? ''}>`);
   const { query, nodes, more } = useLevel(mainId);
   if (query.isPending) return <StatusRow depth={depth}>Loading main component…</StatusRow>;
   if (query.isError) return <StatusRow depth={depth}>Couldn’t load main component {mainId}: {errorText(query.error)}</StatusRow>;
   const main = nodes.find(n => n.nodeId === mainId);
   const children = nodes.filter(n => n.nodeId !== mainId);
   if (main) {
-    return <TreeRow node={main} depth={depth} via={instance.nodeId} preloaded={children} more={more} defaultExpanded />;
+    return <TreeRow node={main} depth={depth} via={instance.nodeId} instances={through} preloaded={children} more={more} defaultExpanded />;
   }
   if (!children.length) return <StatusRow depth={depth}>Main component {mainId} has no nodes that match the filters.</StatusRow>;
   return (
     <>
       {children.map(n => (
-        <TreeRow key={n.nodeId} node={n} depth={depth} />
+        <TreeRow key={n.nodeId} node={n} depth={depth} instances={through} />
       ))}
       {more}
     </>
@@ -380,7 +397,7 @@ interface PagedRowsProps {
   colSpan: number;
 }
 
-/** The top level, one cursor page at a time; remounted (back to page 1) when the filters change. */
+/** The top level, one cursor page at a time; remounted (back to page 1) when the filters change. Row expansion lives in `NodeTable`. */
 function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const page = cursors.length;
@@ -437,6 +454,7 @@ export interface NodeTableProps {
 /**
  * Figma *Team View* content: the filter row and the Nodes table card — the scope's tree in
  * document order, expanded lazily, paged by cursor, and kept live from the file's event stream.
+ * Opened and closed rows stay so across filter changes and pages; switching scope resets them.
  */
 export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNode, selectedNodeId, filtersAddon, className }: NodeTableProps) {
   const live = useNodeLiveUpdates(fileKey);
@@ -445,6 +463,10 @@ export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNo
   const { scope, selected } = useScope(fileKey, scopeId);
   const now = useNow(30_000);
   const [columns, setColumns] = useState<ReadonlySet<NodeColumn>>(() => new Set(COLUMNS.map(c => c.id)));
+  const [expansion, setExpansion] = useState<{ scopeId?: string; rows: ReadonlyMap<string, boolean> }>(() => ({ scopeId, rows: new Map() }));
+  if (expansion.scopeId !== scopeId) setExpansion({ scopeId, rows: new Map() });
+  const setExpanded = (rowKey: string, open: boolean) =>
+    setExpansion(prev => ({ ...prev, rows: new Map(prev.rows).set(rowKey, open) }));
 
   const claims = new Map((claimsQuery.data?.claims ?? []).flatMap(c => (c.claimId ? [[c.claimId, c] as const] : [])));
   const several = selected.length > 1 && selected.length === splitUnder(scopeId).length;
@@ -501,7 +523,7 @@ export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNo
                 </Table.HeaderCell>
               ))}
             </Table.Header>
-            <RowContext value={{ fileKey, filters, columns, onOpenNode, selectedNodeId, live, claims, now }}>
+            <RowContext value={{ fileKey, filters, columns, onOpenNode, selectedNodeId, live, claims, now, expansion: expansion.rows, setExpanded }}>
               <PagedRows key={pageKey} fileKey={fileKey} scopeId={scopeId} filters={filters} colSpan={visible.length + 1} />
             </RowContext>
           </Table>

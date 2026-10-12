@@ -1,9 +1,10 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeEventSource } from '../../test/fake-event-source';
 import { NodeTable, type NodeTableProps } from './NodeTable';
-import { claimC1, FILE, mockApi, node, renderWithClient, scope, treeRoutes, type Route } from './test-fixtures';
+import { claimC1, FILE, logo, mockApi, node, pageHeader, renderWithClient, scope, treeRoutes, type Route } from './test-fixtures';
 
 const pagePath = `/v3/files/${FILE}/nodes`;
 
@@ -109,6 +110,90 @@ describe('NodeTable', () => {
     expect(unders).toContain('1:50');
     expect(unders).not.toContain('1:2');
     expect(api.find('GET', pagePath).every(c => !c.query.has('expand'))).toBe(true);
+  });
+
+  describe('keeps rows open across filter changes', () => {
+    const deepRoutes = () =>
+      treeRoutes(({ path, query }) => {
+        if (path !== pagePath) return undefined;
+        const under = query.get('under');
+        if (under === '1:2') return { fileKey: FILE, nodes: [pageHeader, { ...logo, descendants: { total: 1, dirty: 0, blocked: 0 } }], nextCursor: null };
+        if (under === '1:20') return { fileKey: FILE, nodes: [logo, logoMark], nextCursor: null };
+        return undefined;
+      });
+    const logoMark = node('1:21', { name: 'Logo mark', type: 'VECTOR' });
+    const table = (props: Partial<NodeTableProps>) => (
+      <NodeTable fileKey={FILE} scopeId="1:1" filters={{}} onFiltersChange={vi.fn()} {...props} />
+    );
+    const expanded = (name: string) => screen.getByRole('button', { name: new RegExp(`^(Expand|Collapse) ${name}$`) }).getAttribute('aria-expanded');
+
+    async function openTwoLevels() {
+      const user = userEvent.setup();
+      mockApi(deepRoutes());
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+      const utils = render(<QueryClientProvider client={client}>{table({})}</QueryClientProvider>);
+      const rerender = (props: Partial<NodeTableProps>) => utils.rerender(<QueryClientProvider client={client}>{table(props)}</QueryClientProvider>);
+      await user.click(await screen.findByRole('button', { name: 'Expand Page header' }));
+      await user.click(await screen.findByRole('button', { name: 'Expand Logo' }));
+      await screen.findByText('Logo mark');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:20', '1:21', '1:3']);
+      return { user, rerender };
+    }
+
+    it('across Expand instances on and off', async () => {
+      const { rerender } = await openTwoLevels();
+      rerender({ filters: { expandInstances: true } });
+      await screen.findByText('Style=Simple');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:50', '1:51', '1:3']);
+      expect(expanded('Page header')).toBe('true');
+      rerender({ filters: {} });
+      await screen.findByText('Logo mark');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:20', '1:21', '1:3']);
+      expect([expanded('Page header'), expanded('Logo')]).toEqual(['true', 'true']);
+    });
+
+    it('across the state, change, category, type and search filters', async () => {
+      const { rerender } = await openTwoLevels();
+      rerender({ filters: { state: 'dirty', changeType: 'modified', category: 'color', type: 'FRAME', q: 'Logo' } });
+      await screen.findByText('Logo mark');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:20', '1:21', '1:3']);
+    });
+
+    it('across pages', async () => {
+      const { user } = await openTwoLevels();
+      await user.click(screen.getByRole('button', { name: /Next/ }));
+      await screen.findByText('Divider');
+      await user.click(screen.getByRole('button', { name: /Previous/ }));
+      await screen.findByText('Logo mark');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:20', '1:21', '1:3']);
+    });
+
+    it('until the scope changes', async () => {
+      const { rerender } = await openTwoLevels();
+      rerender({ scopeId: '1:9' });
+      await screen.findByText('No nodes match the filters.');
+      rerender({ scopeId: '1:1' });
+      await screen.findByText('Breadcrumbs');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:3']);
+      expect(expanded('Page header')).toBe('false');
+    });
+
+    it('keeps an auto-expanded row the user collapsed collapsed', async () => {
+      const { user, rerender } = await openTwoLevels();
+      await user.click(screen.getByRole('button', { name: 'Collapse Team View' }));
+      expect(rowIds()).toEqual(['1:1']);
+      rerender({ filters: { expandInstances: true } });
+      await waitFor(() => expect(expanded('Team View')).toBe('false'));
+      expect(rowIds()).toEqual(['1:1']);
+      await user.click(screen.getByRole('button', { name: 'Expand Team View' }));
+      await screen.findByText('Style=Simple');
+      await user.click(screen.getByRole('button', { name: 'Collapse Style=Simple' }));
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:50', '1:3']);
+      rerender({ filters: { expandInstances: true, state: 'dirty' } });
+      await screen.findByText('Style=Simple');
+      expect(expanded('Style=Simple')).toBe('false');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:50', '1:3']);
+    });
   });
 
   it('sends the filters with every page request', async () => {

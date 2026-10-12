@@ -45,8 +45,9 @@ const columns = (group: WorkGroup) =>
 /** A library component the file doesn't track: placements only, nothing to build. */
 export const isReference = (item: WorkItem): boolean => item.kind === 'library' && item.tracked === false;
 
-/** The item is (in) a library component. */
-export const isLibraryItem = (item: WorkItem): boolean => item.kind === 'library' || item.library != null;
+/** The item is (in) a library component: a reference item, or a component / set item with a library key node. Never a frame item. */
+export const isLibraryItem = (item: WorkItem, group: WorkGroup = 'component'): boolean =>
+  item.kind === 'library' || (group !== 'frame' && item.key != null && item.library != null);
 
 /**
  * `22 dirty` / `of 30 nodes`, or `Done` / `11 nodes cleared` once every node is clean; a removed item reads
@@ -61,9 +62,9 @@ export function nodesSummary(item: WorkItem): { text: string; supporting?: strin
   return { text: `${formatCount(total - clean)} dirty`, supporting: `of ${plural(total, 'node')}` };
 }
 
-function ItemBadges({ item }: { item: WorkItem }) {
+function ItemBadges({ item, group }: { item: WorkItem; group: WorkGroup }) {
   const removed = item.kind === 'removed';
-  const library = isLibraryItem(item);
+  const library = isLibraryItem(item, group);
   return (
     <>
       {removed && <Badge color="error">Removed</Badge>}
@@ -121,7 +122,7 @@ function WorkRow({
           className="max-w-60"
           name={name}
           meta={key ? `${item.type ?? 'NODE'} · ${key}` : undefined}
-          badges={removed || isLibraryItem(item) ? <ItemBadges item={item} /> : undefined}
+          badges={removed || isLibraryItem(item, group) ? <ItemBadges item={item} group={group} /> : undefined}
         />
       </Table.Cell>
       {group === 'component' &&

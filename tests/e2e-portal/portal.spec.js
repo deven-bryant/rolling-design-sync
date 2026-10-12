@@ -47,6 +47,13 @@ test('viewer browses files, expands a frame and an instance, and sees no actions
   await expect(row(page, INSTANCE)).toBeVisible();
   await row(page, INSTANCE).getByRole('button', { name: 'Expand Button' }).click();
   await expect(row(page, MAIN_CHILD)).toBeVisible();
+  const expandInstances = page.getByRole('switch', { name: 'Expand instances' });
+  await page.getByText('Expand instances', { exact: true }).click();
+  await expect(expandInstances).not.toBeChecked();
+  await expect(row(page, INSTANCE)).toBeVisible();
+  await page.getByText('Expand instances', { exact: true }).click();
+  await expect(expandInstances).toBeChecked();
+  await expect(row(page, MAIN_CHILD)).toBeVisible();
 
   await row(page, FRAME).getByText('Card', { exact: true }).click();
   await expect(drawer(page)).toBeVisible();

@@ -312,10 +312,13 @@ function registerInsightRoutes(app, { store, now, config, libraryLinks = null })
     return [...items.values()].sort(byK);
   }
 
-  /** `store.listWorkItems` with the reference items `refs` merged in key order; the key nodes of library items get `libraryRef`. */
+  /**
+   * `store.listWorkItems` with the reference items `refs` merged in key order; the key nodes of library items get `libraryRef`.
+   * Frame items and the `key: null` item are never library components.
+   */
   async function listItems(fileKey, filter, page, refs) {
     const r = await store.listWorkItems(fileKey, filter, page);
-    const keyIds = r.items.map(i => (i.kind ? [] : [page.group === 'set' && i.set ? i.set.id : i.keyId, i.nodeIds[0]]));
+    const keyIds = r.items.map(i => (i.kind || page.group === 'frame' || i.keyId === null ? [] : [page.group === 'set' && i.set ? i.set.id : i.keyId, i.nodeIds[0]]));
     const rows = filter.library === 'exclude' ? new Map() : new Map((await store.getNodes(fileKey, [...new Set(keyIds.flat().filter(Boolean))])).map(n => [n.nodeId, n]));
     const keyRows = r.items.map((i, x) => (i.kind ? null : rows.get(keyIds[x][0]) || rows.get(keyIds[x][1]) || null));
     await withLibraryRefs(store, libraryLinks, fileKey, [...new Set(keyRows.filter(n => n && n.library))]);
