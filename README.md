@@ -65,6 +65,13 @@ What that gets you:
   no Enterprise-only APIs, no REST rate limits.
 - **Components, not copies.** Changing a main component dirties the main, not
   every instance. Fix the coded component once and every screen follows.
+- **Library components when you want them.** A per-file setting decides whether
+  the plugin also tracks main components from team libraries; with it off,
+  instances keep their component reference and the result says how many were
+  skipped.
+- **Already-built screens aren't new work.** When a sync would add many
+  never-seen layers, the plugin asks whether the code already matches them
+  before uploading.
 - **Works with your agent.** A local MCP server for Claude Code, Cursor and other
   MCP hosts, and a zero-dependency CLI for anything with a shell.
 
