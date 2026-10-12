@@ -314,7 +314,7 @@ describe('WorkTable removed and library items', () => {
     fetchMock.mockReset();
   });
 
-  const renderTable = (props: { onOpenComponent?: (key: string) => void; onOpenRemoved?: (id: string) => void; onOpenPlacements?: (key: string) => void }) =>
+  const renderTable = (props: { group?: WorkGroup; onOpenComponent?: (key: string) => void; onOpenRemoved?: (id: string) => void; onOpenPlacements?: (key: string) => void }) =>
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
         <WorkTable fileKey={FILE} under={SCOPE} group="component" page={1} onPageChange={() => {}} onOpenComponent={props.onOpenComponent ?? vi.fn()} {...props} />
@@ -326,6 +326,21 @@ describe('WorkTable removed and library items', () => {
     expect(nodesSummary({ ...removed, progress: { total: 41, clean: 41 } })).toEqual({ text: 'Done', supporting: '41 nodes cleared' });
     expect(nodesSummary(reference)).toEqual({ text: 'Library · not tracked' });
     expect([isReference(reference), isReference(library), isLibraryItem(library), isLibraryItem(removed)]).toEqual([true, false, true, false]);
+    const unkeyed = { ...library, key: null, name: null };
+    expect([isLibraryItem(unkeyed), isLibraryItem(library, 'frame'), isLibraryItem(reference, 'frame')]).toEqual([false, false, true]);
+  });
+
+  it('never badges frame items or the Not in a frame item as Library', async () => {
+    const frame: WorkItem = { ...library, key: '3:1', name: 'Screen', type: 'FRAME' };
+    const notInFrame: WorkItem = { ...library, key: null, name: null, type: null };
+    items.splice(0, items.length, frame, notInFrame);
+    try {
+      renderTable({ group: 'frame' });
+      expect(within(await screen.findByRole('row', { name: 'Screen' })).queryByText('Library')).toBeNull();
+      expect(within(screen.getByRole('row', { name: 'Not in a frame' })).queryByText('Library')).toBeNull();
+    } finally {
+      items.splice(0, items.length, library, reference, removed);
+    }
   });
 
   it('renders a removed row: Removed badge, no placements, layers removed, and opens its root', async () => {
