@@ -139,7 +139,7 @@ export function FileLayout() {
 
   return (
     <>
-      <PageHeader divider>
+      <PageHeader divider className="bg-primary">
         <PageHeader.Title>{title ?? fileName}</PageHeader.Title>
         <PageHeader.Description>
           {several ? (
@@ -153,6 +153,7 @@ export function FileLayout() {
           )}
         </PageHeader.Description>
         <PageHeader.Actions>
+          <ButtonUtility size="md" icon={<Icon name="settings-01" />} tooltip="File settings" onPress={() => setSettingsOpen(true)} />
           {shown.length > 0 && (
             <CopyButton
               hierarchy="secondary"
@@ -165,7 +166,6 @@ export function FileLayout() {
               Copy agent prompt
             </CopyButton>
           )}
-          <ButtonUtility size="md" icon={<Icon name="settings-01" />} tooltip="File settings" onPress={() => setSettingsOpen(true)} />
           {!several && (
             <Button hierarchy="primary" size="md" href={figmaUrl} target="_blank" rel="noreferrer">
               Open in Figma
