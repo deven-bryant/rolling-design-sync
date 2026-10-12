@@ -415,7 +415,7 @@ function registerInsightRoutes(app, { store, now, config, libraryLinks = null })
       const mains = new Map([...rows.values(), ...(mainIds.length ? await store.getNodes(fileKey, mainIds) : [])].map(n => [n.nodeId, n.name]));
       for (const raw of page.items) {
         const item = toItem(raw);
-        const nodes = item.nodeIds.flatMap(id => {
+        const nodes = (item.nodeIds || []).flatMap(id => {
           const row = rows.get(id);
           return row ? [{ node: nodeFields(fileKey, row, at, 'names'), path: row.path, absolute: isAbsolute(row), region: 0 }] : [];
         });

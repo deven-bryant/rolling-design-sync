@@ -105,10 +105,12 @@ class LibraryLinks {
   async resolve(key, type) {
     const kind = type === SET_TYPE ? 'component_sets' : 'components';
     let row;
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(Object.assign(new Error('Figma did not answer in time.'), { name: 'TimeoutError' })), this.timeoutMs);
     try {
       const res = await this.fetch(`${FIGMA_API}/${kind}/${encodeURIComponent(key)}`, {
         headers: { 'X-Figma-Token': this.token },
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: abort.signal,
       });
       /** @type {any} */
       const body = res.ok ? await res.json().catch(() => null) : null;
@@ -120,6 +122,8 @@ class LibraryLinks {
       }
     } catch (err) {
       row = { error: err && (err.name === 'TimeoutError' || err.name === 'AbortError') ? 'timeout' : 'network_error' };
+    } finally {
+      clearTimeout(timer);
     }
     if (this.closed) return;
     await this.store.upsertLibraryComponent({ componentKey: key, ...row, resolvedAt: this.now().toISOString() });
