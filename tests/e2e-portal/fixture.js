@@ -76,6 +76,21 @@ const syncSecondScope = fileKey =>
     upserts: [upsert(SECOND, 'SECTION', 'Settings', { width: 800 }), upsert('50:2', 'FRAME', 'Panel', { paddingTop: 8 }, [SECOND])],
   });
 
+/**
+ * Adds a built screen to `fileKey` (Frame `60:1` "Old screen" with a Button instance of `MAIN` and a title),
+ * then deletes it in Figma: one `kind: "removed"` work item rooted at `60:1`.
+ */
+const REMOVED = '60:1';
+async function syncRemovedScreen(fileKey) {
+  const screen = [
+    upsert(REMOVED, 'FRAME', 'Old screen', { width: 390 }, [ROOT]),
+    { ...upsert('60:2', 'INSTANCE', 'Button', { x: 8, y: 8 }, [ROOT, REMOVED]), isInstance: true, mainComponentId: MAIN },
+    upsert('60:3', 'TEXT', 'Title', { characters: 'Bye' }, [ROOT, REMOVED]),
+  ];
+  await api('POST', `/v3/files/${fileKey}/sync`, TOKENS.plugin, { rootNodeId: ROOT, upserts: screen, markImplemented: true });
+  await api('POST', `/v3/files/${fileKey}/sync`, TOKENS.plugin, { rootNodeId: ROOT, deletedNodeIds: screen.map(n => n.nodeId) });
+}
+
 const claim = (fileKey, nodeIds, worker) => api('POST', `/v3/files/${fileKey}/claims`, TOKENS.agent, { worker, ttlSeconds: 300, nodeIds });
 
 const clear = (fileKey, nodeIds) =>
@@ -83,4 +98,4 @@ const clear = (fileKey, nodeIds) =>
     items: nodeIds.map(nodeId => ({ nodeId, contentHash: TREE.find(n => n.nodeId === nodeId).contentHash })),
   });
 
-module.exports = { TOKENS, ROOT, FRAME, INSTANCE, MAIN, MAIN_CHILD, SECOND, seedFile, syncSecondScope, claim, clear };
+module.exports = { TOKENS, ROOT, FRAME, INSTANCE, MAIN, MAIN_CHILD, SECOND, REMOVED, seedFile, syncSecondScope, syncRemovedScreen, claim, clear };

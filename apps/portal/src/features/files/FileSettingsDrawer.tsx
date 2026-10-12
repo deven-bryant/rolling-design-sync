@@ -54,6 +54,7 @@ export function FileSettingsDrawer({ fileKey, isOpen, onOpenChange, role }: File
   const links = status.data?.libraryLinks;
 
   const change = (next: boolean) => {
+    if (update.isPending) return;
     setPending(next);
     setError(null);
     update.mutate(
@@ -74,7 +75,7 @@ export function FileSettingsDrawer({ fileKey, isOpen, onOpenChange, role }: File
           <Toggle
             size="md"
             isSelected={track}
-            isDisabled={!canEdit || !file.data || update.isPending}
+            isDisabled={!canEdit || !file.data}
             onChange={change}
             supportingText="Scan the library components your designs use and list their changes as work. Turn off when your code gets these components from a package or another repository; instances stay tracked either way."
           >

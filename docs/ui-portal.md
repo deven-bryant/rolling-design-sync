@@ -202,6 +202,10 @@ All on the v3 router, with OpenAPI schemas, model-facing descriptions, and
 | `nodeId=` on both events routes | Drawer history | Events whose `data` mentions the node (`nodeId`, or `nodeIds` containing it). |
 | `since=` on both events JSON pages | Files metrics | ISO time lower bound, for "cleared this week". |
 | `include=progress` on `work` | Work items | Per item `{ total, clean }` over the item's nodes (all states, not only dirty), so progress bars don't need extra calls. |
+| `kind`, `uses`, `warnings`, `library`, `tracked` on `work` items | Work items, Removal panel | `kind: "removed"` items (a removed root, the components it used with their live placements), `kind: "library"` reference items (`tracked: false`), and `library` on library items. |
+| `library` and a null `figmaUrl` on nodes | Node tree, drawer | Library nodes: `{ key, fileKey?, resolved }`; `figmaUrl` opens the library file once resolved, else is null. |
+| `PATCH /v3/files/{fileKey}` | File settings | `{ settings: { trackLibraryComponents } }`; agent sessions only. `GET /v3/files/{fileKey}` returns `settings`. |
+| `libraryLinks` on `GET /v3/status` | Drawer, File settings | True when the server has `RDS_FIGMA_TOKEN` (library nodes can link to their library file). |
 
 ## Screens
 
@@ -264,8 +268,21 @@ follows the OS `prefers-color-scheme`, live.
   rolling-design-sync) second — list its work items with `expand=instances`,
   build leaves first, claim each item's `nodeIds`, read the changes
   (`list_nodes` / `get_node`), commit, clear every node with its `contentHash`
-  and the commit SHA, re-read stale results, block what cannot be built.
-  "Open in Figma" links the scope.
+  and the commit SHA, re-read stale results, block what cannot be built; an
+  item with `kind: "removed"` has its code removed (keeping the components in
+  its `uses` that are still placed) and only its root cleared with
+  `subtree: true`. "Open in Figma" links the scope.
+- **File settings** (gear button beside *Copy agent prompt*, tooltip "File
+  settings", on Nodes and Work Items) opens a right drawer with the file's
+  name and **Track library components** (`settings.trackLibraryComponents`,
+  default on): when off, the plugin doesn't scan library main components, they
+  drop out of counts and work and appear as reference items; instances stay
+  tracked. The drawer also says whether links to library files are on
+  (`libraryLinks`; off until `RDS_FIGMA_TOKEN` is set on the server). Changing
+  the toggle sends `PATCH /v3/files/:fileKey`, shows a toast and refetches the
+  work items, nodes, scope counts and file metrics; on an error the toggle
+  reverts and the error shows under it. Viewer sessions see the toggle
+  disabled with "Sign in with an agent token to change file settings."
 - The scope panel above the filters.
 - Filters map one-to-one to listing parameters (`q`, `state`, `changeType`,
   `category`, `type`); the **Expand instances** toggle adds `expand=instances`.
@@ -275,7 +292,8 @@ follows the OS `prefers-color-scheme`, live.
   children the same way (`under=<nodeId>`), and expanding an instance with
   *Expand instances* on loads its main component (`under=<mainComponentId>`,
   shown as `↳ … via <instanceId>`). Columns: Node (Node cell: indent, chevron,
-  name, `TYPE · id`, `→ main` for instances), State, Change, Categories, What
+  name, a gray **Library** badge on library nodes, `TYPE · id`, `→ main` for
+  instances), State, Change, Categories, What
   changed (first changed prop with its token change, or "N properties"), Agent.
 - **Agent sprites:** a claimed row shows its agent's sprite (deterministic avatar
   from the worker name). On `claim.created` the sprite appears on the claimed rows
@@ -285,15 +303,29 @@ follows the OS `prefers-color-scheme`, live.
 
 ### Node detail drawer — `?node=<nodeId>` on the Node tree
 - 583px wide (the Change List tab widens it).
-- `GET /v3/files/:fileKey/nodes/:nodeId?changes=diff`: header (name, type, id,
-  `→ main`), status badges, **What changed** (Diff rows: built → now as token
+- `GET /v3/files/:fileKey/nodes/:nodeId?changes=diff`: header (name with a
+  **Library** badge on library nodes, type, id, `→ main`), status badges, **What changed** (Diff rows: built → now as token
   chips, raw values beneath, category badge; "since cleared at <commit> (<age>)").
 - **Claim:** from `/claims` — worker, age, lease left; **Release claim** (agent
   session) → `DELETE /v3/files/:fileKey/claims/:claimId`, confirming first when
   the claim covers other nodes.
 - **History:** `GET /v3/files/:fileKey/events?nodeId=…` as a feed.
 - Footer: Copy node prompt (the scope prompt's steps for this node) · **Block…** (agent session; reason required, 1–500
-  chars) or **Unblock** · Open in Figma.
+  chars) or **Unblock** · Open in Figma (for a library node, its library
+  file). A library node with no `figmaUrl` (unresolved) gets **Copy component
+  key** instead (secondary; toast "Component key copied"); while
+  `/v3/status` reports `libraryLinks: false` its tooltip reads "Library
+  component. Set RDS_FIGMA_TOKEN on the server to open it in its library file."
+- **Removal panel** (a removed work item's root, opened from Work Items): above
+  the claim and Change List, "Removed from the design" — remove the code that
+  rendered the root, keep components that are still used — then *Components it
+  used* (those with no live placements first): name, `N placements left` /
+  `none left`, and a **Keep** (success) or **Likely unused** (warning) badge;
+  the item's `warnings` ("“Pricing card” was deleted from the design but 2
+  instances still use it."); **Copy removal prompt** copies an agent prompt to
+  remove the code, keep the used components, consider removing the unused
+  ones, then clear the root with `subtree: true` (MCP `clear_nodes`, or the
+  HTTP call: the CLI's `clear` has no subtree flag).
 - Viewer sessions see the same drawer without the action buttons.
 
 ### Work items — `/ui/files/:fileKey/work`
@@ -308,7 +340,16 @@ follows the OS `prefers-color-scheme`, live.
 - Columns: component (name, key, variants), placements in this screen / in file,
   dirty of total, categories, progress (`clean / total`), agent (from claims).
   Long component names and agent names truncate so the table fits 1440 px.
+  Library items get a gray **Library** badge after the name.
 - A row opens the Node tree filtered to that component (`under=<key>`).
+- **Removed items** (`kind: "removed"`, design deleted in Figma that was
+  built): a red **Removed** badge after the name, Placements `—`, Nodes
+  `N layers removed` (`Done` once cleared). The row opens the node drawer on
+  the removed root (`?node=<root>` on Work Items) with the Removal panel.
+- **Reference items** (`kind: "library"`, `tracked: false`: library components
+  the file doesn't track): the **Library** badge, Nodes "Library · not
+  tracked", Progress `—`, no Removed or Dirty wording. The row opens the Node
+  tree searching its placements (`q=component:<key>`).
 
 ### Activity — `/ui/activity` (all files)
 - Live feed: `GET /v3/events` stream (or the file's), newest first, grouped by

@@ -5,7 +5,7 @@
 // then signs in as a viewer and an agent. See tests/README.md.
 
 const { test, expect } = require('@playwright/test');
-const { TOKENS, ROOT, FRAME, INSTANCE, MAIN_CHILD, SECOND, seedFile, syncSecondScope, claim, clear } = require('./fixture');
+const { TOKENS, ROOT, FRAME, INSTANCE, MAIN_CHILD, SECOND, REMOVED, seedFile, syncSecondScope, syncRemovedScreen, claim, clear } = require('./fixture');
 
 async function signIn(page, token) {
   await page.goto('/ui/sign-in');
@@ -185,4 +185,57 @@ test('several scopes: the union of their nodes, an "N scopes" header and the Wor
   await page.goto(`/ui/files/${fileKey}/work?under=${ROOT}`);
   await expect(page.getByRole('radio', { name: 'By frame' })).toBeEnabled();
   await expect(page.getByText('1 Scope Viewed')).toBeVisible();
+});
+
+test('file settings: an agent turns library tracking off and on; a viewer sees it read-only', async ({ page }) => {
+  const { fileKey, fileName } = await seedFile();
+  await signIn(page, TOKENS.agent);
+  await page.goto(`/ui/files/${fileKey}/work?under=${ROOT}`);
+  await page.getByRole('button', { name: 'File settings' }).click();
+  const settings = page.getByRole('dialog', { name: 'File settings' });
+  await expect(settings.getByText(fileName)).toBeVisible();
+  const toggle = settings.getByRole('switch', { name: /Track library components/ });
+  await expect(toggle).toBeChecked();
+  await expect(toggle).toBeEnabled();
+  await expect(settings.getByText(/^Links to library files: /)).toBeVisible();
+
+  const patched = page.waitForResponse(res => res.request().method() === 'PATCH' && res.url().endsWith(`/v3/files/${fileKey}`));
+  await toggle.click({ force: true });
+  expect((await patched).status()).toBe(200);
+  await expect(page.getByRole('region', { name: 'Notifications' }).getByText('Library components are no longer tracked')).toBeVisible();
+  await expect(toggle).not.toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
+
+  await page.reload();
+  await page.getByRole('button', { name: 'File settings' }).click();
+  await expect(page.getByRole('dialog', { name: 'File settings' }).getByRole('switch', { name: /Track library components/ })).not.toBeChecked();
+  await page.getByRole('dialog', { name: 'File settings' }).getByRole('switch', { name: /Track library components/ }).click({ force: true });
+  await expect(page.getByRole('dialog', { name: 'File settings' }).getByRole('switch', { name: /Track library components/ })).toBeChecked();
+  await page.keyboard.press('Escape');
+
+  await signOut(page);
+  await signIn(page, TOKENS.viewer);
+  await page.goto(`/ui/files/${fileKey}/work?under=${ROOT}`);
+  await page.getByRole('button', { name: 'File settings' }).click();
+  const readOnly = page.getByRole('dialog', { name: 'File settings' });
+  await expect(readOnly.getByText('Sign in with an agent token to change file settings.')).toBeVisible();
+  await expect(readOnly.getByRole('switch', { name: /Track library components/ })).toBeDisabled();
+});
+
+test('a removed screen is one Removed work item; its row opens the Removal panel', async ({ page }) => {
+  const { fileKey } = await seedFile();
+  await syncRemovedScreen(fileKey);
+  await signIn(page, TOKENS.viewer);
+  await page.goto(`/ui/files/${fileKey}/work?under=${ROOT}`);
+  const work = page.getByRole('table', { name: 'Work items' });
+  const removed = work.getByRole('row', { name: 'Old screen' });
+  await expect(removed.getByText('Removed', { exact: true })).toBeVisible();
+  await expect(removed.getByText('3 layers removed')).toBeVisible();
+  await removed.getByText('Old screen', { exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`node=${REMOVED.replace(':', '(%3A|:)')}`));
+  const panel = drawer(page).getByRole('group', { name: 'Removed from the design' });
+  await expect(panel.getByText('Remove the code that rendered “Old screen”. Keep components that are still used.')).toBeVisible();
+  await expect(panel.getByRole('listitem').filter({ hasText: 'Button' })).toContainText('Keep');
+  await expect(panel.getByRole('button', { name: 'Copy removal prompt' })).toBeVisible();
 });
