@@ -16,9 +16,9 @@ export interface ThemeToggleProps extends Omit<HTMLAttributes<HTMLDivElement>, '
 export function ThemeToggle({ theme, onChange, className, ref, ...rest }: ThemeToggleProps) {
   const dark = theme === 'dark';
   return (
-    <div ref={ref} {...rest} className={cx('flex items-center gap-xs bg-primary', className)}>
+    <div ref={ref} {...rest} className={cx('flex items-center gap-md bg-primary', className)}>
       <Icon name={dark ? 'moon-01' : 'sun'} className="text-fg-tertiary" />
-      <Toggle size="md" aria-label="Dark mode" isSelected={dark} onChange={on => onChange(on ? 'dark' : 'light')} />
+      <Toggle size="sm" aria-label="Dark mode" isSelected={dark} onChange={on => onChange(on ? 'dark' : 'light')} />
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 export const figma = {
   'Table cell': {
-    setId: '111:12084',
+    setId: '162:13390',
     axes: {
       Type: {
         Text: '<TextCell>',
@@ -17,15 +17,15 @@ export const figma = {
     },
     properties: { 'Lead action': 'TextCell leadAction={<LeadAction />}' },
     variants: [
-      { nodeId: '111:12093', key: '5d25ec13ffe98d883c3337e36cbbef897f373099', name: 'Type=Text, Size=md, State=Default' },
+      { nodeId: '162:13399', key: '5d25ec13ffe98d883c3337e36cbbef897f373099', name: 'Type=Text, Size=md, State=Default' },
       { nodeId: '15:1745', key: 'd310de32114d9dae0df5f3ffaea0bf3ffb1f340e', name: 'Type=Text, Size=md, State=Hover/selected' },
-      { nodeId: '111:12085', key: 'cef203b28437208dae1d4ad09bd2e192c7e9e74b', name: 'Type=Badge, Size=md, State=Default' },
+      { nodeId: '162:13391', key: 'cef203b28437208dae1d4ad09bd2e192c7e9e74b', name: 'Type=Badge, Size=md, State=Default' },
       { nodeId: '15:1753', key: '48f0479cf70be50cf156d98ff9440e1b1b2ff263', name: 'Type=Badge, Size=md, State=Hover/selected' },
-      { nodeId: '111:12091', key: '04c711f34e99cd4d6772b21064274a0c4da1e3d4', name: 'Type=Badges multiple, Size=md, State=Default' },
+      { nodeId: '162:13397', key: '04c711f34e99cd4d6772b21064274a0c4da1e3d4', name: 'Type=Badges multiple, Size=md, State=Default' },
       { nodeId: '15:1759', key: 'b1b061adc034ffb856d92d7b394e0b1d846ea1d1', name: 'Type=Badges multiple, Size=md, State=Hover/selected' },
-      { nodeId: '111:12105', key: '5ece57eb65e6cb8119984525429fcbf8d0444d13', name: 'Type=Progress bar, Size=md, State=Default' },
-      { nodeId: '111:12095', key: 'da70eae1f84f67b6a8642fcf3f967df5d4820ecc', name: 'Type=Avatar, Size=md, State=Default' },
-      { nodeId: '111:12113', key: 'de35dfdb43f4f59139e3ef49f5e7e91a7de6c800', name: 'Type=Action icons, Size=md, State=Default' },
+      { nodeId: '162:13411', key: '5ece57eb65e6cb8119984525429fcbf8d0444d13', name: 'Type=Progress bar, Size=md, State=Default' },
+      { nodeId: '162:13401', key: 'da70eae1f84f67b6a8642fcf3f967df5d4820ecc', name: 'Type=Avatar, Size=md, State=Default' },
+      { nodeId: '162:13419', key: 'de35dfdb43f4f59139e3ef49f5e7e91a7de6c800', name: 'Type=Action icons, Size=md, State=Default' },
     ],
   },
   'Table header cell': {

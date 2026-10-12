@@ -3,7 +3,7 @@
  * The drawer frame itself is screen content (*Node tree — node detail* → `Node drawer`); its header is a component.
  */
 
-/** `_Slide out menu header` (`111:13108`) → `<Drawer.Header>`. */
+/** `_Slide out menu header` (`162:13349`) → `<Drawer.Header>`. */
 export const figmaDrawerHeader = {
   componentSet: { name: '_Slide out menu header' },
   axes: {
@@ -16,7 +16,7 @@ export const figmaDrawerHeader = {
   },
   variants: {
     'Tabs=False, Breakpoint=Desktop': {
-      nodeId: '111:13108',
+      nodeId: '162:13349',
       key: '6bd91e4f0e8e87c92efb4d7f02fc361ae44f55b5',
       props: {},
     },

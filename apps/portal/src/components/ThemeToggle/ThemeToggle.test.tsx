@@ -32,14 +32,14 @@ describe.each(themes)('ThemeToggle (%s document theme)', documentTheme => {
 });
 
 describe('ThemeToggle', () => {
-  it('draws the design: 24px fg-tertiary icon, spacing-xs gap, md toggle', () => {
+  it('draws the design: 24px fg-tertiary icon, spacing-md gap, sm toggle', () => {
     const { container } = render(<ThemeToggle theme="light" onChange={() => {}} />);
     expect(container.firstElementChild?.className.split(' ')).toEqual(
-      expect.arrayContaining(['flex', 'items-center', 'gap-xs', 'bg-primary']),
+      expect.arrayContaining(['flex', 'items-center', 'gap-md', 'bg-primary']),
     );
     expect(icon(container)?.getAttribute('class')?.split(' ')).toEqual(expect.arrayContaining(['size-6', 'text-fg-tertiary']));
     expect(container.querySelector('span[aria-hidden="true"]')?.className.split(' ')).toEqual(
-      expect.arrayContaining(['h-6', 'w-11']),
+      expect.arrayContaining(['h-5', 'w-9']),
     );
   });
 
