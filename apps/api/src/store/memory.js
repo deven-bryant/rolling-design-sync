@@ -8,6 +8,7 @@ const { randomUUID } = require('node:crypto');
 const { isDescendant, pathNodeIds } = require('../ltree');
 const { documentSortKey } = require('../documentOrder');
 const { removedUses, removedWarnings, REMOVED_K } = require('./removed');
+const { TOKENS_K, tokensKeyPath, isTokensItemPath } = require('./tokens');
 
 const now = () => new Date().toISOString();
 const clone = v => (v === undefined ? undefined : structuredClone(v));
@@ -683,6 +684,11 @@ class MemoryStore {
       return parts.slice(0, end).join('.');
     };
     const groupOf = n => {
+      const tokensPath = page.group === 'frame' ? null : tokensKeyPath(n.path);
+      if (tokensPath !== null) {
+        const keyNode = byPath.get(tokensPath) || null;
+        return { identity: tokensPath, k: `${TOKENS_K}${keyNode ? documentSortKey(keyNode) : ''} ${tokensPath}`, keyPath: tokensPath, keyNode, set: null, tokens: true };
+      }
       const removedPath = removedRootOf(n);
       if (removedPath !== null) {
         const keyNode = byPath.get(removedPath) || null;
@@ -718,7 +724,7 @@ class MemoryStore {
     }
     const rest = page.after ? all.filter(g => g.k > page.after.k) : all;
     const pageRows = rest.slice(0, page.limit);
-    const items = pageRows.map(({ k, keyPath, nodes, identity, set, removed }) => {
+    const items = pageRows.map(({ k, keyPath, nodes, identity, set, removed, tokens }) => {
       const keyNode = keyPath === null ? null : byPath.get(keyPath) || null;
       const keyId = keyPath === null ? null : pathNodeIds(keyPath).pop();
       const sorted = nodes.slice().sort((a, b) => cmp(documentSortKey(a), documentSortKey(b)) || cmp(a.nodeId, b.nodeId));
@@ -748,6 +754,10 @@ class MemoryStore {
         Object.assign(item, { kind: 'removed' }, this._removedDetails(fileKey, keyPath));
         return item;
       }
+      if (tokens || (keyPath !== null && isTokensItemPath(keyPath))) {
+        item.kind = 'tokens';
+        return item;
+      }
       if (page.group === 'component') {
         item.placements = keyNode
           ? this._fileNodes(fileKey).filter(x => x.mainComponentId === keyNode.nodeId && !x.deletedAt).length
@@ -762,6 +772,24 @@ class MemoryStore {
     });
     const last = items[items.length - 1];
     return { items, total: all.length, next: rest.length > page.limit ? { k: last.k, id: last.keyId ?? '' } : null };
+  }
+
+  /** Live layer nodes whose `attrs.resolvedVariables` has each variable id (mirrors PostgresStore.tokenUsage). */
+  /**
+   * @param {string} fileKey
+   * @param {string[]} variableIds
+   */
+  async tokenUsage(fileKey, variableIds) {
+    const ids = [...new Set(variableIds)];
+    /** @type {Map<string, number>} */
+    const counts = new Map(ids.map(id => [id, 0]));
+    if (!ids.length) return [];
+    for (const n of this._fileNodes(fileKey)) {
+      const vars = n.attrs && n.attrs.resolvedVariables;
+      if (n.deletedAt || !vars || typeof vars !== 'object' || Array.isArray(vars)) continue;
+      for (const id of ids) if (Object.prototype.hasOwnProperty.call(vars, id)) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return ids.map(variableId => ({ variableId, layers: counts.get(variableId) ?? 0 }));
   }
 
   /** `{ uses, warnings }` of the removed item rooted at `rootPath` (mirrors PostgresStore.removedDetails). */

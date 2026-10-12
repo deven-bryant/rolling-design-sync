@@ -8,6 +8,7 @@
 const { Pool } = require('pg');
 const { pathNodeIds } = require('../ltree');
 const { removedUses, removedWarnings, REMOVED_K } = require('./removed');
+const { TOKENS_K, TOKENS_LABEL, isTokensItemPath } = require('./tokens');
 
 const iso = v => (v instanceof Date ? v.toISOString() : v ?? null);
 
@@ -177,6 +178,8 @@ const removedRootSql = a => `(case when ${a}.deleted_at is null then null else (
     where not exists (select 1 from node t where t.file_key = ${a}.file_key and t.path = subpath(${a}.path, 0, l) and t.deleted_at is not null)) r
   where not exists (select 1 from node c where c.file_key = ${a}.file_key and c.path @> r.root and c.path <> r.root
     and c.deleted_at is null and c.node_type in ('COMPONENT', 'COMPONENT_SET'))) end)`;
+/** The work-item key path of a token node (alias `a`): its collection, or the root itself; null outside the tokens scope. Mirrors store/tokens.js tokensKeyPath. */
+const tokensKeySql = a => `(case when subpath(${a}.path, 0, 1) = '${TOKENS_LABEL}'::ltree then subpath(${a}.path, 0, least(nlevel(${a}.path), 2)) end)`;
 /** Nodes inside the `under` subtree (alias `n`), as SQL; pushes its parameter. */
 const v3InUnderSql = (under, params) => { params.push(under); return `n.path <@ (select u.path from node u where u.file_key = $1 and u.node_id = $${params.length})`; };
 
@@ -616,9 +619,10 @@ class PostgresStore {
     const where = v3Where(fileKey, filter, params);
     const keySql = page.group === 'frame'
       ? (level => `(case when nlevel(n.path) > ${level}${filter.regions ? ` and ${v3InUnderSql(filter.under[0], params)}` : ''} then subpath(n.path, 0, ${level} + 1) end)`)(v3UnderLevelSql(filter.under[0], params))
-      : `(select a.path from node a where a.file_key = n.file_key and a.path @> n.path
-          and a.node_type in ('COMPONENT', 'COMPONENT_SET') order by nlevel(a.path) desc limit 1)`;
-    const removedSql = page.group === 'frame' ? 'null::ltree' : removedRootSql('n');
+      : `coalesce(${tokensKeySql('n')}, (select a.path from node a where a.file_key = n.file_key and a.path @> n.path
+          and a.node_type in ('COMPONENT', 'COMPONENT_SET') order by nlevel(a.path) desc limit 1))`;
+    const removedSql = page.group === 'frame' ? 'null::ltree' : `(case when ${tokensKeySql('n')} is null then ${removedRootSql('n')} end)`;
+    const tokensK = page.group === 'frame' ? '' : `when subpath(g.key_path, 0, 1) = '${TOKENS_LABEL}'::ltree then '${TOKENS_K}' || coalesce(kn.doc_key, '') || ' ' || g.key_path::text`;
     const maxIds = Number(page.maxIds);
     const progressWhere = page.progress ? v3Where(fileKey, { ...filter, states: ['dirty', 'clean', 'blocked'] }, params) : null;
     const progress = page.progress ? `,
@@ -637,7 +641,7 @@ class PostgresStore {
       pr as (select key_path, removed, array_agg(distinct x) as props from m cross join unnest(m.changed_props) x group by key_path, removed),
       ca as (select key_path, removed, array_agg(distinct x) as cats from m cross join unnest(m.change_categories) x group by key_path, removed),
       items as (
-        select (case when g.removed then '${REMOVED_K}' || coalesce(kn.doc_key, '') || ' ' || g.key_path::text
+        select (case when g.removed then '${REMOVED_K}' || coalesce(kn.doc_key, '') || ' ' || g.key_path::text ${tokensK}
             else coalesce(kn.doc_key || ' ' || g.key_path::text, g.key_path::text, '~') end) collate "C" as k,
           g.key_path, g.removed, g.node_count, g.node_ids,
           coalesce(pr.props, '{}') as props, coalesce(ca.cats, '{}') as cats
@@ -675,21 +679,25 @@ class PostgresStore {
     const more = rows.length > page.limit;
     const pageRows = more ? rows.slice(0, page.limit) : rows;
     const details = await this.removedDetails(fileKey, pageRows.filter(r => r.removed).map(r => r.key_path));
-    const out = pageRows.map(r => ({
-      k: r.k,
-      keyId: r.key_path === null ? null : lastNodeId(r.key_path),
-      name: r.key_path === null ? null : r.name ?? null,
-      type: r.key_path === null ? null : r.node_type ?? null,
-      ...(r.component_set ? { set: r.component_set } : {}),
-      nodeCount: r.node_count,
-      categories: [...r.cats].sort(),
-      changedProps: [...r.props].sort(),
-      ...(page.group === 'component' && !r.removed ? { placements: r.placements ?? null } : {}),
-      ...(page.group === 'component' && !r.removed && filter.regions ? { placementsInScope: r.placements_in_scope ?? null } : {}),
-      nodeIds: r.node_ids || [],
-      ...(page.progress ? { progress: { total: r.progress_total, clean: r.progress_clean } } : {}),
-      ...(r.removed ? { kind: 'removed', ...details.get(r.key_path) } : {}),
-    }));
+    const out = pageRows.map(r => {
+      const tokens = !r.removed && r.key_path !== null && isTokensItemPath(r.key_path);
+      return {
+        k: r.k,
+        keyId: r.key_path === null ? null : lastNodeId(r.key_path),
+        name: r.key_path === null ? null : r.name ?? null,
+        type: r.key_path === null ? null : r.node_type ?? null,
+        ...(r.component_set && !tokens ? { set: r.component_set } : {}),
+        nodeCount: r.node_count,
+        categories: [...r.cats].sort(),
+        changedProps: [...r.props].sort(),
+        ...(page.group === 'component' && !r.removed && !tokens ? { placements: r.placements ?? null } : {}),
+        ...(page.group === 'component' && !r.removed && !tokens && filter.regions ? { placementsInScope: r.placements_in_scope ?? null } : {}),
+        nodeIds: r.node_ids || [],
+        ...(page.progress ? { progress: { total: r.progress_total, clean: r.progress_clean } } : {}),
+        ...(r.removed ? { kind: 'removed', ...details.get(r.key_path) } : {}),
+        ...(tokens ? { kind: 'tokens' } : {}),
+      };
+    });
     const last = out[out.length - 1];
     return { items: out, total, next: more ? { k: last.k, id: last.keyId ?? '' } : null };
   }
@@ -704,17 +712,20 @@ class PostgresStore {
         select n.*, ${documentSortSql('n')} as doc_key, ${v3StateSql('n').clean} as clean, (${matches}) as matches
         from node n where ${where}),
       assigned as (
-        select n.*, case when rr.root is not null then rn.node_id else c.node_id end as component_id,
-          case when rr.root is not null then rn.name else c.name end as component_name,
-          case when rr.root is not null then rn.node_type else c.node_type end as component_type,
+        select n.*, case when tk.key is not null then tn.node_id when rr.root is not null then rn.node_id else c.node_id end as component_id,
+          case when tk.key is not null then tn.name when rr.root is not null then rn.name else c.name end as component_name,
+          case when tk.key is not null then tn.node_type when rr.root is not null then rn.node_type else c.node_type end as component_type,
           coalesce(c.attrs #>> '{componentReference,key}', c.node_id) as variant_key,
-          coalesce(rr.root, c.path)::text as key_path, case when rr.root is not null then null else cs.ref end as component_set,
-          case when rr.root is not null then 'removed:' || rr.root::text
+          coalesce(tk.key, rr.root, c.path)::text as key_path, case when tk.key is not null or rr.root is not null then null else cs.ref end as component_set,
+          case when tk.key is not null then tk.key::text when rr.root is not null then 'removed:' || rr.root::text
             when cs.ref is not null then 'set:' || coalesce(cs.ref->>'key', cs.ref->>'id') else c.path::text end as identity,
-          case when rr.root is not null then '${REMOVED_K}' || coalesce(${documentSortSql('rn')}, '')
+          case when tk.key is not null then '${TOKENS_K}' || coalesce(${documentSortSql('tn')}, '')
+            when rr.root is not null then '${REMOVED_K}' || coalesce(${documentSortSql('rn')}, '')
             else coalesce(${documentSortSql('s')}, ${documentSortSql('c')}) end as owner_key,
-          rr.root is not null as removed
-        from source n left join lateral (select ${removedRootSql('n')} as root) rr on true
+          rr.root is not null as removed, tk.key is not null as tokens
+        from source n left join lateral (select ${tokensKeySql('n')} as key) tk on true
+        left join lateral (select x.* from node x where x.file_key = n.file_key and x.path = tk.key limit 1) tn on true
+        left join lateral (select case when tk.key is null then ${removedRootSql('n')} end as root) rr on true
         left join lateral (select x.* from node x where x.file_key = n.file_key and x.path = rr.root limit 1) rn on true
         left join lateral (
           select a.* from node a where a.file_key = n.file_key and a.path @> n.path
@@ -730,7 +741,7 @@ class PostgresStore {
         left join node s on s.file_key = n.file_key and s.node_id = cs.ref->>'id'),
       m as (select * from assigned where matches),
       g as (
-        select identity, bool_or(removed) as removed, min(key_path) as key_path, coalesce(min(owner_key || ' ' || identity) collate "C", '~') as k,
+        select identity, bool_or(removed) as removed, bool_or(tokens) as tokens, min(key_path) as key_path, coalesce(min(owner_key || ' ' || identity) collate "C", '~') as k,
           (array_agg(component_set order by doc_key collate "C", node_id collate "C"))[1] as component_set,
           (array_agg(component_id order by doc_key collate "C", node_id collate "C"))[1] as component_id,
           (array_agg(component_name order by doc_key collate "C", node_id collate "C"))[1] as component_name,
@@ -767,9 +778,27 @@ class PostgresStore {
       nodeCount: r.node_count, nodeIds: r.node_ids, categories: [...r.cats].sort(), changedProps: [...r.props].sort(),
       ...(page.progress ? { progress: { total: r.progress_total, clean: r.progress_clean } } : {}),
       ...(r.removed ? { kind: 'removed', ...details.get(r.key_path) } : {}),
+      ...(r.tokens ? { kind: 'tokens' } : {}),
     }));
     const last = items[items.length - 1];
     return { items, total, next: more ? { k: last.k, id: last.keyId ?? '' } : null };
+  }
+
+  /**
+   * Live layer nodes whose `attrs.resolvedVariables` has each variable id —
+   * one scan of the file's live rows (jsonb key existence), no index needed.
+   */
+  async tokenUsage(fileKey, variableIds) {
+    const ids = [...new Set(variableIds)];
+    if (!ids.length) return [];
+    const { rows } = await this.query(
+      `select v.id as variable_id, count(n.node_id)::int as layers
+       from unnest($2::text[]) v(id)
+         left join node n on n.file_key = $1 and n.deleted_at is null
+           and jsonb_typeof(n.attrs -> 'resolvedVariables') = 'object' and n.attrs -> 'resolvedVariables' ? v.id
+       group by v.id`, [fileKey, ids]);
+    const counts = new Map(rows.map(r => [r.variable_id, r.layers]));
+    return ids.map(variableId => ({ variableId, layers: counts.get(variableId) ?? 0 }));
   }
 
   /**

@@ -712,7 +712,7 @@ test('v3 block: block releases the lease → listing shows blocked → unblock �
 test('v3 summary and work items after a sync; format=ndjson and format=md', async () => {
   const fileKey = newFileKey();
   await seed(fileKey);
-  const zero = { layout: 0, color: 0, typography: 0, effects: 0, component: 0, content: 0, structure: 0, prototype: 0, other: 0 };
+  const zero = { layout: 0, color: 0, typography: 0, effects: 0, component: 0, content: 0, structure: 0, prototype: 0, token: 0, other: 0 };
 
   assert.deepEqual(await ok(files(fileKey, '/summary')), {
     fileKey,

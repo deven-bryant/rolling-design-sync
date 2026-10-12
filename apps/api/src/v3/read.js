@@ -13,6 +13,9 @@ const format = require('./format');
 const { documentSortKey } = require('../documentOrder');
 const { fileSettings } = require('../nodeService');
 
+const TOKENS_SCOPE_NAME = 'Design tokens';
+const TOKENS_TYPE = 'TOKENS';
+
 const isAbsolute = n => !!n.attrs && n.attrs.layoutPositioning === 'ABSOLUTE';
 
 const FILTER_KEYS = ['state', 'under', 'depth', 'type', 'changeType', 'changed', 'category', 'component', 'instance', 'name', 'since', 'claimed', 'worker', 'library'];
@@ -173,10 +176,32 @@ async function withLibraryRefs(store, links, fileKey, rows) {
   return rows;
 }
 
+/** A variable token node (`token:<variableKey>`). */
+const isVariableToken = n => !!n && typeof n.nodeId === 'string' && n.nodeId.startsWith('token:');
+
+/**
+ * Sets `usage: { layers }` on the variable token rows of `rows` — the live
+ * layers whose `attrs.resolvedVariables` has the token's `variableId` — from
+ * one store query; returns `rows`.
+ * @param {import('../store/types').Store} store
+ */
+async function withUsage(store, fileKey, rows) {
+  const tokens = rows.filter(isVariableToken);
+  if (!tokens.length) return rows;
+  const idOf = n => (n.attrs && typeof n.attrs.variableId === 'string' ? n.attrs.variableId : null);
+  const ids = [...new Set(tokens.map(idOf).filter(Boolean))];
+  const counts = new Map((await store.tokenUsage(fileKey, ids)).map(u => [u.variableId, u.layers]));
+  for (const n of tokens) n.usage = { layers: counts.get(idOf(n)) ?? 0 };
+  return rows;
+}
+
+/** The `include=` values (comma-separated) among `allowed`. */
+const parseInclude = (value, allowed) => (value === undefined ? [] : [...new Set(oneOf('include', csv(value), allowed))]);
+
 /** A library node's or item's `library` field from its `libraryRef`. */
 const libraryOut = ref => ({ key: ref ? ref.key ?? null : null, ...(ref && ref.resolved ? { fileKey: ref.fileKey } : {}), resolved: !!(ref && ref.resolved) });
 /** The Figma link of a node: its own file's, or for a library node its library file's (null until resolved). */
-const nodeUrl = (fileKey, n) => (!n.library ? core.link(fileKey, n.nodeId)
+const nodeUrl = (fileKey, n) => (core.isTokenNodeId(n.nodeId) ? null : !n.library ? core.link(fileKey, n.nodeId)
   : n.libraryRef && n.libraryRef.resolved ? core.link(n.libraryRef.fileKey, n.libraryRef.nodeId) : null);
 
 function parseSort(sort = 'document') {
@@ -459,6 +484,7 @@ function nodeFields(fileKey, n, nowIso, changes = 'diff') {
     },
   };
   if (n.descendants) out.descendants = n.descendants;
+  if (n.usage) out.usage = n.usage;
   return out;
 }
 
@@ -490,6 +516,10 @@ function pick(obj, keys) {
   return out;
 }
 
+/** A scope's name and type; the design-tokens scope reads as "Design tokens" (TOKENS) even before its root row is stored. */
+const scopeIdentity = s => (s.nodeId === core.TOKENS_ROOT_ID
+  ? { name: s.name ?? TOKENS_SCOPE_NAME, type: s.nodeType ?? TOKENS_TYPE }
+  : { name: s.name, type: s.nodeType });
 const withClean = c => ({ total: c.total, dirty: c.dirty, clean: c.total - c.dirty - c.blocked, blocked: c.blocked });
 const fileOut = f => ({ fileKey: f.fileKey, name: f.name ?? null, lastSyncAt: f.lastSyncAt ?? null, createdAt: f.createdAt ?? null, settings: fileSettings(f), counts: withClean(f.counts) });
 
@@ -530,7 +560,7 @@ function registerReadRoutes(app, { store, now, libraryLinks = null }) {
     return {
       fileKey,
       scopes: scopes.map(s => ({
-        nodeId: s.nodeId, name: s.name, type: s.nodeType, deleted: s.deleted, figmaUrl: core.link(fileKey, s.nodeId),
+        nodeId: s.nodeId, ...scopeIdentity(s), deleted: s.deleted, figmaUrl: core.isTokenNodeId(s.nodeId) ? null : core.link(fileKey, s.nodeId),
         lastSyncAt: s.lastSyncAt, lastSyncCounts: s.lastSyncCounts, counts: withClean(s.counts),
       })),
     };
@@ -549,14 +579,16 @@ function registerReadRoutes(app, { store, now, libraryLinks = null }) {
     if (!expand && fields !== null && fields.includes('via')) throw invalid('fields', "'via' needs expand=instances.", 'Pass expand=instances, or drop via from fields.');
     const changes = parseChanges(query.changes, 'auto');
     const view = query.view ?? 'compact';
-    const counts = query.include === 'counts' || (fields !== null && fields.includes('descendants'));
+    const include = parseInclude(query.include, schemas.LISTING_INCLUDES);
+    const counts = include.includes('counts') || (fields !== null && fields.includes('descendants'));
+    const usage = include.includes('usage') || (fields !== null && fields.includes('usage'));
     const { sort, desc } = parseSort(query.sort);
     if (fmt === 'outline' && ((sort !== 'document' && sort !== 'path') || desc)) {
       throw invalid('sort', 'format=outline is always in tree order.', 'Drop sort (or use sort=document or sort=path) with format=outline.');
     }
     const outline = fmt === 'outline';
     const limit = outline ? format.STREAM_PAGE : format.pageSize(fmt, query.limit, schemas.DEFAULT_LIMIT);
-    const fp = queryFingerprint(filter, { sort, desc, fields, view, counts, changes, ...(expand ? { expand } : {}), ...(outline ? { format: fmt } : {}) });
+    const fp = queryFingerprint(filter, { sort, desc, fields, view, counts, changes, ...(usage ? { usage } : {}), ...(expand ? { expand } : {}), ...(outline ? { format: fmt } : {}) });
     const pos = decodeOutlineCursor(outline ? query.cursor : undefined, fp);
     const after = outline ? pos.after : query.cursor === undefined ? null : decodeCursor(query.cursor, fp);
 
@@ -569,12 +601,14 @@ function registerReadRoutes(app, { store, now, libraryLinks = null }) {
     const list = async options => {
       const r = await store.listNodes(fileKey, filter, options);
       await withLibraryRefs(store, libraryLinks, fileKey, r.nodes);
+      if (usage) await withUsage(store, fileKey, r.nodes);
       return r;
     };
     const result = await list({ sort, desc, limit, after, counts });
     const base = view === 'full' ? schemas.FULL_FIELDS : schemas.COMPACT_FIELDS;
     const keys = fields ?? (expansion ? [...base, 'via'] : base);
-    const shown = counts && !keys.includes('descendants') ? [...keys, 'descendants'] : keys;
+    const withCounts = counts && !keys.includes('descendants') ? [...keys, 'descendants'] : keys;
+    const shown = usage && !withCounts.includes('usage') ? [...withCounts, 'usage'] : withCounts;
     let truncated = false;
     const toObject = n => {
       const all = nodeFields(fileKey, n, at, changes);
@@ -632,14 +666,15 @@ function registerReadRoutes(app, { store, now, libraryLinks = null }) {
     await trackedFile(fileKey);
     const node = await findNode(fileKey, raw, { counts: true });
     await withLibraryRefs(store, libraryLinks, fileKey, [node]);
+    await withUsage(store, fileKey, [node]);
     const all = { fileKey, ...nodeFields(fileKey, node, nowIso(), changes) };
-    return fields ? pick(all, ['fileKey', ...fields]) : pick(all, ['fileKey', ...schemas.DETAIL_FIELDS, 'descendants']);
+    return fields ? pick(all, ['fileKey', ...fields]) : pick(all, ['fileKey', ...schemas.DETAIL_FIELDS, 'descendants', 'usage']);
   });
 
   app.get('/resolve', { schema: schemas.resolve }, async (/** @type {import('./types').V3Request<'/v3/resolve', 'get'>} */ request) => address.parseUrl(request.query.url));
 }
 
 module.exports = {
-  registerReadRoutes, parseQ, filterParams, buildFilter, applyLibraryDefault, withLibraryRefs, libraryOut, nodeUrl, parseChanges, nodeFields, truncateChanges, pick, FILTER_KEYS, MAX_UNDER,
+  registerReadRoutes, parseQ, filterParams, buildFilter, applyLibraryDefault, withLibraryRefs, withUsage, parseInclude, isVariableToken, libraryOut, nodeUrl, parseChanges, nodeFields, truncateChanges, pick, FILTER_KEYS, MAX_UNDER,
   singleRoot, resolveUnder, mergeReach, queryFingerprint, encodeCursor, decodeCursor, encodeOutlineCursor, decodeOutlineCursor, offsetAfter, parseExpand, planExpansion, expandScope, isAbsolute,
 };

@@ -27,7 +27,9 @@ const COMPACT_FIELDS = ['nodeId', 'name', 'type', 'parentId', 'isInstance', 'mai
   'changes', 'changesKnown', 'contentHash', 'figmaUrl', 'library', 'claim', 'blocked'];
 const FULL_FIELDS = [...COMPACT_FIELDS, 'attrs', 'implementedAttrs', 'path'];
 const DETAIL_FIELDS = [...FULL_FIELDS, 'deleted', 'history'];
-const NODE_FIELDS = [...DETAIL_FIELDS, 'descendants'];
+const NODE_FIELDS = [...DETAIL_FIELDS, 'descendants', 'usage'];
+/** `include=` values of the node listing (comma-separated). */
+const LISTING_INCLUDES = ['counts', 'usage'];
 /** Listing `fields`: every node field, plus `via` (with `expand=instances`). */
 const LISTING_FIELDS = [...NODE_FIELDS, 'via'];
 
@@ -133,6 +135,11 @@ const node = {
       },
     },
     descendants,
+    usage: {
+      type: 'object',
+      description: 'Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has its `variableId`). Always on `get_node`; on listings with `include=usage`.',
+      properties: { layers: { type: 'integer' } },
+    },
     via: nullable('object', {
       description: 'Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope.',
       properties: { instanceId: { type: 'string' }, mainComponentId: { type: 'string' }, depth: { type: 'integer' } },
@@ -182,7 +189,7 @@ const scope = {
     name: nullable('string'),
     type: nullable('string'),
     deleted: { type: 'boolean' },
-    figmaUrl: { type: 'string' },
+    figmaUrl: nullable('string', { description: 'The scope root in Figma; null for the design-tokens scope (`tokens`).' }),
     lastSyncAt: { type: 'string' },
     lastSyncCounts: { type: 'object', additionalProperties: true },
     counts,
@@ -224,7 +231,7 @@ const listQuery = {
         + 'diff: the diff for every node, including added ones\' full values; names: never `changes`, only `changedProps`. Ask for `changes=diff` (or `get_node`) when you need the values of added nodes.',
     },
     fields: str(`Comma-separated node fields to return (overrides view): ${LISTING_FIELDS.join(', ')} (\`via\` needs \`expand=instances\`).`),
-    include: { type: 'string', enum: ['counts'], description: '`counts` adds subtree counts (`descendants`) to each node.' },
+    include: { type: 'string', description: `Comma-separated: ${LISTING_INCLUDES.join(', ')}. \`counts\` adds subtree counts (\`descendants\`) to each node; \`usage\` adds \`usage: { layers }\` to each design token (\`token:<variableKey>\`).` },
     sort: { type: 'string', enum: [...SORTS, ...SORTS.map(s => `-${s}`)], description: 'document (default: the design\'s layer order — auto-layout flow order, else top-to-bottom, left-to-right), path (node-id path order), updatedAt or name; prefix `-` for descending.' },
     limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT, description: `Page size (default ${DEFAULT_LIMIT}, max ${MAX_LIMIT}).` },
     cursor: str("The previous page's `nextCursor`, unchanged, with all other parameters the same (else `invalid_cursor`)."),
@@ -370,7 +377,7 @@ const OPENAPI_OPTIONS = {
 module.exports = {
   componentSet, library, fileSettings, LIBRARY_MODES,
   problemResponses,
-  CATEGORIES, STATES, CHANGE_TYPES, SORTS, MAX_LIMIT, DEFAULT_LIMIT, CHANGES_MODES, MAX_CHANGE_SIDE_BYTES, COMPACT_FIELDS, FULL_FIELDS, DETAIL_FIELDS, NODE_FIELDS,
+  LISTING_INCLUDES, CATEGORIES, STATES, CHANGE_TYPES, SORTS, MAX_LIMIT, DEFAULT_LIMIT, CHANGES_MODES, MAX_CHANGE_SIDE_BYTES, COMPACT_FIELDS, FULL_FIELDS, DETAIL_FIELDS, NODE_FIELDS,
   LISTING_FIELDS, EXPANDS, DEFAULT_EXPAND_DEPTH, MAX_EXPAND_DEPTH, EXPANSION_LIMIT, expansion, expandQuery,
   agentOp, listFiles, getFile, listScopes, listNodes, getNode, resolve, openapi, OPENAPI_OPTIONS,
 };

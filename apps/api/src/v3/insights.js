@@ -14,6 +14,7 @@ const format = require('./format');
 const {
   filterParams, buildFilter, parseChanges, nodeFields, truncateChanges, queryFingerprint, encodeCursor, decodeCursor, encodeOutlineCursor, decodeOutlineCursor, offsetAfter, FILTER_KEYS,
   parseExpand, expandScope, isAbsolute, resolveUnder, singleRoot, applyLibraryDefault, withLibraryRefs, libraryOut, nodeUrl,
+  withUsage, parseInclude, isVariableToken,
 } = require('./read');
 const { documentSortKey } = require('../documentOrder');
 
@@ -124,13 +125,17 @@ const removedWarning = {
   },
 };
 
+/** `include=` values of the work items (comma-separated). */
+const WORK_INCLUDES = ['progress', 'usage'];
+
 const workItem = {
   type: 'object',
   properties: {
     kind: {
-      type: 'string', enum: ['removed', 'library'],
+      type: 'string', enum: ['removed', 'library', 'tokens'],
       description: '`removed`: design deleted in Figma that was built — one item per removed root (the topmost tombstoned node; key = its id), listing the components it used (`uses`). '
-        + '`library`: a reference item — a library (remote) main component the scope uses while the file does not track library components (`expand=instances`, group=component or set): `tracked: false`, `nodeCount: 0`, no `nodeIds`, no `progress`, with `placements` / `placementsInScope`. Use the library component as is; there is nothing to build or clear. Absent on other component, set and frame items.',
+        + '`library`: a reference item — a library (remote) main component the scope uses while the file does not track library components (`expand=instances`, group=component or set): `tracked: false`, `nodeCount: 0`, no `nodeIds`, no `progress`, with `placements` / `placementsInScope`. Use the library component as is; there is nothing to build or clear. '
+        + '`tokens`: design tokens of one collection (key = the collection node id `tokens:<collectionKey>`, name = the collection name; the `tokens` root\'s own changes have key `tokens`): for each changed `value:<Mode>` update the code variable named by the token\'s `codeSyntax` (WEB, else the token name) in that mode, then clear the tokens. Absent on other component, set and frame items.',
     },
     tracked: { type: 'boolean', description: 'Reference (`kind: "library"`) items only: false — the library component is not tracked in this file.' },
     library: { ...schemas.library, description: 'Items whose component is a library (remote) component: `{ key, fileKey?, resolved }` as on nodes. Absent on other items.' },
@@ -163,6 +168,10 @@ const workItem = {
       type: 'array', items: removedWarning,
       description: 'Removed items only (empty when none): main components removed with the design while other instances of them are still live.',
     },
+    usage: {
+      type: 'object', additionalProperties: { type: 'object', properties: { layers: { type: 'integer' } } },
+      description: 'Token items with `include=usage`: `{ nodeId: { layers } }` for the listed tokens — how many live layers use each.',
+    },
     nodeIds: { type: 'array', items: { type: 'string' }, description: `The item's first ${MAX_ITEM_NODE_IDS} node ids, in document order (the design's layer order; a removed item's root first).` },
     more: { type: 'integer', description: 'How many node ids `nodeIds` leaves out.' },
     progress: {
@@ -179,6 +188,7 @@ const work = format.withFormat({
     '`group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last.',
     'Removed design (group=component and group=set): deleted nodes that were built are grouped under their removed root — the topmost deleted node — into one `kind: "removed"` item (after the component items, before `key: null`, in the roots\' document order), unless that root sits inside a live component (then they are part of that component\'s item). '
       + 'For a removed item: remove the code that rendered the root; keep components in `uses` with `livePlacements > 0` (still used elsewhere), consider removing those with 0; heed `warnings`; then clear the root with `subtree: true` (`clear_nodes`) — one item clears the whole removed subtree. Deleted nodes that were never built are not work (they resolve at sync).',
+    'Design tokens (group=component and group=set): the dirty tokens of each collection form one `kind: "tokens"` item (key = the collection node id, after the component and removed items, before `key: null`). For each token, update the code variable named by its `codeSyntax` (WEB, else the token name) for every changed `value:<Mode>`, then clear it. `include=usage` adds how many layers use each token.',
     '`group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged.',
     '`group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item.',
     '`include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar.',
@@ -201,7 +211,7 @@ const work = format.withFormat({
       },
       limit: { ...listQuery.limit, description: `Items per page (default ${schemas.DEFAULT_LIMIT}, max ${schemas.MAX_LIMIT}).` },
       cursor: listQuery.cursor,
-      include: { type: 'string', enum: ['progress'], description: 'progress: add total and clean node counts across all states for each work item.' },
+      include: { type: 'string', description: `Comma-separated: ${WORK_INCLUDES.join(', ')}. progress: add total and clean node counts across all states for each work item; usage: add \`usage: { nodeId: { layers } }\` to token items.` },
     },
   },
   response: {
@@ -239,6 +249,7 @@ const itemOut = (group, expanded) => i => ({
   ...(group === 'component' && (!i.kind || i.kind === 'library') ? { placements: i.placements } : {}),
   ...(group === 'component' && (!i.kind || i.kind === 'library') && expanded ? { placementsInScope: i.placementsInScope } : {}),
   ...(i.kind === 'removed' ? { uses: i.uses, warnings: i.warnings } : {}),
+  ...(i.usage ? { usage: i.usage } : {}),
   ...(i.kind === 'library' ? {} : { nodeIds: i.nodeIds, more: i.nodeCount - i.nodeIds.length }),
 });
 
@@ -455,9 +466,11 @@ function registerInsightRoutes(app, { store, now, config, libraryLinks = null })
       });
     }
     const changes = parseChanges(query.changes, 'auto');
-    const progress = query.include === 'progress';
+    const include = parseInclude(query.include, WORK_INCLUDES);
+    const progress = include.includes('progress');
+    const usage = include.includes('usage');
     const outline = fmt === 'outline';
-    const fp = queryFingerprint(filter, { route: 'work', group, changes, ...(progress ? { include: 'progress' } : {}), ...(expand ? { expand } : {}), ...(outline ? { format: fmt } : {}) });
+    const fp = queryFingerprint(filter, { route: 'work', group, changes, ...(progress ? { include: 'progress' } : {}), ...(usage ? { usage } : {}), ...(expand ? { expand } : {}), ...(outline ? { format: fmt } : {}) });
     const pos = decodeOutlineCursor(outline ? query.cursor : undefined, fp);
     const after = outline ? pos.after : query.cursor === undefined ? null : decodeCursor(query.cursor, fp);
     const expansion = await resolveScope(fileKey, filter, expand);
@@ -466,6 +479,13 @@ function registerInsightRoutes(app, { store, now, config, libraryLinks = null })
 
     const limit = outline ? format.STREAM_PAGE : format.pageSize(fmt, query.limit, schemas.DEFAULT_LIMIT);
     let truncated = false;
+    /** Adds each token item's `usage` (`{ nodeId: { layers } }` for its listed tokens) from one batched read and one usage query per page. */
+    async function withItemUsage(items) {
+      const ids = [...new Set(items.filter(i => i.kind === 'tokens').flatMap(i => i.nodeIds))];
+      if (!usage || !ids.length) return items;
+      const rows = new Map((await withUsage(store, fileKey, (await store.getNodes(fileKey, ids)).filter(isVariableToken))).map(n => [n.nodeId, n.usage]));
+      return items.map(i => (i.kind === 'tokens' ? { ...i, usage: Object.fromEntries(i.nodeIds.filter(id => rows.has(id)).map(id => [id, rows.get(id)])) } : i));
+    }
     /** Adds each item's `changes` (`{ nodeId: diff }` for its listed dirty nodes) from one batched read per page. */
     async function withChanges(items) {
       if (changes === 'names') return items;
@@ -483,7 +503,7 @@ function registerInsightRoutes(app, { store, now, config, libraryLinks = null })
     }
     const read = async next => {
       const r = await listItems(fileKey, filter, { group, limit, after: next, maxIds: MAX_ITEM_NODE_IDS, progress }, refs);
-      return { ...r, items: await withChanges(r.items) };
+      return { ...r, items: await withItemUsage(await withChanges(r.items)) };
     };
     const toItem = itemOut(group, !!expansion);
     if (outline) return outlineWork(reply, { fileKey, filter, group, pos, fp, limit, toItem, lineLimit: query.limit ?? null, progress, refs });

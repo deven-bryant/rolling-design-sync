@@ -318,6 +318,6 @@ test('/v3/openapi.json documents the setting, the library filter, reference item
   assert.ok(op.requestBody.content['application/json'].schema.properties.settings.properties.trackLibraryComponents);
   assert.ok(doc.paths['/v3/files/{fileKey}/nodes'].get.parameters.some(p => p.name === 'library'));
   const item = doc.paths['/v3/files/{fileKey}/work'].get.responses['200'].content['application/json'].schema.properties.items.items;
-  assert.deepEqual(item.properties.kind.enum, ['removed', 'library']);
+  assert.deepEqual(item.properties.kind.enum, ['removed', 'library', 'tokens']);
   assert.ok(doc.paths['/v3/status'].get.responses['200'].content['application/json'].schema.properties.libraryLinks);
 });

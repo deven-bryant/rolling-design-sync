@@ -111,13 +111,29 @@ class NodeSyncService {
     return fileSettings(file);
   }
 
-  /** `{ [nodeId]: contentHash }` for the node's subtree; `{}` when never scanned. */
+  /**
+   * `{ [nodeId]: contentHash }` for the node's subtree; `{}` when never scanned.
+   * For the tokens scope (`nodeId` = core.TOKENS_ROOT_ID) it also has
+   * `tokens: { [nodeId]: { variableId, remote } }` for every live variable, so
+   * the plugin can check which stored tokens still exist; that key replaces
+   * the root's own hash (the plugin re-sends the root on every tokens sync).
+   */
   async subtreeHashes(fileKey, nodeId) {
     if (!nonEmptyString(fileKey)) throw badRequest('fileKey is required.');
     if (!nonEmptyString(nodeId)) throw badRequest('nodeId is required.');
     const rows = await this.store.listNodeSubtree(fileKey, nodeId, { includeDeleted: false });
+    /** @type {Record<string, any>} */
     const out = {};
     for (const row of rows) out[row.nodeId] = row.contentHash ?? null;
+    if (nodeId === core.TOKENS_ROOT_ID) {
+      const tokens = {};
+      for (const row of rows) {
+        if (!row.nodeId.startsWith('token:')) continue;
+        const attrs = row.attrs || {};
+        tokens[row.nodeId] = { variableId: typeof attrs.variableId === 'string' ? attrs.variableId : null, remote: attrs.remote === true };
+      }
+      out.tokens = tokens;
+    }
     return out;
   }
 
