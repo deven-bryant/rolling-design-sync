@@ -1651,7 +1651,7 @@
         --color-bg-success-solid: var(--color-success-600);
         --color-bg-disabled: var(--color-gray-800);
         --color-bg-disabled_subtle: var(--color-gray-900);
-        --color-bg-active: var(--color-gray-900);
+        --color-bg-active: var(--color-gray-800);
         --color-bg-overlay: var(--color-gray-800);
         --color-bg-brand-primary: var(--color-brand-500);
         --color-bg-brand-primary_alt: var(--color-bg-secondary);

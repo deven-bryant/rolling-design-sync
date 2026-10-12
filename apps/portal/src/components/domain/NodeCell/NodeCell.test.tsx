@@ -56,6 +56,19 @@ describe('NodeCell', () => {
     expect(toggle.querySelector('svg')).not.toBeNull();
   });
 
+  it('keeps the chevron width on a leaf with reserveToggle, so siblings align by their text', () => {
+    const { container, rerender } = render(<NodeCell name="Leaf" />);
+    expect(container.querySelector('[data-slot="toggle-spacer"]')).toBeNull();
+    rerender(<NodeCell name="Leaf" reserveToggle />);
+    const spacer = container.querySelector('[data-slot="toggle-spacer"]');
+    expect(spacer?.getAttribute('aria-hidden')).toBe('true');
+    expect(classesOf(spacer)).toEqual(expect.arrayContaining(['size-4', 'shrink-0']));
+    expect(screen.queryByRole('button')).toBeNull();
+    rerender(<NodeCell name="Branch" expandable reserveToggle />);
+    expect(container.querySelector('[data-slot="toggle-spacer"]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Expand' })).toBeDefined();
+  });
+
   it('calls onToggle with the next expanded state', async () => {
     const user = userEvent.setup();
     const onToggle = vi.fn();

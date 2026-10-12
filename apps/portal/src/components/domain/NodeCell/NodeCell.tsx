@@ -14,6 +14,8 @@ export interface NodeCellProps extends Omit<HTMLAttributes<HTMLDivElement>, 'onT
   /** Figma `Chevron`: the node has children. */
   expandable?: boolean;
   expanded?: boolean;
+  /** Keep the chevron's width on rows without children, so siblings align by their text (node tree). */
+  reserveToggle?: boolean;
   onToggle?: (expanded: boolean) => void;
   /** Accessible name of the chevron button; defaults to `Expand` / `Collapse`. */
   toggleLabel?: string;
@@ -28,6 +30,7 @@ export function NodeCell({
   depth = 0,
   expandable = false,
   expanded = false,
+  reserveToggle = false,
   onToggle,
   toggleLabel,
   className,
@@ -38,7 +41,7 @@ export function NodeCell({
     <div ref={ref} {...rest} className={cx('flex min-w-0 items-center', className)}>
       <span aria-hidden="true" data-slot="indent" className="shrink-0" style={{ width: `calc(var(--spacing-2xl) * ${depth})` }} />
       <div className="flex min-w-0 flex-1 items-center gap-md">
-        {expandable && (
+        {expandable ? (
           <AriaButton
             aria-label={toggleLabel ?? (expanded ? 'Collapse' : 'Expand')}
             aria-expanded={expanded}
@@ -47,6 +50,8 @@ export function NodeCell({
           >
             <Icon name={expanded ? 'chevron-down' : 'chevron-right'} size="sm" />
           </AriaButton>
+        ) : (
+          reserveToggle && <span aria-hidden="true" data-slot="toggle-spacer" className="size-4 shrink-0" />
         )}
         <div className="flex min-w-0 flex-1 flex-col">
           {badges != null ? (
