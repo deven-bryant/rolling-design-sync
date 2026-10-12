@@ -335,11 +335,36 @@ test('12,051-node scan is chunked into multiple batches and yields progress',asy
  await r.send({type:'upload',fileUrl:FILE});
  assert.equal(r.messages.some(m=>m.type==='error'),false,JSON.stringify(r.messages.find(m=>m.type==='error')));
  const done=r.messages.find(m=>m.type==='synced');assert.equal(done.added,12051);assert.ok(done.batches>1);assert.equal(done.result.upserted,12051);
+ assert.ok(done.batches<=P.MAX_UPLOAD_BATCHES,`${done.batches} batches`);// caps grow so a big sync stays within the sync rate limit
  assert.ok(r.messages.some(m=>m.type==='progress'&&m.phase==='Scanning'&&m.count>10000));
  assert.ok(r.messages.some(m=>m.type==='progress'&&m.phase==='Uploading'));
  const batches=server.calls.filter(c=>c.path===SYNC);assert.equal(batches.length,done.batches);
  assert.ok(batches.every(c=>c.bytes<=2100000));assert.equal(server.nodes.size,12051);
  assert.ok(batches.every(c=>c.body.fileName==='Design file'&&c.body.rootNodeId==='1:1'));
+});
+test('a 1,000-node sync is sent in batches of at most 200 records and 250,000 chars, so the bar fills steadily',async t=>{
+ assert.equal(P.BATCH_RECORDS,200);assert.equal(P.BATCH_CHARS,250000);
+ const f=fixture();for(let n=3;n<=1000;n++)f.root.children.push(node('1:'+n,'RECTANGLE',{parent:f.root}));
+ const server=mockServer();const seen=[];
+ const out=await P.sync(server.fetch,CFG,await P.capture(f.api,f.root,'FILE'),{progress:(phase,count,total)=>{if(phase==='Uploading')seen.push(count);}});
+ const batches=server.calls.filter(c=>c.path===SYNC);
+ t.diagnostic(`1,000-node sync: ${server.calls.length} requests (${batches.length} sync batches)`);
+ assert.equal(server.calls.length,6);assert.equal(out.batches,5);same(seen,[0,200,400,600,800,1000]);
+ assert.ok(batches.every(c=>c.body.upserts.length<=200&&JSON.stringify(c.body.upserts).length<=250000));
+ const g=fixture();for(let n=3;n<=40;n++)g.root.children.push(node('1:'+n,'TEXT',{parent:g.root,characters:'x'.repeat(20000),getStyledTextSegments:()=>[]}));
+ const big=mockServer();await P.sync(big.fetch,CFG,await P.capture(g.api,g.root,'FILE'));
+ const bigBatches=big.calls.filter(c=>c.path===SYNC);assert.ok(bigBatches.length>1);
+ assert.ok(bigBatches.every(c=>c.body.upserts.length===1||JSON.stringify(c.body.upserts).length<=250000));
+});
+test('deletions go in the first batch; the record cap grows past 200 when a sync would exceed MAX_UPLOAD_BATCHES',async()=>{
+ const f=fixture();for(let n=3;n<=1000;n++)f.root.children.push(node('1:'+n,'RECTANGLE',{parent:f.root}));
+ const server=mockServer();await P.sync(server.fetch,CFG,await P.capture(f.api,f.root,'FILE'));
+ f.root.children.splice(500,300);f.child.width=1;server.calls.length=0;
+ await P.sync(server.fetch,CFG,await P.capture(f.api,f.root,'FILE'));
+ const batches=server.calls.filter(c=>c.path===SYNC);assert.equal(batches.length,1);assert.equal(batches[0].body.deletedNodeIds.length,300);
+ const g=fixture();for(let n=3;n<=1000;n++)g.root.children.push(node('1:'+n,'RECTANGLE',{parent:g.root}));
+ const capped=mockServer();const out=await P.sync(capped.fetch,CFG,await P.capture(g.api,g.root,'FILE'),{maxBatches:2});
+ assert.equal(out.batches,2);same(capped.calls.filter(c=>c.path===SYNC).map(c=>c.body.upserts.length),[500,500]);
 });
 test('cancellation during scanning uploads nothing; cancellation before upload posts nothing',async()=>{
  const f=fixture();for(let n=3;n<=301;n++)f.root.children.push(node('1:'+n,'RECTANGLE',{parent:f.root}));
@@ -373,12 +398,48 @@ test('unresolvable style and variable definitions warn but do not block the uplo
  const done=r.messages.find(m=>m.type==='synced');
  assert.ok(done.warnings.some(w=>w.startsWith('[token] ')&&/style S:unpublished,1:2 could not be resolved/.test(w)));
 });
-test('design edits during the scan are rejected and nothing is uploaded',async()=>{
+const verifyPhases=r=>[...new Set(r.messages.filter(m=>m.type==='progress'&&/^Verifying scan/.test(m.phase)).map(m=>m.phase))];
+test('a one-off edit during verification is retried: the next pair of passes matches and is uploaded',async()=>{
  const f=fixture();for(let n=3;n<=201;n++)f.root.children.push(node('1:'+n,'RECTANGLE',{parent:f.root}));
  const server=mockServer();const r=runtime(f,server,SETTINGS);
- const post=r.api.ui.postMessage;r.api.ui.postMessage=m=>{post(m);if(m.type==='progress'&&m.phase==='Verifying scan')f.root.children.at(-1).width=999;};
+ const post=r.api.ui.postMessage;let edited=false;r.api.ui.postMessage=m=>{post(m);if(!edited&&m.type==='progress'&&m.phase==='Verifying scan'){edited=true;f.root.children.at(-1).width=999;}};
  await r.send({type:'upload',fileUrl:FILE});
- assert.match(r.messages.find(m=>m.type==='error').message,/Design changed/);assert.equal(server.calls.length,0);
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ same(verifyPhases(r),['Verifying scan','Verifying scan (retry 1)']);
+ assert.equal(server.nodes.get('FILE|1:201').attrs.width,999);
+});
+for(const kind of ['style','variable'])test(`a library ${kind} that resolves only after its first read succeeds after one retry`,async()=>{
+ const f=fixture();let reads=0;
+ if(kind==='style'){f.child.fillStyleId='S:lib,1:9';f.api.getStyleByIdAsync=async()=>++reads===1?null:{name:'Brand/Red',type:'PAINT',key:'SK',paints:[{type:'SOLID',color:{r:1,g:0,b:0}}]};}
+ else{f.child.boundVariables={fills:[{type:'VARIABLE_ALIAS',id:'V:lib'}]};f.api.variables={getVariableByIdAsync:async()=>++reads===1?null:{name:'color/red',key:'VK',variableCollectionId:'VC:1',codeSyntax:{},resolveForConsumer:()=>({value:{r:1,g:0,b:0},resolvedType:'COLOR'})}};}
+ const server=mockServer();const r=runtime(f,server,SETTINGS);await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ same(verifyPhases(r),['Verifying scan','Verifying scan (retry 1)']);assert.equal(reads,3);
+ const attrs=server.nodes.get('FILE|1:2').attrs;
+ if(kind==='style')assert.equal(attrs.styleDefinitions['S:lib,1:9'].name,'Brand/Red');else assert.equal(attrs.resolvedVariables['V:lib'].name,'color/red');
+ const done=r.messages.find(m=>m.type==='synced');assert.ok(!done.warnings.some(w=>w.startsWith('[token] ')),done.warnings.join(' '));
+});
+test('a value that changes on every pass fails after the retries, naming the node and up to 3 changed props',async()=>{
+ const f=fixture();let n=0;for(const k of ['width','height','opacity','fills'])Object.defineProperty(f.child,k,{get(){n++;return k==='fills'?[{type:'SOLID',color:{r:n/1000,g:0,b:0}}]:n;}});
+ const server=mockServer();const r=runtime(f,server,SETTINGS);await r.send({type:'upload',fileUrl:FILE});
+ assert.equal(P.VERIFY_RETRIES,2);
+ same(verifyPhases(r),['Verifying scan','Verifying scan (retry 1)','Verifying scan (retry 2)']);
+ assert.equal(r.messages.find(m=>m.type==='error').message,'Design kept changing while scanning: "RECTANGLE 1:2" (1:2) fills, height, opacity. If you aren\'t editing, a library style or font may still be loading — try again.');
+ assert.equal(server.calls.length,0);
+});
+test('a layer removed while scanning still fails immediately, without retrying',async()=>{
+ const f=fixture();let reads=0;Object.defineProperty(f.child,'removed',{get(){return ++reads>1;}});
+ const server=mockServer();const r=runtime(f,server,SETTINGS);await r.send({type:'upload',fileUrl:FILE});
+ assert.equal(r.messages.find(m=>m.type==='error').message,'Design changed during scanning. Try again when editing is paused.');
+ same(verifyPhases(r),[]);assert.equal(server.calls.length,0);
+});
+test('scanDifference names appearing / disappearing layers, counts the rest, and compares warnings',async()=>{
+ const f=fixture();const a=await P.capture(f.api,f.root,'FILE');
+ f.root.children.push(node('1:3','RECTANGLE',{parent:f.root}));const b=await P.capture(f.api,f.root,'FILE');
+ assert.equal(P.scanDifference(a,a),null);
+ assert.equal(P.scanDifference(a,b),'"SECTION 1:1" (1:1) childOrder (and 1 more layer)');
+ assert.equal(P.scanDifference({...b,nodes:{...b.nodes,'1:1':a.nodes['1:1']}},a),'"RECTANGLE 1:3" (1:3) disappeared');
+ assert.equal(P.scanDifference(a,{...a,warnings:['x']}),'the property-read warnings changed (x)');
 });
 
 /* ---- Main-component resolution (lazy, transitive, deduped). ---- */

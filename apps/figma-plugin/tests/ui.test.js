@@ -64,7 +64,7 @@ test('progress with a total renders a determinate bar and "phase: count / total 
   u.receive({ type: 'busy', value: true }, { type: 'progress', phase: 'Uploading', count: 1200, total: 3400 });
   const bar = u.$('bar');
   assert.equal(bar.hidden, false);
-  assert.equal(bar.className, '');
+  assert.equal(u.$('spinner').hidden, true);
   assert.equal(u.$('busy').textContent, `Uploading: ${(1200).toLocaleString()} / ${(3400).toLocaleString()} nodes`);
   assert.deepEqual([bar.getAttribute('aria-valuemin'), bar.getAttribute('aria-valuenow'), bar.getAttribute('aria-valuemax')], ['0', '1200', '3400']);
   assert.equal(u.$('bar-fill').style.width, (100 * 1200 / 3400) + '%');
@@ -76,22 +76,38 @@ test('progress with a total renders a determinate bar and "phase: count / total 
   assert.equal(u.$('busy').textContent, '');
 });
 
-test('progress without a total renders an indeterminate bar and the running count', () => {
+test('progress without a total shows a spinner next to the running count instead of the bar', () => {
   const u = ui();
+  assert.equal(u.$('spinner').hidden, true);
+  assert.equal(u.$('spinner').getAttribute('aria-hidden'), 'true');
   u.receive({ type: 'busy', value: true });
+  assert.equal(u.$('bar').hidden, true);
+  assert.equal(u.$('spinner').hidden, false);
+  u.receive({ type: 'progress', phase: 'Uploading', count: 10, total: 20 });
+  assert.equal(u.$('spinner').hidden, true);
   assert.equal(u.$('bar').hidden, false);
-  assert.equal(u.$('bar').className, 'indeterminate');
-  u.receive({ type: 'progress', phase: 'Uploading', count: 10, total: 20 }, { type: 'progress', phase: 'Scanning', count: 500 });
+  for (const phase of ['Fetching stored hashes', 'Scanning', 'Comparing', 'Scanning main components']) {
+    u.receive({ type: 'progress', phase, count: 500 });
+    assert.equal(u.$('spinner').hidden, false, phase);
+    assert.equal(u.$('bar').hidden, true, phase);
+    assert.equal(u.$('busy').textContent, phase + ': 500 nodes');
+  }
   const bar = u.$('bar');
-  assert.equal(bar.className, 'indeterminate');
-  assert.equal(u.$('busy').textContent, 'Scanning: 500 nodes');
   for (const a of ['aria-valuenow', 'aria-valuemin', 'aria-valuemax']) assert.equal(bar.hasAttribute(a), false);
   assert.equal(u.$('bar-fill').style.width, '');
+  assert.equal(u.$('busy').getAttribute('role'), 'status');
+  u.receive({ type: 'confirm-new-layers', id: 1, added: 30, total: 40 });
+  assert.equal(u.$('spinner').hidden, true, 'paused for the prompt');
+  u.receive({ type: 'busy', value: false });
+  assert.equal(u.$('spinner').hidden, true);
+  assert.equal(u.$('bar').hidden, true);
 });
 
-test('the indeterminate bar animates only without reduced motion and uses Figma theme variables', () => {
-  assert.match(HTML, /#bar\.indeterminate #bar-fill\{[^}]*animation:bar-slide/);
-  assert.match(HTML, /@media \(prefers-reduced-motion:reduce\)\{[^@]*#bar\.indeterminate #bar-fill\{animation:none/);
+test('the spinner spins only without reduced motion; spinner and bar use Figma theme variables', () => {
+  assert.match(HTML, /<div class="status"><span id="spinner" aria-hidden="true" hidden><\/span><div id="busy" role="status"><\/div><\/div>/);
+  assert.match(HTML, /#spinner\{[^}]*border:2px solid var\(--figma-color-bg-tertiary,[^}]*border-top-color:var\(--figma-color-bg-brand,[^}]*animation:spin/);
+  assert.match(HTML, /@media \(prefers-reduced-motion:reduce\)\{[^@]*#spinner\{animation:none/);
+  assert.doesNotMatch(HTML, /indeterminate|bar-slide/);
   assert.match(HTML, /#bar\{[^}]*var\(--figma-color-bg-tertiary,/);
   assert.match(HTML, /#bar-fill\{[^}]*var\(--figma-color-bg-brand,/);
 });
