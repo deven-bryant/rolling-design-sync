@@ -1,5 +1,5 @@
 export { NodeTable, NodeFiltersBar, SEARCH_DEBOUNCE_MS, type NodeTableProps, type NodeFiltersBarProps, type NodeColumn } from './NodeTable';
-export { NodeDrawer, blockReasonError, describeEvent, BLOCK_REASON_MAX, type NodeDrawerProps } from './NodeDrawer';
+export { NodeDrawer, blockReasonError, describeEvent, BLOCK_REASON_MAX, LIBRARY_LINKS_OFF, type NodeDrawerProps, type NodeRemoval } from './NodeDrawer';
 export { useNodeLiveUpdates, fileEventsUrl, type NodeLiveUpdates, type SpriteOverride } from './live';
 export {
   PAGE_SIZE,
@@ -17,6 +17,7 @@ export {
   useNodeDetail,
   useNodeHistory,
   useSessionRole,
+  useLibraryLinks,
   useReleaseClaim,
   useBlockNode,
   useUnblockNode,
@@ -25,5 +26,5 @@ export {
   type NodeListParams,
 } from './queries';
 export { CATEGORIES, categoryOf, categoriesOf, type Category } from './categories';
-export { whatChanged, nodeMeta, nodePrompt, formatValue, sideLabel, tokenName, timeAgo, timeUntil, changeEntries } from './format';
+export { whatChanged, nodeMeta, nodePrompt, removalPrompt, formatValue, sideLabel, tokenName, timeAgo, timeUntil, changeEntries } from './format';
 export type * from './types';

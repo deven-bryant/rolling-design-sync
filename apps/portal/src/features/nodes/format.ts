@@ -158,3 +158,57 @@ export function nodePrompt({ fileKey, nodeId, name }: { fileKey: string; nodeId:
     `   - CLI: ${cli} block ${nodeId} --file-key ${fileKey} --reason "<why>"`,
   ].join('\n');
 }
+
+/** A component a removed design used, for `removalPrompt`. */
+export interface RemovalPromptUse {
+  componentId?: string;
+  name?: string | null;
+  livePlacements?: number;
+}
+
+/**
+ * A prompt that has an agent remove the code of a removed design (a `kind: "removed"` work item): keep the
+ * components still placed elsewhere, consider removing the unused ones, then clear the root with `subtree: true`.
+ */
+export function removalPrompt({
+  fileKey,
+  nodeId,
+  name,
+  uses = [],
+  warnings = [],
+}: {
+  fileKey: string;
+  nodeId: string;
+  name?: string | null;
+  uses?: readonly RemovalPromptUse[];
+  warnings?: readonly { componentId?: string; livePlacements?: number }[];
+}): string {
+  const label = name ? `"${name}" (${nodeId})` : nodeId;
+  const cli = 'node scripts/rds-agent.js';
+  const useName = (u: RemovalPromptUse) => `"${u.name ?? u.componentId}"`;
+  const kept = uses.filter(u => (u.livePlacements ?? 0) > 0);
+  const unused = uses.filter(u => (u.livePlacements ?? 0) === 0);
+  const warned = warnings.map(w => {
+    const use = uses.find(u => u.componentId === w.componentId);
+    return `   - ${use ? useName(use) : `"${w.componentId}"`}: its main component was removed with the design, but ${plural(w.livePlacements ?? 0, 'instance', 'instances')} still use it — keep its code.`;
+  });
+  return [
+    `The Figma design ${label} in file ${fileKey} was deleted; remove the code that rendered it. Tracked by Rolling Design Sync.`,
+    'Use the rds MCP tools if you have them; otherwise run the CLI from a checkout of rolling-design-sync (needs RDS_API_BASE_URL and RDS_AGENT_TOKEN).',
+    '',
+    `1. Remove the code that rendered ${label}.`,
+    kept.length
+      ? `2. Keep the components it used that are still placed elsewhere: ${kept.map(u => `${useName(u)} (${plural(u.livePlacements ?? 0, 'placement', 'placements')} left)`).join(', ')}.`
+      : '2. None of the components it used are placed anywhere else.',
+    unused.length
+      ? `3. Consider removing the components nothing uses any more: ${unused.map(useName).join(', ')}.`
+      : '3. Every component it used is still placed elsewhere: keep them all.',
+    ...(warned.length ? ['   Warnings:', ...warned] : []),
+    '4. Commit, then read the root\'s contentHash:',
+    `   - MCP: get_node { "fileKey": "${fileKey}", "nodeId": "${nodeId}" }`,
+    `   - CLI: ${cli} nodes show ${nodeId} --file-key ${fileKey}`,
+    '5. Clear the root with subtree: true — that also clears every removed layer under it:',
+    `   - MCP: clear_nodes { "fileKey": "${fileKey}", "items": [{ "nodeId": "${nodeId}", "contentHash": "<contentHash>", "subtree": true }], "commitRef": "<sha>" }`,
+    `   - HTTP (the CLI's clear has no subtree flag): curl -X POST "$RDS_API_BASE_URL/v3/files/${fileKey}/clear" -H "Authorization: Bearer $RDS_AGENT_TOKEN" -H 'Content-Type: application/json' -d '{ "items": [{ "nodeId": "${nodeId}", "contentHash": "<contentHash>", "subtree": true }], "commitRef": "<sha>" }'`,
+  ].join('\n');
+}

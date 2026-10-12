@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router';
 import { useNow } from '../api/hooks/useNow';
-import { Button } from '../components/Button';
+import { Button, ButtonUtility } from '../components/Button';
+import { Icon } from '../components/primitives';
 import { PageHeader } from '../components/PageHeader';
-import { formatCount, timeAgo, useLastSyncClient } from '../features/files';
+import { FileSettingsDrawer, formatCount, timeAgo, useLastSyncClient } from '../features/files';
 import { splitUnder, useFile, useScope } from '../features/nodes';
 import { defaultScope, ScopePanel } from '../features/scopes';
 import { useWorkItems } from '../features/work';
@@ -47,6 +48,7 @@ export function scopePrompt({ fileKey, scopes }: { fileKey: string; scopes: read
     `1. List the work items under the ${scopes.length === 1 ? 'scope' : 'scopes'}; build leaves first, then the composites that contain them:`,
     `   - MCP: list_work_items { "fileKey": "${fileKey}", "under": "${nodeId}", "expand": "instances" }`,
     `   - CLI: ${cli} work --file-key ${fileKey} --under ${nodeId} --expand instances`,
+    '   An item with kind "removed" is design deleted in Figma: remove its code (keep the components in its uses with livePlacements > 0), then clear just its root with subtree: true.',
     "2. Claim each item's nodeIds with a stable worker id; work only on the nodes the claim returns:",
     `   - MCP: claim_nodes { "fileKey": "${fileKey}", "nodeIds": ["<nodeId>"], "worker": "<worker>" }`,
     `   - CLI: ${cli} claim --file-key ${fileKey} --node-ids <nodeId>,… --worker <worker>`,
@@ -104,6 +106,7 @@ export function FileLayout() {
   const { pathname } = useLocation();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const file = useFile(fileKey);
   const scopes = useScope(fileKey, undefined);
   useEffect(() => rememberFile(fileKey), [fileKey]);
@@ -162,6 +165,7 @@ export function FileLayout() {
               Copy agent prompt
             </CopyButton>
           )}
+          <ButtonUtility size="md" icon={<Icon name="settings-01" />} tooltip="File settings" onPress={() => setSettingsOpen(true)} />
           {!several && (
             <Button hierarchy="primary" size="md" href={figmaUrl} target="_blank" rel="noreferrer">
               Open in Figma
@@ -176,6 +180,7 @@ export function FileLayout() {
         onSelectionChange={select}
         onViewNodes={onWork ? nodeIds => void navigate(`${filePath(fileKey, 'nodes')}${query({ under: nodeIds.join(',') })}`) : undefined}
       />
+      <FileSettingsDrawer fileKey={fileKey} isOpen={settingsOpen} onOpenChange={setSettingsOpen} />
       <Outlet context={{ fileKey, scope, scopes: picked, under, scopeViewed: picked.length > 0 } satisfies FileOutlet} />
     </>
   );

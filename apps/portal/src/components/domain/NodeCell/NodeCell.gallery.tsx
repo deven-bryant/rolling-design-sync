@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Badge } from '../../Badge';
 import { Table } from '../../Table';
 import type { GalleryEntry, GalleryExample } from '../../primitives';
 import { NodeCell, figmaNodeCell } from '.';
@@ -56,6 +57,22 @@ export default {
   examples: bothThemes([
     { figma: 'Node cell (Chevron=True)', render: () => <NodeCell {...figmaNodeCell.defaults} className="w-72" /> },
     { figma: 'Node cell (Chevron=False)', render: () => <NodeCell name="Team View" meta="FRAME · 1:95540" className="w-72" /> },
+    {
+      figma: 'Node cell with badges (Removed · Library)',
+      render: () => (
+        <NodeCell
+          name="Files"
+          meta="FRAME · 12:345"
+          badges={
+            <>
+              <Badge color="error">Removed</Badge>
+              <Badge color="gray">Library</Badge>
+            </>
+          }
+          className="w-72"
+        />
+      ),
+    },
     { figma: 'Node tree (depth 0–2)', render: () => <Tree /> },
   ]),
 } satisfies GalleryEntry;

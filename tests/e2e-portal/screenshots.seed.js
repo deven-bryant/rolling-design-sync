@@ -164,6 +164,8 @@ async function seedDemo(api, tokens, shiftClock = async () => {}) {
   ];
   for (const [{ claimId }] of done) await api('DELETE', `/v3/files/${APP.fileKey}/claims/${claimId}`, tokens.agent);
   await sync(APP, appTree(2));
+  // The Settings screen was built, then deleted in Figma: one removed work item.
+  await sync(APP, [], { deletedNodeIds: ['5:1', '5:2', '5:3'] });
   await claim(APP, ['3:1', '3:3', '3:10'], 'claude-1', 'Dashboard');
   await claim(APP, [BUTTON_SECONDARY.id, '20:4', INPUT.id, '21:2'], 'cursor-2', 'Button and Input components');
   await claim(APP, ['4:1', '4:2', '4:5'], 'codex-3', 'Transfer screen');

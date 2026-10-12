@@ -9,6 +9,7 @@ import gallery from './Icon.gallery';
 describe('Icon', () => {
   it('maps every Figma icon in the component map', () => {
     expect(iconNames.sort()).toEqual([
+      'alert-circle',
       'arrow-left',
       'arrow-right',
       'arrow-up-right',
@@ -27,6 +28,7 @@ describe('Icon', () => {
       'placeholder',
       'rows-01',
       'search-lg',
+      'settings-01',
       'sun',
       'users-01',
       'x-close',

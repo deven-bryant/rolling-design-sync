@@ -2,8 +2,10 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NodeDrawer, type NodeDrawerProps } from './NodeDrawer';
-import { breadcrumbs, claimC1, divider, FILE, mockApi, renderWithClient, treeRoutes, type Route } from './test-fixtures';
+import { act } from '@testing-library/react';
+import { toastQueue, ToastRegion } from '../../components/Toast';
+import { LIBRARY_LINKS_OFF, NodeDrawer, type NodeDrawerProps } from './NodeDrawer';
+import { breadcrumbs, claimC1, divider, FILE, mockApi, node, renderWithClient, treeRoutes, type Route } from './test-fixtures';
 
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
 const detail = {
@@ -38,6 +40,17 @@ function renderDrawer(props: Partial<NodeDrawerProps> = {}, routes = drawerRoute
   const onClose = vi.fn();
   const utils = renderWithClient(<NodeDrawer fileKey={FILE} nodeId="1:3" onClose={onClose} role="agent" {...props} />);
   return { api, onClose, ...utils };
+}
+
+function renderWithToasts(props: Partial<NodeDrawerProps> = {}, routes = drawerRoutes()) {
+  const api = mockApi(routes);
+  const utils = renderWithClient(
+    <>
+      <NodeDrawer fileKey={FILE} nodeId="1:3" onClose={vi.fn()} role="agent" {...props} />
+      <ToastRegion />
+    </>,
+  );
+  return { api, ...utils };
 }
 
 describe('NodeDrawer', () => {
@@ -220,6 +233,105 @@ describe('NodeDrawer', () => {
     expect(text).toContain('1:3');
     expect(text).toContain('node scripts/rds-agent.js');
     expect(text).toContain('get_node');
+  });
+
+  describe('removed and library nodes', () => {
+    const removedRoot = node('12:345', { name: 'Files', state: 'dirty', changeType: 'deleted', changedProps: ['childOrder'] });
+    const libUnresolved = node('9:1', { name: 'Lib button', type: 'COMPONENT', library: { key: 'LIBKEY123', resolved: false }, figmaUrl: null });
+    const libResolved = node('9:5', {
+      name: 'Lib card',
+      type: 'COMPONENT',
+      library: { key: 'LIBKEY5', fileKey: 'LIBFILE', resolved: true },
+      figmaUrl: 'https://www.figma.com/design/LIBFILE/Library?node-id=7-7',
+    });
+    const removal = {
+      name: 'Files',
+      uses: [
+        { componentId: '1:10', name: 'Button', livePlacements: 4, placementsRemoved: 2 },
+        { componentId: '1:11', name: 'Pricing card', livePlacements: 0, placementsRemoved: 1 },
+      ],
+      warnings: [{ code: 'main_removed_with_live_placements' as const, componentId: '1:11', livePlacements: 2 }],
+    };
+    const routes = (libraryLinks: boolean) =>
+      drawerRoutes(call => {
+        if (call.path === '/v3/status') return { version: '0.13.1', libraryLinks };
+        for (const n of [removedRoot, libUnresolved, libResolved]) if (call.path === `/v3/files/${FILE}/nodes/${n.nodeId}`) return n;
+        return undefined;
+      });
+
+    afterEach(() => {
+      for (const toast of toastQueue.visibleToasts) act(() => toastQueue.close(toast.key));
+    });
+
+    it('shows the Removal panel above the change list and copies the removal prompt', async () => {
+      const user = userEvent.setup();
+      renderDrawer({ nodeId: '12:345', removal }, routes(false));
+      const dialog = within(await screen.findByRole('dialog'));
+      const panel = within(await dialog.findByRole('group', { name: 'Removed from the design' }));
+      expect(panel.getByText('Remove the code that rendered “Files”. Keep components that are still used.')).toBeTruthy();
+      const items = within(panel.getByRole('list', { name: 'Components it used' })).getAllByRole('listitem');
+      expect(items.map(li => li.textContent)).toEqual(['Pricing cardnone leftLikely unused', 'Button4 placements leftKeep']);
+      expect(panel.getByText('“Pricing card” was deleted from the design but 2 instances still use it.')).toBeTruthy();
+      const order = dialog.getByRole('group', { name: 'Removed from the design' }).compareDocumentPosition(dialog.getByRole('tablist'));
+      expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+      await user.click(panel.getByRole('button', { name: 'Copy removal prompt' }));
+      expect(await panel.findByRole('button', { name: 'Copied' })).toBeTruthy();
+      const text = await navigator.clipboard.readText();
+      expect(text).toContain(`The Figma design "Files" (12:345) in file ${FILE} was deleted; remove the code that rendered it.`);
+      expect(text).toContain('Keep the components it used that are still placed elsewhere: "Button" (4 placements left).');
+      expect(text).toContain('Consider removing the components nothing uses any more: "Pricing card".');
+      expect(text).toContain('"Pricing card": its main component was removed with the design, but 2 instances still use it — keep its code.');
+      expect(text).toContain(`clear_nodes { "fileKey": "${FILE}", "items": [{ "nodeId": "12:345", "contentHash": "<contentHash>", "subtree": true }], "commitRef": "<sha>" }`);
+      expect(text).toContain('node scripts/rds-agent.js nodes show 12:345');
+      expect(text).toContain('"subtree": true');
+    });
+
+    it('has no Removal panel without a removed item', async () => {
+      renderDrawer({ nodeId: '12:345' }, routes(false));
+      const dialog = within(await screen.findByRole('dialog'));
+      expect(await dialog.findByRole('heading', { name: 'Files' })).toBeTruthy();
+      expect(dialog.queryByRole('group', { name: 'Removed from the design' })).toBeNull();
+    });
+
+    it('badges a library node and offers its component key instead of a broken link, with a toast', async () => {
+      const user = userEvent.setup();
+      const { api } = renderWithToasts({ nodeId: '9:1', role: 'viewer' }, routes(false));
+      const dialog = within(await screen.findByRole('dialog'));
+      await waitFor(() => expect(api.find('GET', '/v3/status')).toHaveLength(1));
+      const heading = await dialog.findByRole('heading', { name: /Lib button/ });
+      expect(within(heading).getByText('Library').className).toContain('bg-utility-gray-50');
+      expect(dialog.queryByRole('link', { name: 'Open in Figma' })).toBeNull();
+      const copy = dialog.getByRole('button', { name: 'Copy component key' });
+      expect(copy.className).toContain('ring-primary');
+      await user.click(heading);
+      await act(() => user.hover(copy));
+      expect((await screen.findByRole('tooltip', { hidden: true }, { timeout: 2000 })).textContent).toBe(LIBRARY_LINKS_OFF);
+      await user.click(copy);
+      expect(await navigator.clipboard.readText()).toBe('LIBKEY123');
+      expect(within(await screen.findByRole('region', { name: 'Notifications' })).getByText('Component key copied')).toBeTruthy();
+    });
+
+    it('has no tooltip on Copy component key while library links are on', async () => {
+      const user = userEvent.setup();
+      const { api } = renderDrawer({ nodeId: '9:1' }, routes(true));
+      const dialog = within(await screen.findByRole('dialog'));
+      const copy = await dialog.findByRole('button', { name: 'Copy component key' });
+      await waitFor(() => expect(api.find('GET', '/v3/status')).toHaveLength(1));
+      await user.click(dialog.getByRole('heading', { name: /Lib button/ }));
+      await act(() => user.hover(copy));
+      await new Promise(resolve => setTimeout(resolve, 400));
+      expect(screen.queryByRole('tooltip')).toBeNull();
+    });
+
+    it('opens a resolved library node in its library file', async () => {
+      renderDrawer({ nodeId: '9:5' }, routes(true));
+      const dialog = within(await screen.findByRole('dialog'));
+      const open = await dialog.findByRole('link', { name: 'Open in Figma' });
+      expect(open.getAttribute('href')).toBe(libResolved.figmaUrl);
+      expect(dialog.queryByRole('button', { name: 'Copy component key' })).toBeNull();
+      expect(dialog.getByText('Library')).toBeTruthy();
+    });
   });
 
   it('closes on Escape', async () => {
