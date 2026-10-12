@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { FakeEventSource } from '../../test/fake-event-source';
-import { isLibraryItem, isReference, itemClaim, itemProgress, nodesSummary, WorkFiltersBar, WorkGroupSwitch, WorkTable, type FileClaim, type WorkGroup, type WorkItem } from '.';
+import { isLibraryItem, isReference, isTokensItem, itemClaim, itemProgress, nodesSummary, WorkFiltersBar, WorkGroupSwitch, WorkTable, type FileClaim, type WorkGroup, type WorkItem } from '.';
 
 const NOW = Date.parse('2026-10-01T12:00:00.000Z');
 const FILE = 'AbCdEf123456GhIjKl7890';
@@ -412,5 +412,67 @@ describe('WorkGroupSwitch with one root required', () => {
     expect((await screen.findByRole('tooltip')).textContent).toBe('Select one scope to group by frame.');
     await user.unhover(screen.getByRole('radio', { name: 'By frame' }).parentElement!);
     await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+  });
+});
+
+describe('WorkTable token items', () => {
+  const COLLECTION = `tokens:${'a'.repeat(40)}`;
+  const tokens: WorkItem = {
+    kind: 'tokens',
+    key: COLLECTION,
+    name: 'Semantic',
+    type: 'VARIABLE_COLLECTION',
+    nodeCount: 3,
+    categories: ['token'],
+    changedProps: ['value:Dark'],
+    placements: null,
+    placementsInScope: null,
+    figmaUrl: null,
+    nodeIds: [`token:${'1'.repeat(40)}`],
+    progress: { total: 5, clean: 2 },
+  };
+  const fetchMock = vi.fn<typeof fetch>();
+
+  beforeEach(() => {
+    FakeEventSource.reset();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockImplementation(async input => {
+      const url = new URL(String(input), 'http://portal.test');
+      if (url.pathname === `/v3/files/${FILE}/claims`) return json({ fileKey: FILE, claims: [] });
+      if (url.pathname === `/v3/files/${FILE}/work`) return json({ fileKey: FILE, group: 'component', items: [tokens], nextCursor: null, total: 1 });
+      return new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } });
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fetchMock.mockReset();
+  });
+
+  it('summarises token items in tokens', () => {
+    expect(isTokensItem(tokens)).toBe(true);
+    expect(nodesSummary(tokens)).toEqual({ text: '3 tokens changed', supporting: 'of 5 tokens' });
+    expect(nodesSummary({ ...tokens, progress: { total: 1, clean: 0 } })).toEqual({ text: '1 token changed', supporting: 'of 1 token' });
+    expect(nodesSummary({ ...tokens, progress: { total: 5, clean: 5 } })).toEqual({ text: 'Done', supporting: '5 tokens cleared' });
+  });
+
+  it('renders a token item: Tokens badge, collection type, no placements, progress, and opens the collection', async () => {
+    const onOpenComponent = vi.fn();
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <WorkTable fileKey={FILE} under="tokens" group="component" page={1} onPageChange={() => {}} onOpenComponent={onOpenComponent} />
+      </QueryClientProvider>,
+    );
+    const row = within(await screen.findByRole('row', { name: 'Semantic' }));
+    expect(row.getByText('Tokens').className).toContain('bg-utility-gray-50');
+    expect(row.queryByText('Library')).toBeNull();
+    expect(row.getByText('VARIABLE_COLLECTION')).toBeDefined();
+    expect(row.getAllByText('—')).toHaveLength(2);
+    expect(row.getByText('3 tokens changed')).toBeDefined();
+    expect(row.getByText('token')).toBeDefined();
+    expect(row.getByRole('progressbar', { name: 'Semantic progress' }).getAttribute('aria-valuenow')).toBe('40');
+    fireEvent.click(row.getByText('Semantic'));
+    expect(onOpenComponent).toHaveBeenCalledWith(COLLECTION);
+    await expectNoAxeViolations(container);
   });
 });

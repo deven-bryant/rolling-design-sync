@@ -8,6 +8,7 @@ export const CATEGORIES = [
   'content',
   'structure',
   'prototype',
+  'token',
   'other',
 ] as const;
 
@@ -31,9 +32,10 @@ const RULES: Record<Exclude<Category, 'other'>, readonly string[]> = {
     'componentProperties', 'componentPropertyReferences', 'componentPropertyDefinitions', 'variantProperties',
     'mainComponentId', 'isInstance', 'overrides',
   ],
-  content: ['characters', 'hyperlink', 'vectorPaths', 'vectorNetwork', 'booleanOperation', 'arcData', 'pointCount', 'innerRadius'],
+  content: ['characters', 'hyperlink', 'vectorPaths', 'vectorNetwork', 'booleanOperation', 'arcData', 'pointCount', 'innerRadius', 'description'],
   structure: ['parentId', 'childIds', 'children', 'name'],
   prototype: ['reactions', 'overflowDirection', 'numberOfFixedChildren', 'overlay*'],
+  token: ['value:*'],
 };
 
 const ruleCategories = Object.keys(RULES) as Exclude<Category, 'other'>[];

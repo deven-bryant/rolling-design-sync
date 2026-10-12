@@ -77,7 +77,7 @@ export function NodesPage() {
         filtersAddon={scopeViewed ? <ScopeViewedBadge count={scopes.length} /> : undefined}
         className="gap-4xl"
       />
-      <NodeDrawer fileKey={fileKey} nodeId={nodeId} onClose={() => setNode(null)} />
+      <NodeDrawer fileKey={fileKey} nodeId={nodeId} onClose={() => setNode(null)} onOpenNode={setNode} />
     </>
   );
 }
@@ -132,6 +132,7 @@ export function WorkPage() {
         fileKey={fileKey}
         nodeId={nodeId}
         onClose={() => setNode(null)}
+        onOpenNode={setNode}
         removal={removed && { name: removed.name, uses: removed.uses, warnings: removed.warnings }}
       />
     </>

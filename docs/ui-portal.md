@@ -295,6 +295,16 @@ follows the OS `prefers-color-scheme`, live.
   name, a gray **Library** badge on library nodes, `TYPE · id`, `→ main` for
   instances), State, Change, Categories, What
   changed (first changed prop with its token change, or "N properties"), Agent.
+- **Design tokens** (the `TOKENS` scope, "Design tokens"): selecting it lists
+  its collections (`VARIABLE_COLLECTION · 2 modes`), each expanding to its
+  tokens. Its levels are listed with `fields=…,attrs` so token rows can show
+  their resolved type and code name. A token row: the full name
+  (`Colors/Background/bg-active`), meta `VARIABLE · COLOR · --color-bg-active`
+  (`resolvedType`, then `codeSyntax.WEB` when set), state and change badges as
+  usual, category `token` for mode changes. *What changed* lists the changed
+  modes with their values — `Dark ■ #202527 → ■ #2b3033` (a swatch for colors,
+  plain values otherwise, the target's short name for an alias: `→ gray-800`)
+  — two at most, then `+N modes`.
 - **Agent sprites:** a claimed row shows its agent's sprite (deterministic avatar
   from the worker name). On `claim.created` the sprite appears on the claimed rows
   in view with a short enter animation, idles while the lease runs, and "poofs" on
@@ -326,6 +336,13 @@ follows the OS `prefers-color-scheme`, live.
   remove the code, keep the used components, consider removing the unused
   ones, then clear the root with `subtree: true` (MCP `clear_nodes`, or the
   HTTP call: the CLI's `clear` has no subtree flag).
+- **Design token** drawer: the name with a gray **Token** badge, meta as on
+  its row, "Used by N layers" (`usage.layers`), and one Change List row per
+  changed mode (`value:Light`, `value:Dark`…) with swatches; an alias links to
+  the token it points at (opens that token's drawer). Tokens have no canvas
+  link, so there is no *Open in Figma*; *Copy node prompt* tells the agent to
+  update the code variable named by `codeSyntax` (WEB, else the token name)
+  for each changed mode, then clear.
 - Viewer sessions see the same drawer without the action buttons.
 
 ### Work items — `/ui/files/:fileKey/work`
@@ -350,6 +367,14 @@ follows the OS `prefers-color-scheme`, live.
   the file doesn't track): the **Library** badge, Nodes "Library · not
   tracked", Progress `—`, no Removed or Dirty wording. The row opens the Node
   tree searching its placements (`q=component:<key>`).
+
+- **Token items** (`kind: "tokens"`, one per collection of the design-tokens
+  scope): the collection name with a gray **Tokens** badge, `VARIABLE_COLLECTION`,
+  Placements `—`, Nodes "3 tokens changed" (`Done` once cleared), Progress as
+  usual. The row opens the Node tree on that collection
+  (`under=tokens:<collectionKey>`). *Copy agent prompt* has a line for them:
+  update the code variables (each token's `codeSyntax`, WEB, else the token
+  name) for every changed mode, then clear the tokens.
 
 ### Activity — `/ui/activity` (all files)
 - Live feed: `GET /v3/events` stream (or the file's), newest first, grouped by

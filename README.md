@@ -75,6 +75,9 @@ What that gets you:
 - **Already-built screens aren't new work.** When a sync would add many
   never-seen layers, the plugin asks whether the code already matches them
   before uploading.
+- **Design tokens.** Figma variables are tracked too, mode by mode: change a
+  token's Dark value in the library and that token — not every layer using it —
+  comes back as work, with its code name and how many layers use it.
 - **Works with your agent.** A local MCP server for Claude Code, Cursor and other
   MCP hosts, and a zero-dependency CLI for anything with a shell.
 
@@ -93,6 +96,7 @@ they then show as references, not work.
 |---|---|
 | ![Work items](docs/images/portal-work-items.png) **Work items** — changes grouped by component, with progress, so the shared pieces get built first; search nodes and expand instances like the node tree. A deleted screen that was built is one **Removed** item listing the components it used and which are still placed elsewhere; library components are badged and link to their library file. | ![Change List](docs/images/portal-node-changes.png) **Change List** — each changed property, from what was built to what the design says now, design tokens included. |
 | ![Change History](docs/images/portal-node-history.png) **Change History** — every claim, clear and block on a node, with the commit that built it. | ![Activity](docs/images/portal-activity.png) **Activity** — everything that happened in your files, live; **Claims** shows who holds what right now. |
+| ![Design tokens](docs/images/portal-design-tokens.png) **Design tokens** — collections and tokens like any scope; each changed mode reads at a glance with color swatches, and a token's drawer shows its code name and how many layers use it. | |
 | ![Files](docs/images/portal-files.png) **Files** — every tracked file with what's left to build, and the week's trend: nodes cleared vs the week before, net newly dirty. | ![Connect](docs/images/portal-connect.png) **Connect** — copy-paste setup for Claude Code, Cursor, Devin and the CLI. |
 
 The screenshots are generated from a seeded demo with

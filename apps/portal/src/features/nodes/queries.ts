@@ -4,6 +4,7 @@ import { fileClaimsQueryKey } from '../../api/hooks/useFileClaims';
 import { useStatus } from '../../api/hooks/useStatus';
 import { getSession } from '../../api/session';
 import type { FileClaims, NodeDetail, NodeFilters, NodeItem, NodeLike, NodePage, SessionRole } from './types';
+import { isTokenNodeId } from './format';
 
 /** Rows per top-level page (the design's "25 per page"). */
 export const PAGE_SIZE = 25;
@@ -52,11 +53,20 @@ export function filterParams(filters: NodeFilters, { search = true } = {}): Node
   };
 }
 
+/** A compact listing's fields plus `attrs`: token rows show their resolved type and code name. */
+export const TOKEN_FIELDS =
+  'nodeId,name,type,parentId,isInstance,mainComponentId,component,state,changeType,changedProps,changes,changesKnown,contentHash,figmaUrl,library,claim,blocked,attrs';
+
+/** `fields` for a level under the design-tokens scope (`tokens`, `tokens:<collectionKey>`). */
+const tokenFields = (under: string | number | undefined) =>
+  typeof under === 'string' && splitUnder(under).some(isTokenNodeId) ? { fields: TOKEN_FIELDS } : {};
+
 /** A tree level: `under` and its direct children, in document order, with subtree counts. */
 export function nodePageParams(under: string | undefined, filters: NodeFilters, cursor?: string): NodeListParams {
   const params: NodeListParams = { under, ...filterParams(filters) };
   return {
     ...params,
+    ...tokenFields(params.under),
     depth: params.under ? 1 : undefined,
     include: 'counts',
     sort: 'document',
@@ -66,7 +76,7 @@ export function nodePageParams(under: string | undefined, filters: NodeFilters, 
 }
 
 function childParams(under: string, filters: NodeFilters): NodeListParams {
-  return { under, depth: 1, include: 'counts', sort: 'document', limit: CHILD_PAGE_SIZE, ...filterParams(filters, { search: false }) };
+  return { under, ...tokenFields(under), depth: 1, include: 'counts', sort: 'document', limit: CHILD_PAGE_SIZE, ...filterParams(filters, { search: false }) };
 }
 
 const clean = (params: NodeListParams) =>

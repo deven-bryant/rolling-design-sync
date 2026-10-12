@@ -222,6 +222,7 @@ describe('routes', () => {
     const text = scopePrompt({ fileKey: FILE, scopes: [{ nodeId: '3:4', name: 'Settings' }, { nodeId: '1:2', name: 'Team View' }] });
     expect(text).toContain('Implement the Figma scopes "Settings" (3:4), "Team View" (1:2) in file AbC123');
     expect(text).toContain('An item with kind "removed" is design deleted in Figma: remove its code (keep the components in its uses with livePlacements > 0), then clear just its root with subtree: true.');
+    expect(text).toContain('An item with kind "tokens" is one collection of design tokens: update the code variables (each token\'s codeSyntax, WEB, else the token name) for every changed mode (value:<Mode>), then clear the tokens.');
     expect(text).toContain('"under": "3:4,1:2"');
     expect(text).toContain('--under 3:4,1:2');
     const one = scopePrompt({ fileKey: FILE, scopes: [{ nodeId: '1:2', name: 'Team View' }] });

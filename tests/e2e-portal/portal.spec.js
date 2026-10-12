@@ -5,7 +5,7 @@
 // then signs in as a viewer and an agent. See tests/README.md.
 
 const { test, expect } = require('@playwright/test');
-const { TOKENS, ROOT, FRAME, INSTANCE, MAIN_CHILD, SECOND, REMOVED, seedFile, syncSecondScope, syncRemovedScreen, claim, clear } = require('./fixture');
+const { TOKENS, ROOT, FRAME, INSTANCE, MAIN_CHILD, SECOND, REMOVED, TOKEN_COLLECTION, TOKEN, seedFile, syncSecondScope, syncRemovedScreen, syncTokens, claim, clear } = require('./fixture');
 
 async function signIn(page, token) {
   await page.goto('/ui/sign-in');
@@ -248,4 +248,36 @@ test('a removed screen is one Removed work item; its row opens the Removal panel
   await expect(panel.getByText('Remove the code that rendered “Old screen”. Keep components that are still used.')).toBeVisible();
   await expect(panel.getByRole('listitem').filter({ hasText: 'Button' })).toContainText('Keep');
   await expect(panel.getByRole('button', { name: 'Copy removal prompt' })).toBeVisible();
+});
+
+test('design tokens: browse a collection, read a changed mode, open the token and its work item', async ({ page }) => {
+  const { fileKey } = await seedFile();
+  await syncTokens(fileKey);
+  await signIn(page, TOKENS.viewer);
+  await page.goto(`/ui/files/${fileKey}/nodes?under=tokens`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Design tokens' })).toBeVisible();
+  await row(page, TOKEN_COLLECTION).getByRole('button', { name: 'Expand Semantic' }).click();
+  const token = row(page, TOKEN);
+  await expect(token.getByText('VARIABLE · COLOR · --color-bg-active')).toBeVisible();
+  await expect(token.getByText('Dark', { exact: true })).toBeVisible();
+  await expect(token.getByText('#202527')).toBeVisible();
+  await expect(token.getByText('#2b3033')).toBeVisible();
+
+  await token.getByText('Colors/bg-active', { exact: true }).click();
+  await expect(drawer(page).getByRole('heading', { name: /Colors\/bg-active/ })).toContainText('Token');
+  await expect(drawer(page).getByText('Used by 1 layer')).toBeVisible();
+  await expect(drawer(page).getByRole('link', { name: 'Open in Figma' })).toHaveCount(0);
+  await drawer(page).getByRole('tab', { name: 'Change List' }).click();
+  const change = drawer(page).getByRole('table', { name: 'Change list' }).getByRole('row').nth(1);
+  await expect(change).toContainText('value:Dark');
+  await expect(change).toContainText('#2b3033');
+  await page.keyboard.press('Escape');
+
+  await page.goto(`/ui/files/${fileKey}/work?under=tokens`);
+  const item = page.getByRole('table', { name: 'Work items' }).getByRole('row', { name: 'Semantic' });
+  await expect(item.getByText('Tokens', { exact: true })).toBeVisible();
+  await expect(item.getByText('1 token changed')).toBeVisible();
+  await item.getByText('Semantic', { exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/nodes\\?under=${encodeURIComponent(TOKEN_COLLECTION).replace('%3A', '(%3A|:)')}`));
+  await expect(row(page, TOKEN)).toBeVisible();
 });

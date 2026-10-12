@@ -131,3 +131,68 @@ export function renderWithClient(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   return { client, ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>) };
 }
+
+/* Design tokens: the `tokens` scope, one collection and its variables (40-hex keys, as the plugin sends them). */
+export const COLLECTION = `tokens:${'a'.repeat(40)}`;
+export const BG_ACTIVE = `token:${'1'.repeat(40)}`;
+export const BG_HOVER = `token:${'2'.repeat(40)}`;
+export const GRAY_800 = `token:${'3'.repeat(40)}`;
+export const RADIUS = `token:${'4'.repeat(40)}`;
+
+const variable = (nodeId: string, name: string, attrs: Record<string, unknown>, extra: Partial<NodeItem> = {}) =>
+  node(nodeId, {
+    name,
+    type: 'VARIABLE',
+    parentId: COLLECTION,
+    figmaUrl: null,
+    attrs: { name, resolvedType: 'COLOR', description: '', scopes: ['ALL_SCOPES'], codeSyntax: {}, variableId: 'VariableID:1:1', remote: false, ...attrs },
+    ...extra,
+  });
+
+export const tokensRoot = node('tokens', { name: 'Design tokens', type: 'TOKENS', figmaUrl: null, descendants: { total: 5, dirty: 3, blocked: 0 } });
+export const collection = node(COLLECTION, {
+  name: 'Semantic',
+  type: 'VARIABLE_COLLECTION',
+  parentId: 'tokens',
+  figmaUrl: null,
+  attrs: { name: 'Semantic', modes: ['Light', 'Dark'], remote: false },
+  descendants: { total: 4, dirty: 3, blocked: 0 },
+});
+export const bgActive = variable(
+  BG_ACTIVE,
+  'Colors/Background/bg-active',
+  { codeSyntax: { WEB: '--color-bg-active' }, 'value:Light': '#ffffff', 'value:Dark': '#2b3033' },
+  {
+    state: 'dirty',
+    changeType: 'modified',
+    changedProps: ['value:Dark'],
+    changes: { 'value:Dark': { built: '#202527', now: '#2b3033', category: 'token' } },
+  },
+);
+export const bgHover = variable(
+  BG_HOVER,
+  'Colors/Background/bg-hover',
+  { 'value:Light': '#eeeeee', 'value:Dark': { alias: GRAY_800, name: 'Colors/gray-800' } },
+  {
+    state: 'dirty',
+    changeType: 'modified',
+    changedProps: ['value:Dark'],
+    changes: { 'value:Dark': { built: '#303030', now: { alias: GRAY_800, name: 'Colors/gray-800' }, category: 'token' } },
+  },
+);
+export const radius = variable(
+  RADIUS,
+  'Radius/radius-md',
+  { resolvedType: 'FLOAT', 'value:Compact': 6, 'value:Default': 8, 'value:Comfy': 10 },
+  {
+    state: 'dirty',
+    changeType: 'modified',
+    changedProps: ['value:Comfy', 'value:Compact', 'value:Default'],
+    changes: {
+      'value:Comfy': { built: 12, now: 10, category: 'token' },
+      'value:Compact': { built: 4, now: 6, category: 'token' },
+      'value:Default': { built: 6, now: 8, category: 'token' },
+    },
+  },
+);
+export const gray800 = variable(GRAY_800, 'Colors/gray-800', { 'value:Light': '#2b3033', 'value:Dark': '#2b3033' });

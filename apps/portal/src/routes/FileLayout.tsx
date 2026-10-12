@@ -49,6 +49,7 @@ export function scopePrompt({ fileKey, scopes }: { fileKey: string; scopes: read
     `   - MCP: list_work_items { "fileKey": "${fileKey}", "under": "${nodeId}", "expand": "instances" }`,
     `   - CLI: ${cli} work --file-key ${fileKey} --under ${nodeId} --expand instances`,
     '   An item with kind "removed" is design deleted in Figma: remove its code (keep the components in its uses with livePlacements > 0), then clear just its root with subtree: true.',
+    '   An item with kind "tokens" is one collection of design tokens: update the code variables (each token\'s codeSyntax, WEB, else the token name) for every changed mode (value:<Mode>), then clear the tokens.',
     "2. Claim each item's nodeIds with a stable worker id; work only on the nodes the claim returns:",
     `   - MCP: claim_nodes { "fileKey": "${fileKey}", "nodeIds": ["<nodeId>"], "worker": "<worker>" }`,
     `   - CLI: ${cli} claim --file-key ${fileKey} --node-ids <nodeId>,… --worker <worker>`,
@@ -71,6 +72,7 @@ const typeName = (type: string | null | undefined) => (type ? type.charAt(0) + t
 function ScopeMeta({ fileKey, scope }: { fileKey: string; scope: Scope }) {
   const now = useNow();
   const client = useLastSyncClient(fileKey, scope.lastSyncAt);
+  const tokens = scope.type === 'TOKENS';
   const components = useWorkItems({
     fileKey,
     under: scope.nodeId,
@@ -80,9 +82,10 @@ function ScopeMeta({ fileKey, scope }: { fileKey: string; scope: Scope }) {
   const synced = scope.lastSyncAt ? `synced ${timeAgo(scope.lastSyncAt, now)}${client.data ? ` by ${client.data}` : ''}` : 'never synced';
   const counts = [
     scope.counts?.total !== undefined ? `${formatCount(scope.counts.total)} nodes` : null,
-    components !== undefined ? `${formatCount(components)} components` : null,
+    components !== undefined && !tokens ? `${formatCount(components)} components` : null,
   ].filter(Boolean);
-  return <>{[`${typeName(scope.type)} ${scope.nodeId ?? ''}`, synced, counts.join(', ')].filter(Boolean).join(' · ')}</>;
+  const kind = tokens ? 'Figma variables' : `${typeName(scope.type)} ${scope.nodeId ?? ''}`;
+  return <>{[kind, synced, counts.join(', ')].filter(Boolean).join(' · ')}</>;
 }
 
 /** Several scopes: their summed node counts, the components they use and the latest sync. */
