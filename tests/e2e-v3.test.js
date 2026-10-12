@@ -794,7 +794,7 @@ test('v3 fresh sync: the default listing is compact — changedProps, no added v
   assert.equal(page.truncated, undefined);
   for (const n of page.nodes) {
     assert.deepEqual(Object.keys(n).sort(), ['blocked', 'changeType', 'changedProps', 'changesKnown', 'claim', 'component', 'contentHash', 'figmaUrl',
-      'isInstance', 'mainComponentId', 'name', 'nodeId', 'parentId', 'state', 'type']);
+      'isInstance', 'library', 'mainComponentId', 'name', 'nodeId', 'parentId', 'state', 'type']);
     assert.equal(n.changeType, 'added');
   }
   assert.deepEqual(page.nodes.map(n => [n.nodeId, n.changedProps, n.isInstance, n.mainComponentId]), [
@@ -854,7 +854,7 @@ test('v3 plugin routes: a full sync as the plugin runs it', async () => {
 
   // First scan: nothing stored yet, so the plugin baselines.
   assert.deepEqual(await ok(call('POST', `/v3/files/${fileKey}/exists`, { headers: client, body: { nodeIds: IDS.map(dashed) } })), { present: [], stale: [] });
-  assert.deepEqual(await ok(call('GET', `/v3/files/${fileKey}/hashes`, { headers: client, query: { under: dashed(ROOT) } })), {});
+  assert.deepEqual(await ok(call('GET', `/v3/files/${fileKey}/hashes`, { headers: client, query: { under: dashed(ROOT) } })), { settings: { trackLibraryComponents: true } });
   const baseline = await ok(call('POST', '/v3/files/-/sync', {
     headers: client, query: url, body: { fileName: 'E2E File', rootNodeId: dashed(ROOT), upserts: BUILT.map(dashedUp), markImplemented: true },
   }));
@@ -862,7 +862,7 @@ test('v3 plugin routes: a full sync as the plugin runs it', async () => {
 
   // Re-scan: send only what changed against the stored hashes, tombstone what vanished.
   const stored = await ok(call('GET', '/v3/files/-/hashes', { headers: client, query: url }));
-  assert.deepEqual(Object.keys(stored).sort(), BUILT.map(u => u.nodeId).sort());
+  assert.deepEqual(Object.keys(stored).filter(k => k !== 'settings').sort(), BUILT.map(u => u.nodeId).sort());
   const changed = NOW.filter(u => stored[u.nodeId] !== u.contentHash);
   const edit = await ok(call('POST', `/v3/files/${fileKey}/sync`, { headers: client, body: { fileName: 'E2E File', rootNodeId: ROOT, upserts: changed } }));
   assert.deepEqual(edit, { fileKey, upserted: changed.length, dirty: DIRTY.length, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
@@ -870,7 +870,7 @@ test('v3 plugin routes: a full sync as the plugin runs it', async () => {
   assert.equal(gone.tombstoned, 1);
 
   const hashes = await hashesUnder(fileKey, ROOT);
-  assert.deepEqual(Object.keys(hashes).sort(), NOW.map(u => u.nodeId).filter(id => id !== '2:3').sort());
+  assert.deepEqual(Object.keys(hashes).filter(k => k !== 'settings').sort(), NOW.map(u => u.nodeId).filter(id => id !== '2:3').sort());
   for (const u of NOW.filter(u => u.nodeId !== '2:3')) assert.equal(hashes[u.nodeId], u.contentHash);
   const present = await existing(fileKey, IDS);
   sameSet(present.present, NOW.map(u => u.nodeId).filter(id => id !== '2:3'));
@@ -1207,7 +1207,7 @@ test('v3 sync markImplemented: never-seen nodes are baselined clean; existing an
   const fileKey = newFileKey();
   const bad = await sync(fileKey, { upserts: BUILT, markImplemented: 'yes' });
   assertProblem(bad, 400, 'invalid_parameter');
-  assert.deepEqual(await hashesUnder(fileKey, ROOT), {}, 'a rejected sync writes nothing');
+  assert.deepEqual(await hashesUnder(fileKey, ROOT), { settings: { trackLibraryComponents: true } }, 'a rejected sync writes nothing');
 
   // Existing dirty rows: 2:1 + 3:1 synced without the flag, then 3:1 tombstoned.
   await batch(fileKey, { upserts: BUILT.slice(1, 3) });
