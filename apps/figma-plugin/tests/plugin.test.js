@@ -150,7 +150,7 @@ function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap}=
   if(body&&body.fileKey!==undefined&&body.fileKey!==fileKey)return problem('invalid_body',`body.fileKey '${body.fileKey}' does not match the file key '${fileKey}' in the path.`,'Drop fileKey from the body; the path names the file.');
   if(route==='hashes'){const under=u.searchParams.get('under');if(!under)return problem('invalid_parameter','querystring must have required property \'under\'.');
    const out={};for(const r of subtree(fileKey,under))if(!r.deletedAt)out[r.nodeId]=r.contentHash;
-   if(under==='tokens'&&tokensMap!==false){out.tokens={};for(const r of subtree(fileKey,under))if(!r.deletedAt&&r.nodeId.startsWith('token:'))out.tokens[r.nodeId]={variableId:r.attrs.variableId,remote:r.attrs.remote===true};}
+   if(under==='tokens'&&tokensMap!==false){out.tokens={};for(const r of subtree(fileKey,under))if(!r.deletedAt&&r.nodeId.startsWith('token:'))out.tokens[r.nodeId]={variableId:r.attrs.variableId,remote:r.attrs.remote===true,collectionId:r.parentId??null};}
    if(settings!==null)out.settings=settings===undefined?{trackLibraryComponents:true}:settings;return json(200,out);}
   if(route==='exists'){
    if(!body||!Array.isArray(body.nodeIds)||!body.nodeIds.every(id=>typeof id==='string'&&id))return problem('invalid_body','Body must be { nodeIds }.');
@@ -935,6 +935,33 @@ test('tokens: a stored variable that cannot be checked is kept, and so is its co
  f.api.variables.getVariableByIdAsync=async id=>{if(id==='V:flag')throw new Error('offline');return get(id);};
  server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
  same(tokenSyncs(server)[0].body.deletedNodeIds,[T('8'),T('9')]);
+});
+test('tokens: a token collected in this sync is never deleted, even when its stored id is stale',async()=>{
+ const f=fixture();tokenScene(f);const server=mockServer();const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ server.nodes.get('FILE|'+T('7')).attrs.variableId='V:stale-used';server.nodes.get('FILE|'+T('1')).attrs.variableId='V:stale-active';
+ server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
+ same(tokenSyncs(server)[0].body.deletedNodeIds,[]);
+ for(const id of [T('1'),T('7')])assert.equal(server.nodes.get('FILE|'+id).deletedAt,null,id);
+});
+test('tokens: library tokens not collected are never deleted, nor their collection, even when their stored ids no longer resolve',async()=>{
+ const f=fixture();const t=tokenScene(f);const server=mockServer();const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ // Nothing reaches Primitives any more; brand/red's stored id is a stale import and gray/base is gone from the library.
+ f.child.boundVariables=undefined;t.set('V:hover','Dark',rgb(0,0,0));
+ server.nodes.get('FILE|'+T('7')).attrs.variableId='V:stale-used';t.vars.delete('V:base');
+ server.calls.length=0;r.messages.length=0;await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ same(tokenSyncs(server)[0].body.deletedNodeIds,[]);
+ for(const id of [T('3'),T('5'),T('7'),COL('b')])assert.equal(server.nodes.get('FILE|'+id).deletedAt,null,id);
+});
+test('tokens: a local token is deleted only when it is absent from the listed local variables',async()=>{
+ const f=fixture();const t=tokenScene(f);const server=mockServer();const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ t.vars.delete('V:font');f.api.variables.getLocalVariablesAsync=async()=>{throw new Error('offline');};
+ server.calls.length=0;r.messages.length=0;await r.send({type:'upload',fileUrl:FILE});
+ same(tokenSyncs(server)[0].body.deletedNodeIds,[]);assert.equal(server.nodes.get('FILE|'+T('9')).deletedAt,null);
+ assert.ok(r.messages.find(m=>m.type==='synced').warnings.some(w=>/local variables could not be listed/.test(w)));
 });
 test('tokens: an older server without the token map gets no token deletions',async()=>{
  const f=fixture();const t=tokenScene(f);const server=mockServer({tokensMap:false});const r=runtime(f,server,SETTINGS);

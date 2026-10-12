@@ -155,6 +155,7 @@ const ChecklistCore = (() => {
       Object.keys(bindingsOf(attrs)).forEach(k => keys.add(k));
     }
     LOOKUP_KEYS.forEach(k => keys.delete(k));
+    keys.delete('variableId'); // a token's Figma id, not its design
     const changes = {}, changedProps = [], categories = new Set();
     const at = (attrs, k) => own(attrs, k) ? attrs[k] : undefined;
     for (const k of Array.from(keys).sort()) {
@@ -546,8 +547,9 @@ const DesignChecklist = (() => {
   /* The token set: every variable in the captured records' `resolvedVariables`, every local variable
      (`getLocalVariablesAsync`), the stored tokens' `options.storedVariableIds` (kept current; a null lookup means
      the variable is gone) and, transitively, every variable those values alias. Returns
-     `{ nodes: { [nodeId]: { nodeId, parentId, path, nodeType, name, attrs } }, gone, warnings }` — `gone` holds the
-     variable ids Figma returned null for. Unreadable values are `{ $unreadable: true }` plus a `[token]` warning. */
+     `{ nodes: { [nodeId]: { nodeId, parentId, path, nodeType, name, attrs } }, gone, localKeys, warnings }` — `gone`
+     holds the variable ids Figma returned null for, `localKeys` the keys of the file's local variables (null when
+     they could not be listed). Unreadable values are `{ $unreadable: true }` plus a `[token]` warning. */
   async function collectTokens(api, records, options = {}) {
     const cancelled = () => options.cancelled && options.cancelled();
     const progress = count => { if (options.progress) options.progress('Collecting tokens', count); };
@@ -555,15 +557,17 @@ const DesignChecklist = (() => {
     const stored = new Set(options.storedVariableIds || []);
     const want = id => { if (typeof id === 'string' && id && !seen.has(id)) { seen.add(id); queue.push(id); } };
     const figmaVariables = api.variables || {};
+    let localKeys = null;
     for (const props of records) {
       const used = props && props.resolvedVariables;
       if (used && typeof used === 'object') Object.keys(used).sort().forEach(want);
     }
     if (typeof figmaVariables.getLocalVariablesAsync === 'function') {
-      let locals = [];
+      let locals = [], listed = true;
       try { locals = await figmaVariables.getLocalVariablesAsync() || []; }
-      catch (error) { warnings.add(`${TOKEN_WARNING}local variables could not be listed (${String(error && error.message || error).slice(0,200)}); only used variables are tracked.`); }
+      catch (error) { listed = false; warnings.add(`${TOKEN_WARNING}local variables could not be listed (${String(error && error.message || error).slice(0,200)}); only used variables are tracked.`); }
       for (const v of locals) if (v && typeof v.id === 'string') { variables.set(v.id, v); want(v.id); }
+      if (listed) localKeys = new Set(locals.filter(v => v && typeof v.key === 'string' && v.key).map(v => v.key));
     }
     Array.from(stored).sort().forEach(want);
     let count = 0;
@@ -616,12 +620,14 @@ const DesignChecklist = (() => {
       }
       nodes[nodeId] = { nodeId, parentId: collectionId, path: [TOKENS_ROOT, collectionId], nodeType: 'VARIABLE', name: v.name, attrs };
     }
-    return { nodes, gone, warnings: Array.from(warnings).sort() };
+    return { nodes, gone, localKeys, warnings: Array.from(warnings).sort() };
   }
   /* Plan the tokens scope against `GET …/hashes?under=tokens`. The `tokens` root is always sent (that response
      carries the stored tokens map under `tokens` instead of the root's hash); other nodes only when their hash
-     changed. Deletions: stored tokens whose variable is gone (`collected.gone`), never ones this sync merely did
-     not reach, and stored collections once no stored token is left unaccounted for. Without the `tokens` map
+     changed. Deletions: only a stored local token (`remote: false`) not collected now, absent from the file's local
+     variables (`collected.localKeys`, so never when they could not be listed) and whose stored id is gone
+     (`collected.gone`) — never a collected token nor a library one (a stale imported id is not a deleted variable);
+     a stored collection only once every stored token in it (by `collectionId`) is deleted. Without the `tokens` map
      (an older server) nothing is deleted. `counts` cover variables only; `empty` = nothing collected or stored. */
   function planTokens(collected, stored) {
     const { settings: _settings, tokens: map, ...hashes } = stored && typeof stored === 'object' ? stored : {};
@@ -638,14 +644,16 @@ const DesignChecklist = (() => {
       upserts.push({ ...nodes[id], contentHash });
     }
     if (tokenMap) {
-      let unaccounted = false;
+      const localKeys = collected.localKeys instanceof Set ? collected.localKeys : null;
+      const kept = new Set(); // collections holding a stored token that stays
+      let unplaced = false; // a kept token without a stored collectionId: keep every collection
       for (const id of Object.keys(tokenMap).sort()) {
-        if (nodes[id]) continue;
-        const variableId = tokenMap[id] && tokenMap[id].variableId;
-        if (typeof variableId === 'string' && collected.gone.has(variableId)) { deletedNodeIds.push(id); counts.deleted++; }
-        else unaccounted = true;
+        const entry = tokenMap[id] && typeof tokenMap[id] === 'object' ? tokenMap[id] : {};
+        const goneLocal = entry.remote === false && localKeys !== null && !localKeys.has(id.slice('token:'.length));
+        if (!nodes[id] && goneLocal && typeof entry.variableId === 'string' && collected.gone.has(entry.variableId)) { deletedNodeIds.push(id); counts.deleted++; continue; }
+        if (typeof entry.collectionId === 'string') kept.add(entry.collectionId); else unplaced = true;
       }
-      if (!unaccounted) for (const id of Object.keys(hashes).sort()) if (id.startsWith('tokens:') && !nodes[id]) deletedNodeIds.push(id);
+      if (!unplaced) for (const id of Object.keys(hashes).sort()) if (id.startsWith('tokens:') && !nodes[id] && !kept.has(id)) deletedNodeIds.push(id);
     }
     const empty = !Object.keys(collected.nodes).length && !Object.keys(hashes).some(id => id !== TOKENS_ROOT) && !(tokenMap && Object.keys(tokenMap).length);
     return { upserts, deletedNodeIds, counts, empty };
