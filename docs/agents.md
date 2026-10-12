@@ -264,6 +264,23 @@ MCP: list_work_items { "url": "<link>", "group": "set", "expand": "instances", "
 CLI: node scripts/rds-agent.js work "$LINK" --group set --expand instances --changes names
 ```
 
+### Library components
+
+Nodes of library (remote) components carry `library: { key, fileKey?, resolved }`;
+their `figmaUrl` opens the component in its library file once the server has
+resolved it (`RDS_FIGMA_TOKEN`), else it is `null` — find the component in the
+library by `key`. A file can stop tracking them:
+
+```text
+MCP: update_file_settings { "url": "<link>", "settings": { "trackLibraryComponents": false } }
+CLI: node scripts/rds-agent.js files settings --url "$LINK" --track-library-components false
+```
+
+Then library nodes leave listings, counts and progress (`library=include` or
+`only` still lists them), and with `expand=instances` each library component a
+screen uses is a `kind: "library"` reference item (`tracked: false`, no nodes,
+with `placements`): use the library component as is — nothing to build or clear.
+
 ### The clear loop
 
 1. **Read** the dirty nodes of what you're working on, with the hashes:

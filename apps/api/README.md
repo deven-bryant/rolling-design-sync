@@ -74,12 +74,13 @@ than the path is `400 url_mismatch`; a URL pasted as the key is
 
 | Route | Query / body | Returns |
 |-------|--------------|---------|
-| `GET /v3/status` | — | `{version, store, events, replayHours, plugin: {lastSyncAt, client}}` — newest retained sync; plugin fields null before any sync |
+| `GET /v3/status` | — | `{version, store, events, replayHours, libraryLinks, plugin: {lastSyncAt, client}}` — newest retained sync; plugin fields null before any sync; `libraryLinks`: `RDS_FIGMA_TOKEN` is set |
 | `GET /v3/tokens` | — | `[{class, label, lastUsedAt}]` — no values; last use tracks bearer/session requests in memory per instance and resets on restart |
 | `GET /v3/claims` | — | `{claims: [{fileKey, fileName, claimId, worker, label, expiresAt, createdAt, nodeCount, nodeIds, nodes: [{nodeId, name, type}]}]}` — active claims, soonest expiry first, at most 500 IDs each; `nodes` names the first 3 in document order |
 | `GET /v3/files/{fileKey}/claims` | `url?` | `{fileKey, claims: [{claimId, worker, label, expiresAt, createdAt, nodeCount, nodeIds, nodes}]}` — nodes still leased to each unexpired claim |
 | `GET /v3/files` | — | `{files: [file]}`, most recently synced first |
-| `GET /v3/files/{fileKey}` | `url?` | `file` |
+| `GET /v3/files/{fileKey}` | `url?` | `file` (with `settings`, defaults filled in) |
+| `PATCH /v3/files/{fileKey}` | `{settings: {trackLibraryComponents}, worker?}`, `url?` | `file`; emits `file.settings_changed`; unknown setting `400 invalid_parameter` |
 | `GET /v3/files/{fileKey}/scopes` | `url?` | `{fileKey, scopes: [{nodeId, name, type, deleted, figmaUrl, lastSyncAt, lastSyncCounts, counts}]}` — one per synced root, latest sync |
 | `GET /v3/files/{fileKey}/nodes` | filters (below), `view`, `changes`, `fields`, `include`, `sort`, `limit`, `cursor`, `format?`, `url?` | `{fileKey, nodes: [node], nextCursor, total, truncated?}` |
 | `GET /v3/files/{fileKey}/nodes/{nodeId}` | `fields?`, `changes?`, `url?` | detail node |
@@ -129,7 +130,7 @@ no `x-rds-mcp` / `x-rds-cli` annotations, so they are never agent tools.
 
 | Route | Query / body | Returns |
 |---|---|---|
-| `GET /v3/files/{fileKey}/hashes` | `under` (the scope root; defaults to the `?url=` link's node), `url?` | `{[nodeId]: contentHash}` for the live subtree, `{}` if never synced |
+| `GET /v3/files/{fileKey}/hashes` | `under` (the scope root; defaults to the `?url=` link's node), `url?` | `{[nodeId]: contentHash, settings}` for the live subtree plus the file's settings; only `settings` if never synced |
 | `POST /v3/files/{fileKey}/sync` | `{upserts: [{nodeId, parentId, path, nodeType, name, attrs, contentHash, isInstance?, mainComponentId?}], deletedNodeIds, markImplemented?, fileName?, rootNodeId?}`; `url?` | `{fileKey, upserted, dirty, tombstoned, autoResolved, skippedInstances, baselined?}` |
 | `POST /v3/files/{fileKey}/exists` | `{nodeIds}` (max 5000); `url?` | `{present, stale}` |
 
