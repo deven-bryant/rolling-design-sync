@@ -169,13 +169,16 @@ function mockServer({token='secret',agentToken='agent',fail}={}) {
  };
  return {fetch,calls,nodes};
 }
+/* `choice` answers the "already built?" prompt like the UI would ('new' unless a test sets r.choice). */
 function runtime(f,server,stored) {
  const messages=[];const storage=new Map(Object.entries(stored||{}));
+ const out={choice:'new'};
  const api={...f.api,currentPage:{selection:[f.root]},showUI:()=>{},
   clientStorage:{getAsync:async k=>storage.get(k),setAsync:async(k,v)=>{storage.set(k,v);}},
-  ui:{postMessage:m=>{messages.push(m);if(m.type==='yield')queueMicrotask(()=>api.ui.onmessage({type:'yield-ack',id:m.id}));}}};
+  ui:{postMessage:m=>{messages.push(m);if(m.type==='yield')queueMicrotask(()=>api.ui.onmessage({type:'yield-ack',id:m.id}));
+   if(m.type==='confirm-new-layers'&&out.choice)queueMicrotask(()=>api.ui.onmessage({type:'new-layers-choice',id:m.id,choice:out.choice}));}}};
  const ctx={figma:api,__html__:'',setTimeout,fetch:server.fetch,module:{exports:{}}};vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../code.js'),'utf8'),ctx);
- return {api,messages,storage,send:async m=>{messages.length=0;await api.ui.onmessage(m);return messages;}};
+ return Object.assign(out,{api,messages,storage,send:async m=>{messages.length=0;await api.ui.onmessage(m);return messages;}});
 }
 const SETTINGS={fds_upload_settings_v1:{baseUrl:'https://api.example.test',token:'secret'}};
 const FILE='https://www.figma.com/design/FILE/Design';
@@ -317,7 +320,7 @@ test('instances are uploaded as placement rows; their descendants and nested ins
  assert.ok(batch.body.upserts.filter(u=>u.nodeId!=='1:3').every(u=>u.isInstance===undefined&&u.mainComponentId===undefined));
  assert.equal(server.nodes.get('FILE|1:3').mainComponentId,'3:1');assert.equal(server.nodes.has('FILE|I1:3;2:2'),false);assert.equal(done.result.skippedInstances,0);
  // Main-resolution is unchanged: both mains (outer + nested) are resolved; the remote mains cannot be imported in this mock: reported, not uploaded, not blocking.
- same(done.mains,{resolved:2,scanned:0,present:0,stale:0,unresolved:2,scannedNodes:0});assert.match(done.warnings.join(' '),/\[main component\] 3:1/);assert.match(done.warnings.join(' '),/\[main component\] 3:2/);
+ same(done.mains,{resolved:2,scanned:0,present:0,stale:0,unresolved:2,scannedNodes:0,librarySkipped:0});assert.match(done.warnings.join(' '),/\[main component\] 3:1/);assert.match(done.warnings.join(' '),/\[main component\] 3:2/);
 });
 test('unsaved settings sent with the upload are persisted and used',async()=>{
  const f=fixture();const server=mockServer();const r=runtime(f,server);
@@ -401,7 +404,7 @@ test('instance whose main lives on another page: the main is lazily loaded and i
  await r.send({type:'upload',fileUrl:FILE});
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
  const done=r.messages.find(m=>m.type==='synced');
- same(done.mains,{resolved:2,scanned:2,present:0,stale:0,unresolved:0,scannedNodes:5});// Button(3 incl. nested instance)+Icon(2)
+ same(done.mains,{resolved:2,scanned:2,present:0,stale:0,unresolved:0,scannedNodes:5,librarySkipped:0});// Button(3 incl. nested instance)+Icon(2)
  same(server.calls.map(c=>[c.method,c.path]),[['GET',HASHES],['POST',EXISTS],['POST',EXISTS],['POST',SYNC]]);
  same(server.calls[1].body,{fileKey:'FILE',nodeIds:['8:1']});same(server.calls[2].body,{fileKey:'FILE',nodeIds:['9:1']});
  same([...server.nodes.keys()].sort(),['FILE|1:1','FILE|1:2','FILE|1:5','FILE|1:6','FILE|8:1','FILE|8:2','FILE|8:3','FILE|9:1','FILE|9:2']);
@@ -412,11 +415,11 @@ test('instance whose main lives on another page: the main is lazily loaded and i
  assert.equal(done.warnings.length,0);
  // Second sync: both mains are present -> nothing re-scanned, nothing re-uploaded.
  lib.loads.length=0;server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
- const again=r.messages.find(m=>m.type==='synced');same(again.mains,{resolved:1,scanned:0,present:1,stale:0,unresolved:0,scannedNodes:0});// Icon is only reachable through Button, which is present
+ const again=r.messages.find(m=>m.type==='synced');same(again.mains,{resolved:1,scanned:0,present:1,stale:0,unresolved:0,scannedNodes:0,librarySkipped:0});// Icon is only reachable through Button, which is present
  same(server.calls.map(c=>c.path),[HASHES,EXISTS]);same(lib.loads,[]);
  // Editing the present main is NOT picked up here (its own scope sync does that); a deleted row is re-scanned.
  server.nodes.get('FILE|8:1').deletedAt='now';server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
- same(r.messages.find(m=>m.type==='synced').mains,{resolved:2,scanned:1,present:1,stale:0,unresolved:0,scannedNodes:3});same(lib.loads,['8:1']);// Button re-scanned, Icon found present
+ same(r.messages.find(m=>m.type==='synced').mains,{resolved:2,scanned:1,present:1,stale:0,unresolved:0,scannedNodes:3,librarySkipped:0});same(lib.loads,['8:1']);// Button re-scanned, Icon found present
 });
 test('a main already present in the DB is not re-scanned; mains inside the scope are not re-checked',async()=>{
  const f=fixture();const lib=library(f);
@@ -427,7 +430,7 @@ test('a main already present in the DB is not re-scanned; mains inside the scope
  server.calls.length=0;
  const r=runtime({...f,api:lib.api},server,SETTINGS);await r.send({type:'upload',fileUrl:FILE});
  const done=r.messages.find(m=>m.type==='synced');
- same(done.mains,{resolved:2,scanned:0,present:1,stale:0,unresolved:0,scannedNodes:0});
+ same(done.mains,{resolved:2,scanned:0,present:1,stale:0,unresolved:0,scannedNodes:0,librarySkipped:0});
  same(server.calls.find(c=>c.path===EXISTS).body.nodeIds,['8:1']);same(lib.loads,[]);
  same(server.calls.find(c=>c.path===SYNC).body.upserts.map(u=>u.nodeId).sort(),['1:1','1:2','1:5','1:7','1:8']);
 });
@@ -445,7 +448,7 @@ test('a main stored before instance support is re-scanned and backfills its inst
  await r.send({type:'upload',fileUrl:FILE});
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
  const done=r.messages.find(m=>m.type==='synced');
- same(done.mains,{resolved:2,scanned:1,present:1,stale:1,unresolved:0,scannedNodes:3});// stale Button re-scanned; Icon present and current
+ same(done.mains,{resolved:2,scanned:1,present:1,stale:1,unresolved:0,scannedNodes:3,librarySkipped:0});// stale Button re-scanned; Icon present and current
  same(lib.loads,['8:1']);// one load for the two Button placements (dedup)
  same(server.calls.map(c=>c.path),[HASHES,EXISTS,EXISTS,SYNC]);
  same(server.calls[1].body.nodeIds,['8:1']);same(server.calls[2].body.nodeIds,['9:1']);// Icon is re-checked only because Button was re-scanned
@@ -454,7 +457,7 @@ test('a main stored before instance support is re-scanned and backfills its inst
  assert.equal(server.nodes.get('FILE|8:1').captureVersion,CAPTURE_VERSION);
  // Third sync: everything is current again, so nothing is re-scanned.
  lib.loads.length=0;server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
- same(r.messages.find(m=>m.type==='synced').mains,{resolved:1,scanned:0,present:1,stale:0,unresolved:0,scannedNodes:0});
+ same(r.messages.find(m=>m.type==='synced').mains,{resolved:1,scanned:0,present:1,stale:0,unresolved:0,scannedNodes:0,librarySkipped:0});
  same(server.calls.map(c=>c.path),[HASHES,EXISTS]);same(lib.loads,[]);
 });
 test('a problem while re-uploading a stale main is shown as title and hint; the stale row is left as it was',async()=>{
@@ -480,7 +483,7 @@ test('a stale main reached through a cycle is re-scanned once per run',async()=>
  lib.loads.length=0;server.calls.length=0;
  await r.send({type:'upload',fileUrl:FILE});
  const done=r.messages.find(m=>m.type==='synced');
- same(done.mains,{resolved:2,scanned:2,present:0,stale:2,unresolved:0,scannedNodes:4});
+ same(done.mains,{resolved:2,scanned:2,present:0,stale:2,unresolved:0,scannedNodes:4,librarySkipped:0});
  same(lib.loads,['7:1','7:2']);// A re-scanned once even though B references it again
 });
 test('a reference cycle between mains terminates with one scan per main',async()=>{
@@ -490,7 +493,7 @@ test('a reference cycle between mains terminates with one scan per main',async()
  lib.instance('1:5',f.root,a);
  const server=mockServer();const r=runtime({...f,api:lib.api},server,SETTINGS);await r.send({type:'upload',fileUrl:FILE});
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
- const done=r.messages.find(m=>m.type==='synced');same(done.mains,{resolved:2,scanned:2,present:0,stale:0,unresolved:0,scannedNodes:5});
+ const done=r.messages.find(m=>m.type==='synced');same(done.mains,{resolved:2,scanned:2,present:0,stale:0,unresolved:0,scannedNodes:5,librarySkipped:0});
  same(lib.loads,['7:1','7:2']);same([...server.nodes.keys()].sort(),['FILE|1:1','FILE|1:2','FILE|1:5','FILE|7:1','FILE|7:2','FILE|7:3','FILE|7:4','FILE|7:5']);
  assert.equal(server.calls.filter(c=>c.path===EXISTS).length,2);
 });
@@ -503,7 +506,7 @@ test('remote library mains fall back to importComponentByKeyAsync; unresolvable 
  const imports=[];const api={...lib.api,importComponentByKeyAsync:async key=>{imports.push(key);if(key==='LIB')return remoteMain;throw new Error('not found');}};
  const server=mockServer();const r=runtime({...f,api},server,SETTINGS);await r.send({type:'upload',fileUrl:FILE});
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
- const done=r.messages.find(m=>m.type==='synced');same(done.mains,{resolved:2,scanned:1,present:0,stale:0,unresolved:1,scannedNodes:2});
+ const done=r.messages.find(m=>m.type==='synced');same(done.mains,{resolved:2,scanned:1,present:0,stale:0,unresolved:1,scannedNodes:2,librarySkipped:0});
  same(imports,['LIB','GONE']);same([...server.nodes.keys()].sort(),['FILE|1:1','FILE|1:2','FILE|1:5','FILE|1:6','FILE|R:1','FILE|R:2']);
  assert.equal(server.nodes.get('FILE|1:6').mainComponentId,'R:9');// placement is recorded even when its main could not be loaded
  assert.equal(done.warnings.length,1);assert.match(done.warnings[0],/^\[main component\] R:9: main component "Missing" could not be loaded/);

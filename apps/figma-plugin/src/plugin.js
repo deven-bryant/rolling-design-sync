@@ -4,6 +4,12 @@ const DesignChecklist = (() => {
   const SETTINGS_KEY = 'fds_upload_settings_v1';
   const BATCH_CHARS = 2000000; // JSON chars per …/sync request, well under the API's 64 MB body limit.
   const EXISTS_IDS = 1000; // node ids per …/exists request (API cap is 5000).
+  // "Already built?" prompt: asked before uploading when a sync adds at least NEW_LAYERS_MIN never-seen
+  // scope layers that are also at least NEW_LAYERS_SHARE of the scope's tracked layers (library excluded).
+  const NEW_LAYERS_MIN = 25;
+  const NEW_LAYERS_SHARE = 0.5;
+  const manyNewLayers = layers => layers.added >= NEW_LAYERS_MIN && layers.added >= NEW_LAYERS_SHARE * layers.tracked;
+  const MAIN_COUNTS = () => ({ resolved: 0, scanned: 0, present: 0, stale: 0, unresolved: 0, scannedNodes: 0, librarySkipped: 0 });
   // build.js defines PLUGIN_VERSION from package.json when it bundles code.js.
   const VERSION = typeof PLUGIN_VERSION === 'string' ? PLUGIN_VERSION : 'dev';
   const CLIENT = 'plugin/' + VERSION;
@@ -190,8 +196,10 @@ const DesignChecklist = (() => {
   }
   /* Diff the scanned scope against the server's stored `{nodeId: contentHash}` map.
      Instances are tracked as placement rows (own props + `mainComponentId`); nodes inside an instance
-     (any strict ancestor is an INSTANCE) are not. Each node's hash covers its own props only. */
-  function planDelta(snapshot, stored) {
+     (any strict ancestor is an INSTANCE) are not. Each node's hash covers its own props only.
+     Records under a remote (library) main component or set — or every record, with `options.library` —
+     carry `library: true`. `layers` counts the tracked and never-seen records that are not library ones. */
+  function planDelta(snapshot, stored, options = {}) {
     const nodes = snapshot.nodes, hashes = stored && typeof stored === 'object' ? stored : {};
     const within = new Map(); // nodeId -> true when the node is an instance or lives inside one
     const withinInstance = id => {
@@ -202,6 +210,16 @@ const DesignChecklist = (() => {
       return value;
     };
     const insideInstance = id => { const record = nodes[id]; return !!(record && record.props.parentId && withinInstance(record.props.parentId)); };
+    const libraryMemo = new Map();
+    const underLibrary = id => {
+      if (libraryMemo.has(id)) return libraryMemo.get(id);
+      const record = nodes[id];
+      const value = !record ? false : options.library === true ? true
+        : ['COMPONENT','COMPONENT_SET'].includes(record.type) && !!record.component && record.component.remote === true ? true
+        : record.props.parentId ? underLibrary(record.props.parentId) : false;
+      libraryMemo.set(id, value);
+      return value;
+    };
     const chains = new Map();
     const pathOf = id => { // ancestor ids root-first, from the page down to the node's parent
       if (chains.has(id)) return chains.get(id);
@@ -212,23 +230,27 @@ const DesignChecklist = (() => {
     };
     const upserts = [], tracked = new Set();
     let changed = 0, added = 0, unchanged = 0, skippedInstances = 0, instances = 0;
+    const layers = { tracked: 0, added: 0 };
     for (const id of Object.keys(nodes).sort()) {
       if (insideInstance(id)) { skippedInstances++; continue; }
       tracked.add(id);
       const record = nodes[id];
       const isInstance = record.type === 'INSTANCE';
       if (isInstance) instances++;
+      const library = underLibrary(id);
+      if (!library) layers.tracked++;
       const contentHash = C.contentHash(record.props);
       const before = hashes[id];
       if (before === contentHash) { unchanged++; continue; }
-      if (before === undefined) added++; else changed++;
+      if (before === undefined) { added++; if (!library) layers.added++; } else changed++;
       const upsert = { nodeId: id, parentId: record.props.parentId || null, path: pathOf(id), nodeType: record.type,
         name: record.name, attrs: record.props, contentHash };
       if (isInstance) { upsert.isInstance = true; upsert.mainComponentId = record.component && record.component.id || null; }
+      if (library) upsert.library = true;
       upserts.push(upsert);
     }
     const deletedNodeIds = Object.keys(hashes).filter(id => !tracked.has(id)).sort();
-    return { upserts, deletedNodeIds, counts: { scanned: Object.keys(nodes).length, tracked: tracked.size, changed, added, deleted: deletedNodeIds.length, unchanged, instances, skippedInstances } };
+    return { upserts, deletedNodeIds, layers, counts: { scanned: Object.keys(nodes).length, tracked: tracked.size, changed, added, deleted: deletedNodeIds.length, unchanged, instances, skippedInstances } };
   }
   function normalizeBaseUrl(value) {
     const url = String(value || '').trim().replace(/\/+$/, '');
@@ -274,6 +296,8 @@ const DesignChecklist = (() => {
      capture, so their instance placements are missing), are loaded on demand (`getNodeByIdAsync` loads only
      the page that holds them; remote mains are imported by key) and their subtrees scanned with the scope
      rules. The staleness threshold is the server's; the plugin only reads the ids it reports.
+     Records scanned under a remote main carry `library: true`. With `options.trackLibrary === false`
+     (the file's setting) remote mains are neither checked, imported nor scanned: `counts.librarySkipped`.
      Returns the upserts for every newly scanned main plus counts + warnings. Never loads all pages. */
   async function resolveMains(api, http, config, snapshot, options = {}) {
     const cancelled = () => options.cancelled && options.cancelled();
@@ -284,12 +308,15 @@ const DesignChecklist = (() => {
     const mainQueue = [];
     const upserts = [], warnings = new Set();
     const refs = new Map(); // mainId -> {id,key,name,remote}
-    const counts = { resolved: 0, scanned: 0, present: 0, stale: 0, unresolved: 0, scannedNodes: 0 };
+    const counts = MAIN_COUNTS();
+    const trackLibrary = options.trackLibrary !== false;
     let unchecked = [];
     const collect = mains => {
       for (const id of Object.keys(mains || {})) {
         if (refs.has(id)) continue;
-        refs.set(id, mains[id]); counts.resolved++;
+        refs.set(id, mains[id]);
+        if (!trackLibrary && mains[id] && mains[id].remote === true) { counts.librarySkipped++; continue; }
+        counts.resolved++;
         if (!capturedMains.has(id)) unchecked.push(id);
       }
     };
@@ -337,7 +364,7 @@ const DesignChecklist = (() => {
           progress: count => progress('Scanning main components', counts.scannedNodes + count) });
         for (const w of captured.warnings) warnings.add(w);
         for (const nodeId of Object.keys(captured.nodes)) capturedMains.add(nodeId);
-        const plan = planDelta(captured, {});
+        const plan = planDelta(captured, {}, { library: ref.remote === true || main.remote === true });
         for (const up of plan.upserts) upserts.push(up);
         counts.scanned++; counts.scannedNodes += plan.counts.scanned;
         collect(captured.mains);
@@ -349,22 +376,34 @@ const DesignChecklist = (() => {
      (when `options.api` is given) → upload only changed/new nodes + tombstones.
      `options.markImplemented: true` asks the server to insert never-seen nodes as already implemented
      (first-scan baseline); it is sent on every batch of the run and `result.baselined` sums the counts.
-     Every batch also carries `fileName` (`options.fileName`, the document name) and `rootNodeId` (the scope). */
+     Every batch also carries `fileName` (`options.fileName`, the document name) and `rootNodeId` (the scope).
+     The hashes response's `settings.trackLibraryComponents` (missing → true) decides whether remote mains are
+     scanned. Without `markImplemented`, a plan that adds many never-seen layers (`manyNewLayers`) awaits
+     `options.confirmNewLayers({ added, total })`: 'implemented' continues with `markImplemented`, 'new'
+     continues unchanged, anything else stops before uploading. */
   async function sync(http, settings, snapshot, options = {}) {
     const config = validateSettings(settings);
     const limit = options.batchChars || BATCH_CHARS;
-    const markImplemented = options.markImplemented === true;
+    let markImplemented = options.markImplemented === true;
     const cancelled = () => options.cancelled && options.cancelled();
     const progress = (phase, count, total) => { if (options.progress) options.progress(phase, count, total); };
     progress('Fetching stored hashes', 0);
     const stored = await request(http, config, filePath(snapshot.fileKey, 'hashes') + '?under=' + encodeURIComponent(snapshot.scopeId));
     if (!stored || typeof stored !== 'object' || Array.isArray(stored)) throw new Error('API returned no hash map.');
     if (cancelled()) throw new Error('Sync cancelled before uploading. Nothing changed on the server.');
-    const plan = planDelta(snapshot, stored);
+    const { settings: fileSettings, ...hashes } = stored; // `settings` is never a node id
+    const trackLibrary = !(fileSettings && typeof fileSettings === 'object' && fileSettings.trackLibraryComponents === false);
+    const plan = planDelta(snapshot, hashes);
     progress('Comparing', plan.counts.tracked);
-    let mains = { counts: { resolved: 0, scanned: 0, present: 0, stale: 0, unresolved: 0, scannedNodes: 0 }, upserts: [], warnings: [] };
+    if (!markImplemented && options.confirmNewLayers && manyNewLayers(plan.layers)) {
+      const choice = await options.confirmNewLayers({ added: plan.layers.added, total: plan.layers.tracked });
+      if (choice === 'implemented') markImplemented = true;
+      else if (choice !== 'new') throw Object.assign(new Error('Sync cancelled. Nothing was uploaded.'), { notice: true });
+    }
+    if (cancelled()) throw new Error('Sync cancelled before uploading. Nothing changed on the server.');
+    let mains = { counts: MAIN_COUNTS(), upserts: [], warnings: [] };
     if (options.api) {
-      mains = await resolveMains(options.api, http, config, snapshot, { cancelled, progress, pause: options.pause, mainNodes: options.mainNodes });
+      mains = await resolveMains(options.api, http, config, snapshot, { cancelled, progress, pause: options.pause, mainNodes: options.mainNodes, trackLibrary });
       if (blockingWarnings(mains.warnings).length) throw new Error('Main components not uploaded because some properties could not be read: ' + blockingWarnings(mains.warnings).slice(0,3).join(' '));
     }
     const batchPath = filePath(snapshot.fileKey, 'sync');
@@ -390,15 +429,19 @@ const DesignChecklist = (() => {
       batch.push(upsert); size += chars;
     }
     await flush();
-    return { fileKey: snapshot.fileKey, scopeId: snapshot.scopeId, markImplemented, batches, ...plan.counts, mains: mains.counts, mainWarnings: mains.warnings, result };
+    return { fileKey: snapshot.fileKey, scopeId: snapshot.scopeId, markImplemented, trackLibraryComponents: trackLibrary, batches, ...plan.counts, mains: mains.counts, mainWarnings: mains.warnings, result };
   }
   function start(api, http = (...args) => fetch(...args)) {
-    let scope = null, busy = false, cancelled = false, waitId = 0;
-    const waiters = new Map();
+    let scope = null, busy = false, cancelled = false, waitId = 0, choiceId = 0;
+    const waiters = new Map(), choices = new Map();
     const send = data => api.ui.postMessage(data);
     const pause = () => new Promise(resolve => {
       const id = ++waitId; waiters.set(id, resolve); send({ type: 'yield', id });
     });
+    const confirmNewLayers = layers => new Promise(resolve => {
+      const id = ++choiceId; choices.set(id, resolve); send({ type: 'confirm-new-layers', id, ...layers });
+    });
+    const answer = (id, choice) => { const resolve = choices.get(id); if (resolve) { choices.delete(id); resolve(choice); } };
     async function loadSettings() {
       try {
         const stored = await api.clientStorage.getAsync(SETTINGS_KEY);
@@ -437,7 +480,8 @@ const DesignChecklist = (() => {
     }
     api.ui.onmessage = async msg => {
       if (msg.type === 'yield-ack') { const resolve = waiters.get(msg.id); if (resolve) { waiters.delete(msg.id); resolve(); } return; }
-      if (msg.type === 'cancel') { cancelled = true; return; }
+      if (msg.type === 'new-layers-choice') { answer(msg.id, msg.choice); return; }
+      if (msg.type === 'cancel') { cancelled = true; for (const id of Array.from(choices.keys())) answer(id, 'cancel'); return; }
       if (busy) { send({ type: 'error', message: 'An operation is already running.' }); return; }
       busy = true; cancelled = false; send({ type: 'busy', value: true });
       try {
@@ -457,19 +501,19 @@ const DesignChecklist = (() => {
           const mainNodes = new Map();
           const snapshot = await stableCapture(key, mainNodes);
           if (blockingWarnings(snapshot.warnings).length) throw new Error('Snapshot not uploaded because some properties could not be read: ' + blockingWarnings(snapshot.warnings).slice(0,3).join(' '));
-          const synced = await sync(http, settings, snapshot, { cancelled: () => cancelled, api, pause, mainNodes, fileName: api.root.name,
+          const synced = await sync(http, settings, snapshot, { cancelled: () => cancelled, api, pause, mainNodes, fileName: api.root.name, confirmNewLayers,
             markImplemented: msg.markImplemented === true,
             progress: (phase, count, total) => send(progressMessage(phase, count, total)) });
           send({ type: 'synced', ...synced, warnings: snapshot.warnings.concat(synced.mainWarnings) });
         } else {
           throw new Error('Unknown action: ' + msg.type);
         }
-      } catch (e) { send({ type: 'error', message: e.message || String(e) }); }
+      } catch (e) { send({ type: e && e.notice ? 'notice' : 'error', message: e && e.message || String(e) }); }
       finally { busy = false; send({ type: 'busy', value: false }); }
     };
     try { scope = selected(); send(scopeState()); } catch (_) { send({ type: 'notice', message: 'Select a section or frame, then click Use selection.' }); }
   }
-  return { capture, planDelta, resolveMains, sync, validateSettings, start };
+  return { capture, planDelta, resolveMains, sync, validateSettings, start, NEW_LAYERS_MIN, NEW_LAYERS_SHARE };
 })();
 if (typeof figma !== 'undefined') DesignChecklist.start(figma);
 if (typeof module !== 'undefined') module.exports = DesignChecklist;
