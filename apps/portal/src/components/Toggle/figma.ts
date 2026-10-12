@@ -20,6 +20,18 @@ export const figmaToggle = {
       code: '<Toggle size="sm" isSelected supportingText="…">…</Toggle>',
     },
     {
+      nodeId: '111:7872',
+      key: '97b8d2384b727c0f625b1a90ac8209d4b87b820b',
+      name: 'Type=Default, Pressed=True, Size=sm, Text=False, State=Default',
+      code: '<Toggle size="sm" isSelected aria-label="…" />',
+    },
+    {
+      nodeId: '111:7904',
+      key: '1481ea37c868e0a9de3e20e2137ab9a41118af9b',
+      name: 'Type=Default, Pressed=False, Size=sm, Text=False, State=Default',
+      code: '<Toggle size="sm" aria-label="…" />',
+    },
+    {
       nodeId: '111:7900',
       key: '9cddb275cd2959ae35f115c3fef8b58083e10447',
       name: 'Type=Default, Pressed=False, Size=md, Text=False, State=Default',
