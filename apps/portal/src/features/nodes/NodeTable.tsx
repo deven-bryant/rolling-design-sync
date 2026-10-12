@@ -10,15 +10,16 @@ import { CategoryBadges } from '../../components/domain/CategoryBadges';
 import { ChangeBadge } from '../../components/domain/ChangeBadge';
 import { NodeCell } from '../../components/domain/NodeCell';
 import { StateBadge } from '../../components/domain/StateBadge';
+import { TokenValue } from '../../components/domain/TokenValue';
 import { Input } from '../../components/Input';
 import { Menu } from '../../components/Menu';
 import { Pagination } from '../../components/Pagination';
 import { Select, SelectItem } from '../../components/Select';
 import { Table, TextCell } from '../../components/Table';
 import { Toggle } from '../../components/Toggle';
-import { cx, Icon, Text } from '../../components/primitives';
+import { cx, Icon, Text, VisuallyHidden } from '../../components/primitives';
 import { CATEGORIES, categoriesOf, type Category } from './categories';
-import { nodeMeta, timeAgo, whatChanged } from './format';
+import { isTokenNodeId, nodeMeta, timeAgo, tokenMeta, tokenModeChanges, tokenValueView, whatChanged, type TokenModeChange } from './format';
 import { useNodeLiveUpdates, type NodeLiveUpdates } from './live';
 import { filterParams, nodePageParams, PAGE_SIZE, splitUnder, useChildNodes, useFile, useNodePage, useScope } from './queries';
 import type { ChangeFilter, FileClaim, NodeFilters, NodeItem, StateFilter } from './types';
@@ -50,6 +51,7 @@ const CHANGE_OPTIONS: { id: ChangeFilter | 'any'; label: string }[] = [
 const CATEGORY_OPTIONS: { id: Category | 'any'; label: string }[] = [{ id: 'any', label: 'Any' }, ...CATEGORIES.map(c => ({ id: c, label: c }))];
 const NODE_TYPES = [
   'FRAME', 'GROUP', 'SECTION', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE', 'TEXT', 'RECTANGLE', 'ELLIPSE', 'LINE', 'VECTOR', 'BOOLEAN_OPERATION',
+  'VARIABLE_COLLECTION', 'VARIABLE',
 ];
 const TYPE_OPTIONS = [{ id: 'any', label: 'Any' }, ...NODE_TYPES.map(t => ({ id: t, label: t }))];
 
@@ -204,6 +206,39 @@ function AgentColumn({ node }: { node: NodeItem }) {
   return <AgentCell worker="—" when="unclaimed" avatar={false} />;
 }
 
+/** How many changed modes the *What changed* cell lists before `+N modes`. */
+const MODES_SHOWN = 2;
+
+function ModeSide({ value }: { value: unknown }) {
+  const view = tokenValueView(value);
+  return (
+    <TokenValue swatch={view.swatch} title={view.aliasName}>
+      {view.text}
+    </TokenValue>
+  );
+}
+
+/** A token's *What changed*: each changed mode as `Dark ■ #202527 → ■ #2b3033`, then `+N modes`. */
+function TokenChanges({ modes }: { modes: TokenModeChange[] }) {
+  const hidden = modes.length - MODES_SHOWN;
+  return (
+    <Table.Cell>
+      <div className="flex flex-col">
+        {modes.slice(0, MODES_SHOWN).map(m => (
+          <Text key={m.prop} as="div" className="flex items-center gap-md whitespace-nowrap">
+            <Text weight="medium">{m.mode}</Text>
+            <ModeSide value={m.built} />
+            <span aria-hidden="true">→</span>
+            <VisuallyHidden>to</VisuallyHidden>
+            <ModeSide value={m.now} />
+          </Text>
+        ))}
+        {hidden > 0 && <Text color="tertiary">+{hidden} modes</Text>}
+      </div>
+    </Table.Cell>
+  );
+}
+
 interface NodeRowViewProps {
   node: NodeItem;
   depth: number;
@@ -217,7 +252,9 @@ function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeR
   const { columns, onOpenNode, selectedNodeId } = useRowContext();
   const id = node.nodeId ?? '';
   const name = node.name ?? id;
+  const token = isTokenNodeId(id);
   const changed = whatChanged(node);
+  const modes = token && node.changeType === 'modified' ? tokenModeChanges(node) : [];
   const categories = categoriesOf(node.changedProps ?? []);
   return (
     <Table.Row
@@ -228,7 +265,7 @@ function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeR
       <Table.Cell className="w-88 py-lg">
         <NodeCell
           name={name}
-          meta={nodeMeta(node, via)}
+          meta={token ? tokenMeta(node) : nodeMeta(node, via)}
           badges={node.library ? <Badge color="gray">Library</Badge> : undefined}
           depth={depth}
           expandable={expandable}
@@ -244,7 +281,9 @@ function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeR
         <Table.Cell>{categories.length ? <CategoryBadges categories={categories} max={2} /> : <Dash />}</Table.Cell>
       )}
       {columns.has('changed') &&
-        (changed ? (
+        (modes.length ? (
+          <TokenChanges modes={modes} />
+        ) : changed ? (
           <TextCell className="max-w-45" supportingText={changed.supportingText}>
             {changed.text}
           </TextCell>

@@ -26,5 +26,26 @@ export {
   type NodeListParams,
 } from './queries';
 export { CATEGORIES, categoryOf, categoriesOf, type Category } from './categories';
-export { whatChanged, nodeMeta, nodePrompt, removalPrompt, formatValue, sideLabel, tokenName, timeAgo, timeUntil, changeEntries } from './format';
+export {
+  whatChanged,
+  nodeMeta,
+  nodePrompt,
+  removalPrompt,
+  formatValue,
+  sideLabel,
+  tokenName,
+  timeAgo,
+  timeUntil,
+  changeEntries,
+  isTokenNodeId,
+  isToken,
+  tokenMeta,
+  tokenCodeSyntax,
+  tokenValueView,
+  tokenModeChanges,
+  isTokenAlias,
+  type TokenAlias,
+  type TokenValueView,
+  type TokenModeChange,
+} from './format';
 export type * from './types';

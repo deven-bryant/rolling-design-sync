@@ -16,13 +16,28 @@ import {
 } from '../../components/domain/NodeDetails';
 import { RemovalPanel, type RemovalUse, type RemovalWarning } from '../../components/domain/RemovalPanel';
 import { StateBadge } from '../../components/domain/StateBadge';
+import { TokenValue } from '../../components/domain/TokenValue';
 import { Input } from '../../components/Input';
 import { Menu } from '../../components/Menu';
 import { Text } from '../../components/primitives';
 import { showToast } from '../../components/Toast';
 import { Tooltip, TooltipTrigger } from '../../components/Tooltip';
 import { categoriesOf, type Category } from './categories';
-import { changeEntries, formatValue, isTokenValue, nodePrompt, plural, removalPrompt, sideLabel, timeAgo, timeUntil } from './format';
+import {
+  changeEntries,
+  formatValue,
+  isTokenNodeId,
+  isTokenValue,
+  nodePrompt,
+  plural,
+  removalPrompt,
+  sideLabel,
+  timeAgo,
+  timeUntil,
+  tokenCodeSyntax,
+  tokenMeta,
+  tokenValueView,
+} from './format';
 import { useBlockNode, useLibraryLinks, useNodeDetail, useNodeHistory, useReleaseClaim, useSessionRole, useUnblockNode } from './queries';
 import type { FileEvent, NodeDetail, SessionRole } from './types';
 
@@ -81,8 +96,32 @@ function changedSince(node: NodeDetail, now: number): string | undefined {
 const changeValue = (side: unknown): NodeDetailsValue =>
   isTokenValue(side) ? { value: sideLabel(side), detail: formatValue(side) } : { value: formatValue(side) };
 
-function changeRows(node: NodeDetail): NodeDetailsChange[] {
-  return changeEntries(node).map(([prop, change]) => ({ attribute: prop, from: changeValue(change.built), to: changeValue(change.now) }));
+/** A token's `value:<Mode>` side: a swatch and the value, or a link to the aliased token. */
+function modeValue(side: unknown, onOpenNode?: (nodeId: string) => void): NodeDetailsValue {
+  const view = tokenValueView(side);
+  if (view.alias) {
+    const target = view.alias;
+    return {
+      value: onOpenNode ? (
+        <Button hierarchy="link-color" size="sm" onPress={() => onOpenNode(target)} aria-label={`Open token ${view.aliasName ?? view.text}`}>
+          {view.text}
+        </Button>
+      ) : (
+        view.text
+      ),
+      detail: view.aliasName !== view.text ? view.aliasName : undefined,
+    };
+  }
+  return { value: <TokenValue swatch={view.swatch}>{view.text}</TokenValue> };
+}
+
+function changeRows(node: NodeDetail, onOpenNode?: (nodeId: string) => void): NodeDetailsChange[] {
+  const token = isTokenNodeId(node.nodeId);
+  return changeEntries(node).map(([prop, change]) =>
+    token && prop.startsWith('value:')
+      ? { attribute: prop, from: modeValue(change.built, onOpenNode), to: modeValue(change.now, onOpenNode) }
+      : { attribute: prop, from: changeValue(change.built), to: changeValue(change.now) },
+  );
 }
 
 const CATEGORY_COLORS: Record<Category, NonNullable<BadgeProps['color']>> = {
@@ -94,6 +133,7 @@ const CATEGORY_COLORS: Record<Category, NonNullable<BadgeProps['color']>> = {
   content: 'gray-blue',
   structure: 'gray-blue',
   prototype: 'gray-blue',
+  token: 'brand',
   other: 'gray',
 };
 
@@ -281,9 +321,10 @@ interface ContentProps extends TabProps {
   nodeId: string;
   role: SessionRole;
   removal?: NodeRemoval;
+  onOpenNode?: (nodeId: string) => void;
 }
 
-function NodeDrawerContent({ fileKey, nodeId, role, removal, ...tab }: ContentProps) {
+function NodeDrawerContent({ fileKey, nodeId, role, removal, onOpenNode, ...tab }: ContentProps) {
   const detail = useNodeDetail(fileKey, nodeId);
   const node = detail.data;
   if (!node) {
@@ -296,7 +337,7 @@ function NodeDrawerContent({ fileKey, nodeId, role, removal, ...tab }: ContentPr
       </>
     );
   }
-  return <LoadedNode fileKey={fileKey} nodeId={nodeId} node={node} role={role} removal={removal} {...tab} />;
+  return <LoadedNode fileKey={fileKey} nodeId={nodeId} node={node} role={role} removal={removal} onOpenNode={onOpenNode} {...tab} />;
 }
 
 function LoadedNode({
@@ -305,6 +346,7 @@ function LoadedNode({
   node,
   role,
   removal,
+  onOpenNode,
   tab,
   onTabChange,
 }: ContentProps & { node: NodeDetail }) {
@@ -321,6 +363,9 @@ function LoadedNode({
   const blocked = node.state === 'blocked' || !!node.blocked;
   const name = node.name ?? nodeId;
   const componentKey = node.library?.key;
+  const token = isTokenNodeId(node.nodeId ?? nodeId);
+  const badge = token ? 'Token' : node.library ? 'Library' : null;
+  const layers = node.usage?.layers;
   return (
     <>
       <NodeDetails
@@ -328,18 +373,18 @@ function LoadedNode({
         state={tab}
         onStateChange={onTabChange}
         title={
-          node.library ? (
+          badge ? (
             <span className="flex flex-wrap items-center gap-md">
               {name}
               <Badge size="md" color="gray">
-                Library
+                {badge}
               </Badge>
             </span>
           ) : (
             name
           )
         }
-        description={`${node.type ?? 'NODE'} · ${node.nodeId ?? nodeId}${main}`}
+        description={token ? tokenMeta(node) : `${node.type ?? 'NODE'} · ${node.nodeId ?? nodeId}${main}`}
         actions={<CloseButton slot="close" size="md" aria-label="Close" />}
         status={
           <>
@@ -353,7 +398,7 @@ function LoadedNode({
           </>
         }
         {...claim}
-        changes={node.changesKnown === false ? [] : changeRows(node)}
+        changes={node.changesKnown === false ? [] : changeRows(node, onOpenNode)}
         changesDescription={changedSince(node, now)}
         changesEmpty={
           node.changesKnown === false
@@ -372,6 +417,11 @@ function LoadedNode({
         history={history}
         historyEmpty={historyEmpty}
       >
+        {layers !== undefined && (
+          <Text as="p" color="tertiary">
+            Used by {plural(layers, 'layer', 'layers')}
+          </Text>
+        )}
         {removal && (
           <RemovalPanel
             name={removal.name ?? name}
@@ -399,7 +449,7 @@ function LoadedNode({
         {unblock.isError && <Text color="error-primary">{unblock.error.message}</Text>}
       </NodeDetails>
       <Drawer.Footer>
-        <CopyTextButton label="Copy node prompt" text={() => nodePrompt({ fileKey, nodeId: node.nodeId ?? '', name: node.name })} />
+        <CopyTextButton label="Copy node prompt" text={() => nodePrompt({ fileKey, nodeId: node.nodeId ?? '', name: node.name, codeSyntax: tokenCodeSyntax(node) })} />
         {canAct &&
           (blocked ? (
             <Button hierarchy="secondary" size="sm" loading={unblock.isPending} onPress={() => unblock.mutate(nodeId)}>
@@ -431,13 +481,15 @@ export interface NodeDrawerProps {
   role?: SessionRole;
   /** The node is a removed work item's root: show its *Removal* panel above the change list. */
   removal?: NodeRemoval;
+  /** Opens another node's drawer (a token's alias links to the token it points at). */
+  onOpenNode?: (nodeId: string) => void;
 }
 
 /**
  * Figma *Node drawer*: `Node Details` (status, claim, change list / history) with agent actions in the footer.
  * Each node opens on Change History in the narrow drawer; the Change List tab widens it.
  */
-export function NodeDrawer({ fileKey, nodeId, onClose, role, removal }: NodeDrawerProps) {
+export function NodeDrawer({ fileKey, nodeId, onClose, role, removal, onOpenNode }: NodeDrawerProps) {
   const sessionRole = useSessionRole();
   const [view, setView] = useState<{ nodeId: string | null; tab: NodeDetailsState }>({ nodeId, tab: 'change-history' });
   const tab = view.nodeId === nodeId ? view.tab : 'change-history';
@@ -456,6 +508,7 @@ export function NodeDrawer({ fileKey, nodeId, onClose, role, removal }: NodeDraw
           nodeId={nodeId}
           role={role ?? sessionRole}
           removal={removal}
+          onOpenNode={onOpenNode}
           tab={tab}
           onTabChange={next => setView({ nodeId, tab: next })}
         />
