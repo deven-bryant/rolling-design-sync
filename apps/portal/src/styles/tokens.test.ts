@@ -14,7 +14,7 @@ const designColors: Record<string, [string, string]> = {
   'bg-secondary': ['#f7fbfc', '#2b3033'],
   'bg-tertiary': ['#f2f6f7', '#3c4245'],
   'bg-quaternary': ['#e7eaec', '#575f63'],
-  'bg-active': ['#f7fbfc', '#202527'],
+  'bg-active': ['#f7fbfc', '#2b3033'],
   'bg-overlay': ['#0a0d0f', '#2b3033'],
   'bg-brand-solid': ['#1f6e84', '#1f6e84'],
   'bg-brand-solid_hover': ['#145d6e', '#4c8ba2'],

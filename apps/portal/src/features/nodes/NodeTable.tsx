@@ -233,6 +233,7 @@ function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeR
           depth={depth}
           expandable={expandable}
           expanded={expanded}
+          reserveToggle
           onToggle={onToggle}
           toggleLabel={`${expanded ? 'Collapse' : 'Expand'} ${name}`}
         />
