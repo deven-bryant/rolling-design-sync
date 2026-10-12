@@ -2,7 +2,15 @@
 const DesignChecklist = (() => {
   const C = ChecklistCore;
   const SETTINGS_KEY = 'fds_upload_settings_v1';
-  const BATCH_CHARS = 2000000; // JSON chars per …/sync request, well under the API's 64 MB body limit.
+  // …/sync batches are capped by JSON chars and by records so the upload bar advances steadily. On big syncs
+  // both caps grow until the upload fits in MAX_UPLOAD_BATCHES requests (the API rate-limits sync requests per
+  // token), but a batch never grows past BATCH_CHARS_MAX (well under the API's 64 MB body limit).
+  const BATCH_CHARS = 250000;
+  const BATCH_RECORDS = 200;
+  const MAX_UPLOAD_BATCHES = 50;
+  const BATCH_CHARS_MAX = 2000000;
+  // Extra scans when the verification pass differs from the scan (values Figma loads lazily on first access).
+  const VERIFY_RETRIES = 2;
   const EXISTS_IDS = 1000; // node ids per …/exists request (API cap is 5000).
   // "Already built?" prompt: asked before uploading when a sync adds at least NEW_LAYERS_MIN never-seen
   // scope layers that are also at least NEW_LAYERS_SHARE of the scope's tracked layers (library excluded).
@@ -180,8 +188,7 @@ const DesignChecklist = (() => {
       }
       if (component) props.componentReference = C.normalize(component);
       const record = { id: node.id, name: node.name, type: node.type, path: nextPath, context, component, props };
-      if (options.onNode) options.onNode(record);
-      if (options.retain !== false) nodes[node.id] = record;
+      nodes[node.id] = record;
       for (let i = children.length - 1; i >= 0; i--) pending.push([children[i], nextPath, context]);
       if (count % 100 === 0) {
         if (options.progress) options.progress(count);
@@ -193,6 +200,27 @@ const DesignChecklist = (() => {
     if (options.progress) options.progress(count);
     return { schemaVersion: C.SCHEMA, createdAt: new Date().toISOString(), fileKey: key,
       scopeId: root.id, scopeName: root.name, ancestors, coverage: COVERAGE, warnings: Array.from(warnings).sort(), nodes, mains };
+  }
+  /* The first difference between two captures of the same scope, for the user ("\"Button\" (12:34) fills,
+     styleDefinitions"); null when they match. Names at most 3 top-level props. */
+  function scanDifference(a, b) {
+    const changed = Object.keys(a.nodes).concat(Object.keys(b.nodes).filter(id => !(id in a.nodes)))
+      .filter(id => !a.nodes[id] || !b.nodes[id] || C.stable(a.nodes[id]) !== C.stable(b.nodes[id]));
+    if (!changed.length) {
+      if (C.stable(a.warnings) === C.stable(b.warnings)) return null;
+      const warning = a.warnings.filter(w => !b.warnings.includes(w)).concat(b.warnings.filter(w => !a.warnings.includes(w)))[0];
+      return 'the property-read warnings changed (' + String(warning).slice(0,200) + ')';
+    }
+    const id = changed[0], before = a.nodes[id], after = b.nodes[id], record = after || before;
+    let what;
+    if (!before || !after) what = before ? 'disappeared' : 'appeared';
+    else {
+      const differs = (x, y, k) => C.stable(x[k]) !== C.stable(y[k]);
+      const keys = Array.from(new Set(Object.keys(before.props).concat(Object.keys(after.props)))).sort().filter(k => differs(before.props, after.props, k));
+      what = (keys.length ? keys : ['name','type','path','context','component'].filter(k => differs(before, after, k))).slice(0,3).join(', ');
+    }
+    const more = changed.length > 1 ? ` (and ${changed.length - 1} more layer${changed.length === 2 ? '' : 's'})` : '';
+    return `"${record.name}" (${id}) ${what}${more}`;
   }
   /* Diff the scanned scope against the server's stored `{nodeId: contentHash}` map.
      Instances are tracked as placement rows (own props + `mainComponentId`); nodes inside an instance
@@ -380,10 +408,12 @@ const DesignChecklist = (() => {
      The hashes response's `settings.trackLibraryComponents` (missing → true) decides whether remote mains are
      scanned. Without `markImplemented`, a plan that adds many never-seen layers (`manyNewLayers`) awaits
      `options.confirmNewLayers({ added, total })`: 'implemented' continues with `markImplemented`, 'new'
-     continues unchanged, anything else stops before uploading. */
+     continues unchanged, anything else stops before uploading.
+     Upserts go in batches of at most BATCH_CHARS JSON chars and BATCH_RECORDS records (`options.batchChars`,
+     `options.batchRecords`), both raised on big syncs so the upload takes at most MAX_UPLOAD_BATCHES batches
+     (`options.maxBatches`) with no batch over BATCH_CHARS_MAX; deletions go in the first batch. */
   async function sync(http, settings, snapshot, options = {}) {
     const config = validateSettings(settings);
-    const limit = options.batchChars || BATCH_CHARS;
     let markImplemented = options.markImplemented === true;
     const cancelled = () => options.cancelled && options.cancelled();
     const progress = (phase, count, total) => { if (options.progress) options.progress(phase, count, total); };
@@ -423,10 +453,14 @@ const DesignChecklist = (() => {
       done += batch.length + deleted.length;
       batches++; batch = []; size = 0; deleted = []; progress('Uploading', done, total);
     };
-    for (const upsert of plan.upserts.concat(mains.upserts)) {
-      const chars = JSON.stringify(upsert).length + 2;
-      if (size && size + chars > limit) await flush();
-      batch.push(upsert); size += chars;
+    const upserts = plan.upserts.concat(mains.upserts);
+    const sizes = upserts.map(upsert => JSON.stringify(upsert).length + 2);
+    const maxBatches = options.maxBatches || MAX_UPLOAD_BATCHES;
+    const charLimit = Math.max(options.batchChars || BATCH_CHARS, Math.min(BATCH_CHARS_MAX, Math.ceil(sizes.reduce((a, b) => a + b, 0) / maxBatches)));
+    const recordLimit = Math.max(options.batchRecords || BATCH_RECORDS, Math.ceil(upserts.length / maxBatches));
+    for (let i = 0; i < upserts.length; i++) {
+      if (batch.length && (size + sizes[i] > charLimit || batch.length >= recordLimit)) await flush();
+      batch.push(upserts[i]); size += sizes[i];
     }
     await flush();
     return { fileKey: snapshot.fileKey, scopeId: snapshot.scopeId, markImplemented, trackLibraryComponents: trackLibrary, batches, ...plan.counts, mains: mains.counts, mainWarnings: mains.warnings, result };
@@ -462,21 +496,23 @@ const DesignChecklist = (() => {
     }
     const progressMessage = (phase, count, total) => total === undefined ? { type: 'progress', phase, count } : { type: 'progress', phase, count, total };
     const scopeState = () => ({ type: 'scope', id: scope.id, name: scope.name, nodeType: scope.type });
+    /* Scan, then re-scan until two consecutive passes match (at most VERIFY_RETRIES extra passes): values Figma
+       loads lazily on first access (library styles and variables, remote mains, text metrics) settle after one. */
     async function stableCapture(key, mainNodes) {
-      const options = { pause, cancelled: () => cancelled, progress: count => send({ type: 'progress', phase: 'Scanning', count }),
-        onMain: main => mainNodes.set(main.id, main) };
-      const first = await capture(api, scope, key, options);
-      let seen = 0;
-      const total = Object.keys(first.nodes).length;
-      const check = await capture(api, scope, key, { pause, cancelled: () => cancelled, retain: false,
-        progress: count => send({ type: 'progress', phase: 'Verifying scan', count, total }),
-        onNode: record => {
-          seen++;
-          if (C.stable(first.nodes[record.id]) !== C.stable(record)) throw new Error('Design changed since the capture. Pause editing and upload again.');
-        } });
-      if (seen !== total || C.stable(first.warnings) !== C.stable(check.warnings)) throw new Error('Design changed during scanning. Try again.');
-      if (cancelled) throw new Error('Scan cancelled. Nothing was uploaded.');
-      return first;
+      const onMain = main => mainNodes.set(main.id, main);
+      let previous = await capture(api, scope, key, { pause, cancelled: () => cancelled, onMain,
+        progress: count => send({ type: 'progress', phase: 'Scanning', count }) });
+      for (let retry = 0; ; retry++) {
+        const phase = retry ? `Verifying scan (retry ${retry})` : 'Verifying scan';
+        const total = Object.keys(previous.nodes).length;
+        const check = await capture(api, scope, key, { pause, cancelled: () => cancelled, onMain,
+          progress: count => send({ type: 'progress', phase, count, total }) });
+        if (cancelled) throw new Error('Scan cancelled. Nothing was uploaded.');
+        const difference = scanDifference(previous, check);
+        if (!difference) return previous;
+        if (retry >= VERIFY_RETRIES) throw new Error(`Design kept changing while scanning: ${difference}. If you aren't editing, a library style or font may still be loading — try again.`);
+        previous = check;
+      }
     }
     api.ui.onmessage = async msg => {
       if (msg.type === 'yield-ack') { const resolve = waiters.get(msg.id); if (resolve) { waiters.delete(msg.id); resolve(); } return; }
@@ -513,7 +549,8 @@ const DesignChecklist = (() => {
     };
     try { scope = selected(); send(scopeState()); } catch (_) { send({ type: 'notice', message: 'Select a section or frame, then click Use selection.' }); }
   }
-  return { capture, planDelta, resolveMains, sync, validateSettings, start, NEW_LAYERS_MIN, NEW_LAYERS_SHARE };
+  return { capture, planDelta, scanDifference, resolveMains, sync, validateSettings, start, NEW_LAYERS_MIN, NEW_LAYERS_SHARE,
+    BATCH_CHARS, BATCH_RECORDS, MAX_UPLOAD_BATCHES, BATCH_CHARS_MAX, VERIFY_RETRIES };
 })();
 if (typeof figma !== 'undefined') DesignChecklist.start(figma);
 if (typeof module !== 'undefined') module.exports = DesignChecklist;
