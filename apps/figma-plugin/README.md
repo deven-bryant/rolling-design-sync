@@ -212,6 +212,28 @@ skipped, e.g. *"12 library components not tracked (file setting)"*, and the
 **library not tracked** stat shows the same count. The setting itself is
 changed on the server, not in the plugin.
 
+**Design tokens.** After the scope (and its mains) is uploaded, every sync
+runs a second pass for the file's variables, stored as their own `tokens`
+scope: the root `tokens`, one `tokens:<collectionKey>` node per collection
+(`name`, `modes`, `remote`) and one `token:<variableKey>` node per variable
+(`name`, `resolvedType`, `description`, `scopes`, `codeSyntax`, `variableId`,
+`remote`, and one `value:<Mode name>` per collection mode). Collected: every
+variable bound by a captured layer (scanned mains included), every local
+variable of the file, and every variable those alias, transitively. Values are
+normalized — colors `#rrggbb` / `#rrggbbaa`, numbers to 4 decimals, strings
+and booleans as-is, aliases `{ alias: "token:<key>", name }`; a value that
+cannot be read is stored as `{ $unreadable: true }` with a non-blocking
+`[token]` warning. The pass plans against `GET …/hashes?under=tokens`, re-sends
+the `tokens` root every time, and uploads changed tokens with
+`rootNodeId: "tokens"` in the same batches (**Uploading tokens** progress,
+same `markImplemented`). Editing a value in any mode — e.g. a library
+variable's Dark value — dirties only that token, not the layers using it.
+A stored token is deleted only when its variable no longer exists in Figma
+(never because nothing references it any more); a collection goes once all its
+stored tokens are gone, and an older server without the token map gets no
+token deletions. The result shows a **tokens** stat and *"Tokens: 48 tracked,
+1 changed, 0 new."*; the already-built prompt still counts layers only.
+
 From there, coding agents pull the dirty nodes and clear them via the API / the
 `scripts/rds-agent.js` CLI — not through this plugin. Sync again after further
 design edits to refresh the delta.
@@ -225,8 +247,9 @@ paths/networks, component/variant properties, hierarchy & child order, current
 variable modes and resolved bindings, referenced style definitions, and exposed
 prototype reactions. Numeric precision 0.0001; root-canvas translation ignored.
 
-Limits: it resolves styles/variables the plugin can access (current
-consumer-mode values only — test other themes/modes separately); it does not
+Limits: it resolves styles/variables the plugin can access (layers store
+current consumer-mode values; every mode's value is tracked on the token
+nodes, see **Design tokens**); it does not
 diff entire remote libraries, extract image binaries (only paint hashes), map
 Figma IDs to repo files, or verify motion/accessibility/app logic. Review those
 and shared-component impact in the running app.

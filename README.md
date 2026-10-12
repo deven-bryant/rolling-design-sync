@@ -69,6 +69,9 @@ What that gets you:
   the plugin also tracks main components from team libraries; with it off,
   instances keep their component reference and the result says how many were
   skipped.
+- **Every mode of every token.** Variables used by the synced layers, the
+  file's local variables and their aliases are tracked as tokens with each
+  mode's value, so a library's Dark-mode edit shows up as work on that token.
 - **Already-built screens aren't new work.** When a sync would add many
   never-seen layers, the plugin asks whether the code already matches them
   before uploading.
