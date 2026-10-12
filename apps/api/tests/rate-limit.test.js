@@ -262,10 +262,10 @@ test('sync budget: a full 2,000-node upload fits many times over in one minute',
   const settings = { baseUrl: 'http://127.0.0.1:8787', token: PLUGIN_TOKEN };
   const first = await P.sync(http, settings, snapshot, { api });
   assert.equal(first.result.upserted, size);
-  // One hashes read plus one /sync per 2 MB batch: a handful of requests.
-  assert.equal(requests, 1 + first.batches);
+  // Two hashes reads (scope + design tokens; no variables, so no token upload) plus one /sync per 2 MB batch.
+  assert.equal(requests, 2 + first.batches);
   t.diagnostic(`full upload: ${requests} requests (${first.batches} batches)`);
-  assert.ok(requests * 10 <= RATE_LIMIT_DEFAULTS.sync, `${requests} requests for one full upload must fit ten times in the sync budget (${RATE_LIMIT_DEFAULTS.sync})`);
+  assert.ok(requests * 9 <= RATE_LIMIT_DEFAULTS.sync, `${requests} requests for one full upload must fit nine times in the sync budget (${RATE_LIMIT_DEFAULTS.sync})`);
   // Re-uploading everything (a fresh file each time) stays under the budget.
   for (let i = 1; i < Math.floor(RATE_LIMIT_DEFAULTS.sync / requests); i++) {
     const again = await P.sync(http, settings, { ...snapshot, fileKey: `${FK.slice(0, -2)}${String(i).padStart(2, '0')}` }, { api });

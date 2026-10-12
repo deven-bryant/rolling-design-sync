@@ -128,8 +128,9 @@ const PROBLEMS={
  route_not_found:[404,'Route not found','See GET /v3/openapi.json for the routes.'],
 };
 function problemBody(code,detail,hint){const [status,title,defaultHint]=PROBLEMS[code];return {type:'https://example.test/errors#'+code,title,status,code,detail,hint:hint===undefined?defaultHint:hint};}
-/* `settings`: the file settings `…/hashes` returns (default `{trackLibraryComponents:true}`; null = an older server without them). */
-function mockServer({token='secret',agentToken='agent',fail,settings}={}) {
+/* `settings`: the file settings `…/hashes` returns (default `{trackLibraryComponents:true}`; null = an older server without them).
+   `tokensMap: false` = an older server whose `?under=tokens` returns the root hash under "tokens" instead of the token map. */
+function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap}={}) {
  const calls=[];const nodes=new Map();// key fileKey|nodeId -> row
  const json=(status,body)=>({ok:status<300,status,json:async()=>body});
  const problem=(code,detail,hint)=>{const body=problemBody(code,detail,hint);return json(body.status,body);};
@@ -149,6 +150,7 @@ function mockServer({token='secret',agentToken='agent',fail,settings}={}) {
   if(body&&body.fileKey!==undefined&&body.fileKey!==fileKey)return problem('invalid_body',`body.fileKey '${body.fileKey}' does not match the file key '${fileKey}' in the path.`,'Drop fileKey from the body; the path names the file.');
   if(route==='hashes'){const under=u.searchParams.get('under');if(!under)return problem('invalid_parameter','querystring must have required property \'under\'.');
    const out={};for(const r of subtree(fileKey,under))if(!r.deletedAt)out[r.nodeId]=r.contentHash;
+   if(under==='tokens'&&tokensMap!==false){out.tokens={};for(const r of subtree(fileKey,under))if(!r.deletedAt&&r.nodeId.startsWith('token:'))out.tokens[r.nodeId]={variableId:r.attrs.variableId,remote:r.attrs.remote===true};}
    if(settings!==null)out.settings=settings===undefined?{trackLibraryComponents:true}:settings;return json(200,out);}
   if(route==='exists'){
    if(!body||!Array.isArray(body.nodeIds)||!body.nodeIds.every(id=>typeof id==='string'&&id))return problem('invalid_body','Body must be { nodeIds }.');
@@ -277,7 +279,7 @@ test('every request goes to a v3 plugin route with X-RDS-Client: plugin/<package
  const f=fixture();const lib=library(f);lib.instance('1:5',f.root,lib.define('8:1','Button'));
  const server=mockServer();const r=runtime({...f,api:lib.api},server,SETTINGS);await r.send({type:'upload',fileUrl:FILE});
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
- same(server.calls.map(c=>[c.method,c.path]),[['GET',HASHES],['POST',EXISTS],['POST',SYNC]]);
+ same(server.calls.map(c=>[c.method,c.path]),[['GET',HASHES],['POST',EXISTS],['POST',SYNC],['GET',HASHES]]);// the last GET is ?under=tokens (no variables, no token upload)
  assert.ok(server.calls.every(c=>c.client==='plugin/'+PLUGIN_VERSION),JSON.stringify(server.calls.map(c=>c.client)));
  const src=mockServer();await P.sync(src.fetch,CFG,await P.capture(f.api,f.root,'FILE'));
  assert.ok(src.calls.length&&src.calls.every(c=>c.client==='plugin/'+PLUGIN_VERSION));
@@ -411,10 +413,11 @@ test('a one-off edit during verification is retried: the next pair of passes mat
 for(const kind of ['style','variable'])test(`a library ${kind} that resolves only after its first read succeeds after one retry`,async()=>{
  const f=fixture();let reads=0;
  if(kind==='style'){f.child.fillStyleId='S:lib,1:9';f.api.getStyleByIdAsync=async()=>++reads===1?null:{name:'Brand/Red',type:'PAINT',key:'SK',paints:[{type:'SOLID',color:{r:1,g:0,b:0}}]};}
- else{f.child.boundVariables={fills:[{type:'VARIABLE_ALIAS',id:'V:lib'}]};f.api.variables={getVariableByIdAsync:async()=>++reads===1?null:{name:'color/red',key:'VK',variableCollectionId:'VC:1',codeSyntax:{},resolveForConsumer:()=>({value:{r:1,g:0,b:0},resolvedType:'COLOR'})}};}
+ else{f.child.boundVariables={fills:[{type:'VARIABLE_ALIAS',id:'V:lib'}]};f.api.variables={getVariableByIdAsync:async()=>++reads===1?null:{name:'color/red',key:'VK',variableCollectionId:'VC:1',codeSyntax:{},resolveForConsumer:()=>({value:{r:1,g:0,b:0},resolvedType:'COLOR'}),resolvedType:'COLOR',valuesByMode:{m:{r:1,g:0,b:0}}},
+  getVariableCollectionByIdAsync:async()=>({key:'CK',name:'Brand',modes:[{modeId:'m',name:'Default'}]})};}
  const server=mockServer();const r=runtime(f,server,SETTINGS);await r.send({type:'upload',fileUrl:FILE});
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
- same(verifyPhases(r),['Verifying scan','Verifying scan (retry 1)']);assert.equal(reads,3);
+ same(verifyPhases(r),['Verifying scan','Verifying scan (retry 1)']);assert.equal(reads,kind==='style'?3:4);// + one token read
  const attrs=server.nodes.get('FILE|1:2').attrs;
  if(kind==='style')assert.equal(attrs.styleDefinitions['S:lib,1:9'].name,'Brand/Red');else assert.equal(attrs.resolvedVariables['V:lib'].name,'color/red');
  const done=r.messages.find(m=>m.type==='synced');assert.ok(!done.warnings.some(w=>w.startsWith('[token] ')),done.warnings.join(' '));
@@ -468,7 +471,7 @@ test('instance whose main lives on another page: the main is lazily loaded and i
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
  const done=r.messages.find(m=>m.type==='synced');
  same(done.mains,{resolved:2,scanned:2,present:0,stale:0,unresolved:0,scannedNodes:5,librarySkipped:0});// Button(3 incl. nested instance)+Icon(2)
- same(server.calls.map(c=>[c.method,c.path]),[['GET',HASHES],['POST',EXISTS],['POST',EXISTS],['POST',SYNC]]);
+ same(server.calls.map(c=>[c.method,c.path]),[['GET',HASHES],['POST',EXISTS],['POST',EXISTS],['POST',SYNC],['GET',HASHES]]);
  same(server.calls[1].body,{fileKey:'FILE',nodeIds:['8:1']});same(server.calls[2].body,{fileKey:'FILE',nodeIds:['9:1']});
  same([...server.nodes.keys()].sort(),['FILE|1:1','FILE|1:2','FILE|1:5','FILE|1:6','FILE|8:1','FILE|8:2','FILE|8:3','FILE|9:1','FILE|9:2']);
  for(const [id,main,parent] of [['1:5','8:1','1:1'],['1:6','8:1','1:1'],['8:3','9:1','8:1']]){const row=server.nodes.get('FILE|'+id);assert.equal(row.isInstance,true);assert.equal(row.mainComponentId,main);assert.equal(row.parentId,parent);}
@@ -479,7 +482,7 @@ test('instance whose main lives on another page: the main is lazily loaded and i
  // Second sync: both mains are present -> nothing re-scanned, nothing re-uploaded.
  lib.loads.length=0;server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
  const again=r.messages.find(m=>m.type==='synced');same(again.mains,{resolved:1,scanned:0,present:1,stale:0,unresolved:0,scannedNodes:0,librarySkipped:0});// Icon is only reachable through Button, which is present
- same(server.calls.map(c=>c.path),[HASHES,EXISTS]);same(lib.loads,[]);
+ same(server.calls.map(c=>c.path),[HASHES,EXISTS,HASHES]);same(lib.loads,[]);
  // Editing the present main is NOT picked up here (its own scope sync does that); a deleted row is re-scanned.
  server.nodes.get('FILE|8:1').deletedAt='now';server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
  same(r.messages.find(m=>m.type==='synced').mains,{resolved:2,scanned:1,present:1,stale:0,unresolved:0,scannedNodes:3,librarySkipped:0});same(lib.loads,['8:1']);// Button re-scanned, Icon found present
@@ -513,7 +516,7 @@ test('a main stored before instance support is re-scanned and backfills its inst
  const done=r.messages.find(m=>m.type==='synced');
  same(done.mains,{resolved:2,scanned:1,present:1,stale:1,unresolved:0,scannedNodes:3,librarySkipped:0});// stale Button re-scanned; Icon present and current
  same(lib.loads,['8:1']);// one load for the two Button placements (dedup)
- same(server.calls.map(c=>c.path),[HASHES,EXISTS,EXISTS,SYNC]);
+ same(server.calls.map(c=>c.path),[HASHES,EXISTS,EXISTS,SYNC,HASHES]);
  same(server.calls[1].body.nodeIds,['8:1']);same(server.calls[2].body.nodeIds,['9:1']);// Icon is re-checked only because Button was re-scanned
  const placement=server.nodes.get('FILE|8:3');// the missing instance placement is backfilled
  assert.equal(placement.isInstance,true);assert.equal(placement.mainComponentId,'9:1');assert.equal(placement.parentId,'8:1');
@@ -521,7 +524,7 @@ test('a main stored before instance support is re-scanned and backfills its inst
  // Third sync: everything is current again, so nothing is re-scanned.
  lib.loads.length=0;server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
  same(r.messages.find(m=>m.type==='synced').mains,{resolved:1,scanned:0,present:1,stale:0,unresolved:0,scannedNodes:0,librarySkipped:0});
- same(server.calls.map(c=>c.path),[HASHES,EXISTS]);same(lib.loads,[]);
+ same(server.calls.map(c=>c.path),[HASHES,EXISTS,HASHES]);same(lib.loads,[]);
 });
 test('a problem while re-uploading a stale main is shown as title and hint; the stale row is left as it was',async()=>{
  const f=fixture();const lib=library(f);lib.instance('1:5',f.root,lib.define('8:1','Button'));
@@ -820,4 +823,164 @@ test('main-component and library records do not count toward the prompt',async()
  const server=mockServer();const asked=[];
  const out=await P.sync(server.fetch,CFG,await P.capture(lib.api,f.root,'FILE'),{api:lib.api,confirmNewLayers:async l=>{asked.push(l);return 'new';}});
  same(asked,[]);assert.equal(out.mains.scannedNodes,41);
+});
+/* ---- Design tokens: every used + local variable (and its aliases) as a node of the `tokens` scope. ---- */
+const K=c=>c.repeat(40),T=c=>'token:'+K(c),COL=c=>'tokens:'+K(c);
+const rgb=(r,g,b,a)=>a===undefined?{r,g,b}:{r,g,b,a};
+function tokenFile(f){
+ const cols=new Map(),vars=new Map(),locals=[];
+ const collection=(id,key,name,modes,remote=false)=>{const c={id,key:K(key),name,remote,modes:modes.map((n,i)=>({modeId:id+'/'+i,name:n}))};cols.set(id,c);return c;};
+ const variable=(id,key,name,col,values,extra={})=>{const c=cols.get(col);const type=extra.resolvedType||'COLOR';
+  const v={id,key:K(key),name,resolvedType:type,description:'',scopes:['ALL_SCOPES'],codeSyntax:{},variableCollectionId:col,remote:c.remote,
+   valuesByMode:Object.fromEntries(values.map((x,i)=>[c.modes[i].modeId,x])),resolveForConsumer:()=>({value:values[0],resolvedType:type}),...extra};
+  vars.set(id,v);if(!c.remote)locals.push(id);return v;};
+ const set=(id,mode,value)=>{const v=vars.get(id);const c=cols.get(v.variableCollectionId);v.valuesByMode[c.modes.find(m=>m.name===mode).modeId]=value;};
+ f.api.variables={getVariableByIdAsync:async id=>vars.get(id)||null,getVariableCollectionByIdAsync:async id=>cols.get(id)||null,
+  getLocalVariablesAsync:async()=>locals.filter(id=>vars.has(id)).map(id=>vars.get(id))};
+ return {cols,vars,collection,variable,set};
+}
+const alias=id=>({type:'VARIABLE_ALIAS',id});
+/* Local Semantic (Light/Dark) + Numbers; remote Primitives with a used, an aliased (chain gray -> base) and an unused variable. */
+function tokenScene(f){
+ const t=tokenFile(f);
+ t.collection('C:sem','a','Semantic',['Light','Dark']);t.collection('C:num','c','Numbers',['Default']);t.collection('C:pri','b','Primitives',['Mode 1'],true);
+ t.variable('V:base','5','gray/base','C:pri',[rgb(1,1,1)]);t.variable('V:gray','3','gray/900','C:pri',[alias('V:base')]);
+ t.variable('V:unused','6','gray/100','C:pri',[rgb(.9,.9,.9)]);t.variable('V:used','7','brand/red','C:pri',[rgb(1,0,0,.5)]);
+ t.variable('V:active','1','bg/active','C:sem',[rgb(1,1,1),rgb(32/255,37/255,39/255)],{codeSyntax:{WEB:'--bg-active'},description:'Pressed'});
+ t.variable('V:hover','2','bg/hover','C:sem',[rgb(1,1,1),alias('V:gray')]);
+ t.variable('V:space','8','space/unit','C:num',[1.23456],{resolvedType:'FLOAT',scopes:['GAP']});
+ t.variable('V:font','9','font/family','C:num',['Inter'],{resolvedType:'STRING'});
+ t.variable('V:flag','d','flag/beta','C:num',[true],{resolvedType:'BOOLEAN'});
+ f.child.boundVariables={fills:[alias('V:used')]};
+ return t;
+}
+const TOKEN_IDS=[T('1'),T('2'),T('3'),T('5'),T('7'),T('8'),T('9'),T('d')];
+const tokenSyncs=server=>server.calls.filter(c=>c.path===SYNC&&c.body.rootNodeId==='tokens');
+const tokenCounts=t=>({tracked:t.tracked,changed:t.changed,added:t.added,unchanged:t.unchanged,deleted:t.deleted});
+test('tokens: used, local and transitively aliased variables are collected with every mode value, normalized; unused library variables are not',async()=>{
+ const f=fixture();tokenScene(f);
+ const scan=await P.capture(f.api,f.root,'FILE');
+ const c=await P.collectTokens(f.api,Object.values(scan.nodes).map(n=>n.props));
+ same(Object.keys(c.nodes).sort(),[...TOKEN_IDS,COL('a'),COL('b'),COL('c')].sort());
+ same(c.nodes[T('1')],{nodeId:T('1'),parentId:COL('a'),path:['tokens',COL('a')],nodeType:'VARIABLE',name:'bg/active',
+  attrs:{name:'bg/active',resolvedType:'COLOR',description:'Pressed',scopes:['ALL_SCOPES'],codeSyntax:{WEB:'--bg-active'},variableId:'V:active',remote:false,'value:Light':'#ffffff','value:Dark':'#202527'}});
+ same(c.nodes[COL('a')],{nodeId:COL('a'),parentId:'tokens',path:['tokens'],nodeType:'VARIABLE_COLLECTION',name:'Semantic',attrs:{name:'Semantic',modes:['Light','Dark'],remote:false}});
+ same(c.nodes[COL('b')].attrs,{name:'Primitives',modes:['Mode 1'],remote:true});
+ same(c.nodes[T('2')].attrs['value:Dark'],{alias:T('3'),name:'gray/900'});
+ same(c.nodes[T('3')].attrs['value:Mode 1'],{alias:T('5'),name:'gray/base'});// chain followed into the library
+ assert.equal(c.nodes[T('5')].attrs['value:Mode 1'],'#ffffff');
+ assert.equal(c.nodes[T('7')].attrs['value:Mode 1'],'#ff000080');assert.equal(c.nodes[T('7')].attrs.remote,true);// used by a layer only
+ assert.equal(c.nodes[T('8')].attrs['value:Default'],1.2346);same(c.nodes[T('8')].attrs.scopes,['GAP']);
+ assert.equal(c.nodes[T('9')].attrs['value:Default'],'Inter');assert.equal(c.nodes[T('d')].attrs['value:Default'],true);
+ assert.equal(c.nodes[T('6')],undefined);
+ same(c.warnings,[]);same([...c.gone],[]);
+});
+test('tokens: unreadable values are recorded as { $unreadable: true } with a non-blocking [token] warning',async()=>{
+ const f=fixture();const t=tokenScene(f);
+ t.set('V:hover','Light',alias('V:missing'));delete t.vars.get('V:active').valuesByMode['C:sem/1'];
+ Object.defineProperty(t.vars.get('V:flag'),'valuesByMode',{get(){throw new Error('no access');}});
+ const scan=await P.capture(f.api,f.root,'FILE');
+ const c=await P.collectTokens(f.api,Object.values(scan.nodes).map(n=>n.props));
+ same(c.nodes[T('2')].attrs['value:Light'],{$unreadable:true});same(c.nodes[T('1')].attrs['value:Dark'],{$unreadable:true});
+ same(c.nodes[T('d')].attrs['value:Default'],{$unreadable:true});
+ assert.ok(c.warnings.length>=3&&c.warnings.every(w=>w.startsWith('[token] ')),c.warnings.join(' | '));
+ const server=mockServer();const r=runtime(f,server,SETTINGS);await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ const done=r.messages.find(m=>m.type==='synced');assert.ok(done.warnings.some(w=>w.startsWith('[token] ')));
+ same(server.nodes.get('FILE|'+T('2')).attrs['value:Light'],{$unreadable:true});
+});
+test('tokens: a sync uploads the tokens scope as a second pass; a re-sync re-sends only the root; a Dark-mode edit dirties only that token',async()=>{
+ const f=fixture();const t=tokenScene(f);const server=mockServer();const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ same(server.calls.map(c=>[c.path,c.query.under||c.body.rootNodeId]),[[HASHES,'1:1'],[SYNC,'1:1'],[HASHES,'tokens'],[SYNC,'tokens']]);
+ const done=r.messages.find(m=>m.type==='synced');
+ same(tokenCounts(done.tokens),{tracked:8,changed:0,added:8,unchanged:0,deleted:0});assert.equal(done.tokens.batches,1);
+ same(tokenSyncs(server)[0].body.upserts.map(u=>u.nodeId),['tokens',COL('a'),COL('b'),COL('c'),...TOKEN_IDS]);
+ assert.equal(server.nodes.get('FILE|tokens').nodeType,'TOKENS');assert.equal(server.nodes.get('FILE|tokens').parentId,null);
+ same(server.nodes.get('FILE|'+T('1')).path,['tokens',COL('a')]);assert.equal(server.nodes.get('FILE|'+T('1')).dirty,true);
+ const up=r.messages.filter(m=>m.type==='progress'&&m.phase==='Uploading tokens');same(up.map(m=>[m.count,m.total]),[[0,12],[12,12]]);
+ // Layers keep storing the consumer value; the token scope is separate from the layer scope.
+ assert.equal(server.nodes.get('FILE|1:2').attrs.resolvedVariables['V:used'].name,'brand/red');
+ for(const row of server.nodes.values()){row.implementedHash=row.contentHash;row.dirty=false;}
+ r.messages.length=0;server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
+ const again=r.messages.find(m=>m.type==='synced');same(tokenCounts(again.tokens),{tracked:8,changed:0,added:0,unchanged:8,deleted:0});
+ same(tokenSyncs(server).map(c=>[c.body.upserts.map(u=>u.nodeId),c.body.deletedNodeIds]),[[['tokens'],[]]]);
+ t.set('V:active','Dark',rgb(43/255,48/255,51/255));
+ r.messages.length=0;server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
+ const edited=r.messages.find(m=>m.type==='synced');same(tokenCounts(edited.tokens),{tracked:8,changed:1,added:0,unchanged:7,deleted:0});
+ assert.equal(edited.changed,0);// no layer is dirtied by a token value change
+ same(tokenSyncs(server)[0].body.upserts.map(u=>u.nodeId),['tokens',T('1')]);
+ same([...server.nodes.values()].filter(row=>row.dirty).map(row=>row.nodeId),[T('1')]);
+ assert.equal(server.nodes.get('FILE|'+T('1')).attrs['value:Dark'],'#2b3033');
+});
+test('tokens: only variables gone from Figma are deleted; unreferenced variables stay; a collection goes once all its tokens are gone',async()=>{
+ const f=fixture();const t=tokenScene(f);const server=mockServer();const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ f.child.boundVariables=undefined;t.vars.delete('V:font');// brand/red is no longer used but still exists; font/family is deleted
+ server.calls.length=0;r.messages.length=0;await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ same(tokenSyncs(server)[0].body.deletedNodeIds,[T('9')]);
+ assert.equal(server.nodes.get('FILE|'+T('7')).deletedAt,null);assert.equal(server.nodes.get('FILE|'+T('9')).deletedAt,'now');
+ same(tokenCounts(r.messages.find(m=>m.type==='synced').tokens),{tracked:7,changed:0,added:0,unchanged:7,deleted:1});
+ t.vars.delete('V:space');t.vars.delete('V:flag');
+ server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
+ same(tokenSyncs(server)[0].body.deletedNodeIds,[T('8'),T('d'),COL('c')]);
+ assert.equal(server.nodes.get('FILE|'+COL('a')).deletedAt,null);
+});
+test('tokens: a stored variable that cannot be checked is kept, and so is its collection',async()=>{
+ const f=fixture();const t=tokenScene(f);const server=mockServer();const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ const get=f.api.variables.getVariableByIdAsync;t.vars.delete('V:font');t.vars.delete('V:space');t.vars.delete('V:flag');
+ f.api.variables.getVariableByIdAsync=async id=>{if(id==='V:flag')throw new Error('offline');return get(id);};
+ server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
+ same(tokenSyncs(server)[0].body.deletedNodeIds,[T('8'),T('9')]);
+});
+test('tokens: an older server without the token map gets no token deletions',async()=>{
+ const f=fixture();const t=tokenScene(f);const server=mockServer({tokensMap:false});const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});t.vars.delete('V:font');
+ server.calls.length=0;r.messages.length=0;await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ same(tokenSyncs(server)[0].body.deletedNodeIds,[]);assert.equal(server.nodes.get('FILE|'+T('9')).deletedAt,null);
+ same(tokenSyncs(server)[0].body.upserts.map(u=>u.nodeId),['tokens']);
+});
+test('tokens: markImplemented baselines never-seen tokens too; the already-built prompt counts layers only',async()=>{
+ const f=fixture();const t=tokenScene(f);
+ for(let i=0;i<40;i++)t.variable('V:x'+i,'e'+String(i).padStart(2,'0').replace(/./g,'')+i,'x/'+i,'C:num',[i],{resolvedType:'FLOAT',key:'x'.repeat(30)+String(i).padStart(10,'0')});
+ const server=mockServer();const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='confirm-new-layers'),'48 new tokens never trigger the layer prompt');
+ assert.equal(r.messages.find(m=>m.type==='synced').tokens.tracked,48);
+ for(const row of server.nodes.values())if(row.nodeId.startsWith('token'))server.nodes.delete('FILE|'+row.nodeId);
+ r.messages.length=0;server.calls.length=0;await r.send({type:'upload',fileUrl:FILE,markImplemented:true});
+ assert.equal(tokenSyncs(server)[0].body.markImplemented,true);
+ const done=r.messages.find(m=>m.type==='synced');assert.equal(done.tokens.result.baselined,48+3+1);
+ assert.ok([...server.nodes.values()].filter(row=>row.nodeId.startsWith('token')).every(row=>!row.dirty));
+});
+test('tokens: uploads are batched like layers, every batch with rootNodeId "tokens", deletions in the first',async()=>{
+ const f=fixture();const t=tokenScene(f);
+ for(let i=0;i<60;i++)t.variable('V:x'+i,'x','x/'+i,'C:num',['value '+i],{resolvedType:'STRING',key:'x'.repeat(30)+String(i).padStart(10,'0')});
+ const server=mockServer();const snapshot=await P.capture(f.api,f.root,'FILE');
+ await P.sync(server.fetch,CFG,snapshot,{api:f.api});t.vars.delete('V:font');
+ server.calls.length=0;t.set('V:x0','Default','edited');for(let i=1;i<60;i++)t.set('V:x'+i,'Default','edited '+i);
+ const phases=[];const result=await P.sync(server.fetch,CFG,snapshot,{api:f.api,batchChars:1500,progress:(phase,count,total)=>phases.push([phase,count,total])});
+ const batches=tokenSyncs(server);assert.ok(batches.length>2,String(batches.length));assert.equal(result.tokens.batches,batches.length);
+ same(batches.map(c=>c.body.deletedNodeIds.length),[1,...batches.slice(1).map(()=>0)]);
+ assert.ok(batches.every(c=>c.body.fileName===undefined||typeof c.body.fileName==='string'));
+ assert.equal(batches.reduce((n,c)=>n+c.body.upserts.length,0),61);// root + 60 edited
+ const up=phases.filter(p=>p[0]==='Uploading tokens');same(up[0],['Uploading tokens',0,62]);same(up.at(-1),['Uploading tokens',62,62]);
+ assert.ok(up.every((p,i)=>!i||p[1]>up[i-1][1]));
+});
+test('tokens: a file without variables uploads no tokens',async()=>{
+ const f=fixture();const server=mockServer();const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ same(tokenSyncs(server),[]);same(tokenCounts(r.messages.find(m=>m.type==='synced').tokens),{tracked:0,changed:0,added:0,unchanged:0,deleted:0});
+});
+test('tokens: variables bound inside a scanned main component are collected',async()=>{
+ const f=fixture();const t=tokenScene(f);f.child.boundVariables=undefined;const lib=library(f);
+ const button=lib.define('8:1','Button',m=>{const label=node('8:2','RECTANGLE',{parent:m,boundVariables:{fills:[alias('V:used')]}});m.children.push(label);lib.registry.set(label.id,label);});
+ lib.instance('1:5',f.root,button);
+ const server=mockServer();const r=runtime({...f,api:lib.api},server,SETTINGS);await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ assert.ok(server.nodes.get('FILE|'+T('7')),'brand/red is used only inside the main');
 });

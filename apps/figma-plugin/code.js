@@ -79,6 +79,9 @@ const ChecklistCore = (() => {
     if (!m) throw new Error('Paste a Figma design file URL, starting with https://www.figma.com/design/ or /file/.');
     return m[1];
   }
+  /* Design-token node ids: the `tokens` scope root, `tokens:<collectionKey>` collections, `token:<variableKey>` variables. */
+  const TOKENS_ROOT_ID = 'tokens';
+  const isTokenNodeId = id => typeof id === 'string' && (id === TOKENS_ROOT_ID || id.startsWith('tokens:') || id.startsWith('token:'));
   const normalizeNodeId = id => typeof id === 'string' && /^\d+-\d+$/.test(id) ? id.replace('-', ':') : id;
   /* Figma link -> { fileKey, nodeId } (nodeId normalized, null without node-id); null for non-Figma input. */
   function parseFigmaUrl(url) {
@@ -107,9 +110,11 @@ const ChecklistCore = (() => {
     effects: Object.freeze(['effects', 'effectStyleId', 'cornerRadius', '*Radius', 'cornerSmoothing', 'isMask', 'visible']),
     component: Object.freeze(['componentProperties', 'componentPropertyReferences', 'componentPropertyDefinitions', 'variantProperties',
       'mainComponentId', 'isInstance', 'overrides']),
-    content: Object.freeze(['characters', 'hyperlink', 'vectorPaths', 'vectorNetwork', 'booleanOperation', 'arcData', 'pointCount', 'innerRadius']),
+    content: Object.freeze(['characters', 'hyperlink', 'vectorPaths', 'vectorNetwork', 'booleanOperation', 'arcData', 'pointCount', 'innerRadius',
+      'description']),
     structure: Object.freeze(['parentId', 'childIds', 'children', 'name']),
     prototype: Object.freeze(['reactions', 'overflowDirection', 'numberOfFixedChildren', 'overlay*']),
+    token: Object.freeze(['value:*']),
   });
   /* Exact names win over patterns (e.g. strokesIncludedInLayout is layout, innerRadius is content); then patterns in map order. */
   function categoryOf(prop) {
@@ -225,7 +230,7 @@ const ChecklistCore = (() => {
     return lines.join('\n');
   }
   return { SCHEMA, normalize, stable, sha256, sha256Fallback, contentHash, fileKey, link, diff, sameDesign, markdown,
-    CATEGORY_RULES, categoryOf, diffAttrs, normalizeNodeId, parseFigmaUrl };
+    CATEGORY_RULES, categoryOf, diffAttrs, normalizeNodeId, parseFigmaUrl, TOKENS_ROOT_ID, isTokenNodeId };
 })();
 if (typeof module !== 'undefined') module.exports = ChecklistCore;
 
@@ -512,6 +517,139 @@ const DesignChecklist = (() => {
     const deletedNodeIds = Object.keys(hashes).filter(id => !tracked.has(id)).sort();
     return { upserts, deletedNodeIds, layers, counts: { scanned: Object.keys(nodes).length, tracked: tracked.size, changed, added, deleted: deletedNodeIds.length, unchanged, instances, skippedInstances } };
   }
+  /* ---- Design tokens: the file's Figma variables as their own scope (`tokens` → `tokens:<collectionKey>` →
+     `token:<variableKey>`). Keys are stable across library re-imports; Figma ids are not. ---- */
+  const TOKENS_ROOT = C.TOKENS_ROOT_ID;
+  const TOKEN_FIELDS = ['name','resolvedType','description','scopes','codeSyntax'];
+  const hex2 = c => Math.max(0, Math.min(255, Math.round(Number(c) * 255))).toString(16).padStart(2, '0');
+  const isColor = v => !!v && typeof v === 'object' && ['r','g','b'].every(k => typeof v[k] === 'number');
+  /* One mode's value: `#rrggbb` (`#rrggbbaa` when not opaque), a number to 4 dp, a string, a boolean, or an alias
+     `{ alias: "token:<key>", name }`; null when it can't be read. */
+  function tokenValue(value, variables) {
+    if (value && typeof value === 'object' && value.type === 'VARIABLE_ALIAS') {
+      const target = variables.get(value.id);
+      return target && target.key ? { alias: 'token:' + target.key, name: target.name } : null;
+    }
+    if (isColor(value)) {
+      const alpha = hex2(typeof value.a === 'number' ? value.a : 1);
+      return '#' + hex2(value.r) + hex2(value.g) + hex2(value.b) + (alpha === 'ff' ? '' : alpha);
+    }
+    if (typeof value === 'number') return Number.isFinite(value) ? Math.round(value * 10000) / 10000 : null;
+    if (typeof value === 'string' || typeof value === 'boolean') return value;
+    return null;
+  }
+  const aliasIds = variable => {
+    let values = null;
+    try { values = variable.valuesByMode; } catch (_) { values = null; }
+    const out = new Set(); aliases(values, out); return Array.from(out).sort();
+  };
+  /* The token set: every variable in the captured records' `resolvedVariables`, every local variable
+     (`getLocalVariablesAsync`), the stored tokens' `options.storedVariableIds` (kept current; a null lookup means
+     the variable is gone) and, transitively, every variable those values alias. Returns
+     `{ nodes: { [nodeId]: { nodeId, parentId, path, nodeType, name, attrs } }, gone, warnings }` — `gone` holds the
+     variable ids Figma returned null for. Unreadable values are `{ $unreadable: true }` plus a `[token]` warning. */
+  async function collectTokens(api, records, options = {}) {
+    const cancelled = () => options.cancelled && options.cancelled();
+    const progress = count => { if (options.progress) options.progress('Collecting tokens', count); };
+    const variables = new Map(), gone = new Set(), warnings = new Set(), seen = new Set(), queue = [];
+    const stored = new Set(options.storedVariableIds || []);
+    const want = id => { if (typeof id === 'string' && id && !seen.has(id)) { seen.add(id); queue.push(id); } };
+    const figmaVariables = api.variables || {};
+    for (const props of records) {
+      const used = props && props.resolvedVariables;
+      if (used && typeof used === 'object') Object.keys(used).sort().forEach(want);
+    }
+    if (typeof figmaVariables.getLocalVariablesAsync === 'function') {
+      let locals = [];
+      try { locals = await figmaVariables.getLocalVariablesAsync() || []; }
+      catch (error) { warnings.add(`${TOKEN_WARNING}local variables could not be listed (${String(error && error.message || error).slice(0,200)}); only used variables are tracked.`); }
+      for (const v of locals) if (v && typeof v.id === 'string') { variables.set(v.id, v); want(v.id); }
+    }
+    Array.from(stored).sort().forEach(want);
+    let count = 0;
+    while (queue.length) {
+      if (cancelled()) throw new Error('Sync cancelled. Batches already uploaded were applied; run the sync again to finish.');
+      const id = queue.shift();
+      if (!variables.has(id)) {
+        try {
+          const v = await figmaVariables.getVariableByIdAsync(id);
+          variables.set(id, v || null);
+          if (!v) gone.add(id);
+        } catch (_) { variables.set(id, null); }
+      }
+      const v = variables.get(id);
+      if (v) aliasIds(v).forEach(want);
+      else if (!stored.has(id)) warnings.add(`${TOKEN_WARNING}variable ${id} could not be loaded; it is not tracked as a token.`);
+      if (++count % 100 === 0) { progress(count); if (options.pause) await options.pause(); }
+    }
+    progress(count);
+    const collections = new Map(), nodes = {};
+    for (const id of Array.from(variables.keys()).sort()) {
+      const v = variables.get(id);
+      if (!v || typeof v.key !== 'string' || !v.key) continue;
+      const nodeId = 'token:' + v.key;
+      if (nodes[nodeId]) continue;
+      if (!collections.has(v.variableCollectionId)) {
+        let collection = null;
+        try { collection = await figmaVariables.getVariableCollectionByIdAsync(v.variableCollectionId); } catch (_) { collection = null; }
+        collections.set(v.variableCollectionId, collection && typeof collection.key === 'string' && collection.key ? collection : null);
+      }
+      const collection = collections.get(v.variableCollectionId);
+      if (!collection) { warnings.add(`${TOKEN_WARNING}${v.name} (${id}): its collection could not be loaded; it is not tracked as a token.`); continue; }
+      const collectionId = 'tokens:' + collection.key;
+      const modes = Array.isArray(collection.modes) ? collection.modes : [];
+      if (!nodes[collectionId]) nodes[collectionId] = { nodeId: collectionId, parentId: TOKENS_ROOT, path: [TOKENS_ROOT], nodeType: 'VARIABLE_COLLECTION',
+        name: collection.name, attrs: { name: collection.name, modes: modes.map(m => m.name), remote: collection.remote === true } };
+      const attrs = {};
+      for (const k of TOKEN_FIELDS) {
+        try { attrs[k] = C.normalize(v[k] === undefined ? null : v[k]); }
+        catch (_) { attrs[k] = { $unreadable: true }; warnings.add(`${TOKEN_WARNING}${v.name} (${id}): could not read ${k}.`); }
+      }
+      attrs.variableId = id;
+      attrs.remote = v.remote === true;
+      let values = null;
+      try { values = v.valuesByMode; } catch (_) { values = null; }
+      for (const mode of modes) {
+        const value = tokenValue(values && typeof values === 'object' ? values[mode.modeId] : undefined, variables);
+        attrs['value:' + mode.name] = value === null ? { $unreadable: true } : value;
+        if (value === null) warnings.add(`${TOKEN_WARNING}${v.name} (${id}): the "${mode.name}" value could not be read; it is recorded as unreadable.`);
+      }
+      nodes[nodeId] = { nodeId, parentId: collectionId, path: [TOKENS_ROOT, collectionId], nodeType: 'VARIABLE', name: v.name, attrs };
+    }
+    return { nodes, gone, warnings: Array.from(warnings).sort() };
+  }
+  /* Plan the tokens scope against `GET …/hashes?under=tokens`. The `tokens` root is always sent (that response
+     carries the stored tokens map under `tokens` instead of the root's hash); other nodes only when their hash
+     changed. Deletions: stored tokens whose variable is gone (`collected.gone`), never ones this sync merely did
+     not reach, and stored collections once no stored token is left unaccounted for. Without the `tokens` map
+     (an older server) nothing is deleted. `counts` cover variables only; `empty` = nothing collected or stored. */
+  function planTokens(collected, stored) {
+    const { settings: _settings, tokens: map, ...hashes } = stored && typeof stored === 'object' ? stored : {};
+    const tokenMap = map && typeof map === 'object' && !Array.isArray(map) ? map : null;
+    const nodes = { [TOKENS_ROOT]: { nodeId: TOKENS_ROOT, parentId: null, path: [], nodeType: 'TOKENS', name: 'Design tokens', attrs: {} }, ...collected.nodes };
+    const upserts = [], deletedNodeIds = [];
+    const counts = { tracked: 0, changed: 0, added: 0, unchanged: 0, deleted: 0 };
+    const rank = id => id === TOKENS_ROOT ? 0 : id.startsWith('tokens:') ? 1 : 2; // parents first
+    for (const id of Object.keys(nodes).sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : 1))) {
+      const variable = id.startsWith('token:'), contentHash = C.contentHash(nodes[id].attrs);
+      if (variable) counts.tracked++;
+      if (id !== TOKENS_ROOT && hashes[id] === contentHash) { if (variable) counts.unchanged++; continue; }
+      if (variable) counts[hashes[id] === undefined ? 'added' : 'changed']++;
+      upserts.push({ ...nodes[id], contentHash });
+    }
+    if (tokenMap) {
+      let unaccounted = false;
+      for (const id of Object.keys(tokenMap).sort()) {
+        if (nodes[id]) continue;
+        const variableId = tokenMap[id] && tokenMap[id].variableId;
+        if (typeof variableId === 'string' && collected.gone.has(variableId)) { deletedNodeIds.push(id); counts.deleted++; }
+        else unaccounted = true;
+      }
+      if (!unaccounted) for (const id of Object.keys(hashes).sort()) if (id.startsWith('tokens:') && !nodes[id]) deletedNodeIds.push(id);
+    }
+    const empty = !Object.keys(collected.nodes).length && !Object.keys(hashes).some(id => id !== TOKENS_ROOT) && !(tokenMap && Object.keys(tokenMap).length);
+    return { upserts, deletedNodeIds, counts, empty };
+  }
   function normalizeBaseUrl(value) {
     const url = String(value || '').trim().replace(/\/+$/, '');
     if (!/^https?:\/\/[^\s/?#]+/.test(url)) throw new Error('Enter the API base URL (https://…) in Settings.');
@@ -643,7 +781,9 @@ const DesignChecklist = (() => {
      continues unchanged, anything else stops before uploading.
      Upserts go in batches of at most BATCH_CHARS JSON chars and BATCH_RECORDS records (`options.batchChars`,
      `options.batchRecords`), both raised on big syncs so the upload takes at most MAX_UPLOAD_BATCHES batches
-     (`options.maxBatches`) with no batch over BATCH_CHARS_MAX; deletions go in the first batch. */
+     (`options.maxBatches`) with no batch over BATCH_CHARS_MAX; deletions go in the first batch.
+     With `options.api` a second pass then syncs the file's design tokens (`syncTokens`, same `markImplemented`;
+     `result.tokens`); the prompt counts layers only. */
   async function sync(http, settings, snapshot, options = {}) {
     const config = validateSettings(settings);
     let markImplemented = options.markImplemented === true;
@@ -668,24 +808,42 @@ const DesignChecklist = (() => {
       mains = await resolveMains(options.api, http, config, snapshot, { cancelled, progress, pause: options.pause, mainNodes: options.mainNodes, trackLibrary });
       if (blockingWarnings(mains.warnings).length) throw new Error('Main components not uploaded because some properties could not be read: ' + blockingWarnings(mains.warnings).slice(0,3).join(' '));
     }
-    const batchPath = filePath(snapshot.fileKey, 'sync');
-    const result = { fileKey: snapshot.fileKey, upserted: 0, dirty: 0, tombstoned: 0, skippedInstances: 0 };
+    const cancelMessage = 'Sync cancelled. Batches already uploaded were applied; run the sync again to finish.';
+    const uploadOptions = { cancelled, cancelMessage, fileName: options.fileName, markImplemented,
+      batchChars: options.batchChars, batchRecords: options.batchRecords, maxBatches: options.maxBatches };
+    const scope = await upload(http, config, snapshot.fileKey, { ...uploadOptions, rootNodeId: snapshot.scopeId, phase: 'Uploading',
+      upserts: plan.upserts.concat(mains.upserts), deletedNodeIds: plan.deletedNodeIds,
+      progress: (count, total) => progress('Uploading', count, total) });
+    let tokens = null;
+    if (options.api && options.tokens !== false) {
+      if (cancelled()) throw new Error(cancelMessage);
+      const records = Object.keys(snapshot.nodes).sort().map(id => snapshot.nodes[id].props).concat(mains.upserts.map(up => up.attrs));
+      tokens = await syncTokens(options.api, http, config, snapshot.fileKey, records, { ...uploadOptions, pause: options.pause, progress });
+    }
+    return { fileKey: snapshot.fileKey, scopeId: snapshot.scopeId, markImplemented, trackLibraryComponents: trackLibrary, batches: scope.batches, ...plan.counts,
+      mains: mains.counts, mainWarnings: mains.warnings, tokens, result: scope.result };
+  }
+  /* Upserts in batches of at most `batchChars` JSON chars and `batchRecords` records (raised so the upload takes at
+     most `maxBatches` requests, no batch over BATCH_CHARS_MAX); deletions go in the first batch. Every batch carries
+     `fileName`, `rootNodeId` and `markImplemented`; `result` sums the server's counts. */
+  async function upload(http, config, fileKey, options) {
+    const result = { fileKey, upserted: 0, dirty: 0, tombstoned: 0, skippedInstances: 0 };
     const counted = ['upserted','dirty','tombstoned','skippedInstances'];
-    if (markImplemented) { result.baselined = 0; counted.push('baselined'); }
-    let batch = [], size = 0, batches = 0, deleted = plan.deletedNodeIds;
-    const total = plan.upserts.length + mains.upserts.length + deleted.length;
+    if (options.markImplemented) { result.baselined = 0; counted.push('baselined'); }
+    const upserts = options.upserts;
+    let batch = [], size = 0, batches = 0, deleted = options.deletedNodeIds;
+    const total = upserts.length + deleted.length;
     let done = 0; // upserts + deletions acknowledged by the server
-    if (total) progress('Uploading', 0, total);
+    if (total) options.progress(0, total);
     const flush = async () => {
       if (!batch.length && !deleted.length) return;
-      if (cancelled()) throw new Error('Sync cancelled. Batches already uploaded were applied; run the sync again to finish.');
-      const response = await request(http, config, batchPath, { fileKey: snapshot.fileKey, fileName: options.fileName, rootNodeId: snapshot.scopeId,
-        upserts: batch, deletedNodeIds: deleted, markImplemented });
+      if (options.cancelled()) throw new Error(options.cancelMessage);
+      const response = await request(http, config, filePath(fileKey, 'sync'), { fileKey, fileName: options.fileName, rootNodeId: options.rootNodeId,
+        upserts: batch, deletedNodeIds: deleted, markImplemented: options.markImplemented });
       for (const k of counted) result[k] += Number(response && response[k]) || 0;
       done += batch.length + deleted.length;
-      batches++; batch = []; size = 0; deleted = []; progress('Uploading', done, total);
+      batches++; batch = []; size = 0; deleted = []; options.progress(done, total);
     };
-    const upserts = plan.upserts.concat(mains.upserts);
     const sizes = upserts.map(upsert => JSON.stringify(upsert).length + 2);
     const maxBatches = options.maxBatches || MAX_UPLOAD_BATCHES;
     const charLimit = Math.max(options.batchChars || BATCH_CHARS, Math.min(BATCH_CHARS_MAX, Math.ceil(sizes.reduce((a, b) => a + b, 0) / maxBatches)));
@@ -695,7 +853,25 @@ const DesignChecklist = (() => {
       batch.push(upserts[i]); size += sizes[i];
     }
     await flush();
-    return { fileKey: snapshot.fileKey, scopeId: snapshot.scopeId, markImplemented, trackLibraryComponents: trackLibrary, batches, ...plan.counts, mains: mains.counts, mainWarnings: mains.warnings, result };
+    return { result, batches };
+  }
+  /* Second pass of a sync: the file's design tokens as the `tokens` scope (`rootNodeId: "tokens"`), planned against
+     `GET …/hashes?under=tokens` and uploaded with the same batching ("Uploading tokens"). Skipped (no upload) when
+     the file has no variables and none are stored. Token warnings never block. */
+  async function syncTokens(api, http, config, fileKey, records, options) {
+    options.progress('Fetching stored token hashes', 0);
+    const stored = await request(http, config, filePath(fileKey, 'hashes') + '?under=' + encodeURIComponent(TOKENS_ROOT));
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) throw new Error('API returned no token hash map.');
+    const map = stored.tokens && typeof stored.tokens === 'object' && !Array.isArray(stored.tokens) ? stored.tokens : {};
+    const storedVariableIds = Object.keys(map).map(id => map[id] && map[id].variableId).filter(id => typeof id === 'string' && id);
+    const collected = await collectTokens(api, records, { storedVariableIds, cancelled: options.cancelled, progress: options.progress, pause: options.pause });
+    const plan = planTokens(collected, stored);
+    let uploaded = { result: null, batches: 0 };
+    if (!plan.empty) {
+      uploaded = await upload(http, config, fileKey, { ...options, rootNodeId: TOKENS_ROOT, upserts: plan.upserts, deletedNodeIds: plan.deletedNodeIds,
+        progress: (count, total) => options.progress('Uploading tokens', count, total) });
+    }
+    return { ...plan.counts, batches: uploaded.batches, result: uploaded.result, warnings: collected.warnings };
   }
   function start(api, http = (...args) => fetch(...args)) {
     let scope = null, busy = false, cancelled = false, waitId = 0, choiceId = 0;
@@ -772,7 +948,7 @@ const DesignChecklist = (() => {
           const synced = await sync(http, settings, snapshot, { cancelled: () => cancelled, api, pause, mainNodes, fileName: api.root.name, confirmNewLayers,
             markImplemented: msg.markImplemented === true,
             progress: (phase, count, total) => send(progressMessage(phase, count, total)) });
-          send({ type: 'synced', ...synced, warnings: snapshot.warnings.concat(synced.mainWarnings) });
+          send({ type: 'synced', ...synced, warnings: snapshot.warnings.concat(synced.mainWarnings, synced.tokens ? synced.tokens.warnings : []) });
         } else {
           throw new Error('Unknown action: ' + msg.type);
         }
@@ -781,7 +957,7 @@ const DesignChecklist = (() => {
     };
     try { scope = selected(); send(scopeState()); } catch (_) { send({ type: 'notice', message: 'Select a section or frame, then click Use selection.' }); }
   }
-  return { capture, planDelta, scanDifference, resolveMains, sync, validateSettings, start, NEW_LAYERS_MIN, NEW_LAYERS_SHARE,
+  return { capture, planDelta, scanDifference, resolveMains, collectTokens, planTokens, sync, validateSettings, start, NEW_LAYERS_MIN, NEW_LAYERS_SHARE,
     BATCH_CHARS, BATCH_RECORDS, MAX_UPLOAD_BATCHES, BATCH_CHARS_MAX, VERIFY_RETRIES };
 })();
 if (typeof figma !== 'undefined') DesignChecklist.start(figma);
