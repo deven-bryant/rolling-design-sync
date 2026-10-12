@@ -30,7 +30,7 @@ const nodeIds = description => ({ type: 'array', items: nodeId, description });
 
 const hashes = {
   summary: 'Subtree hashes (plugin)',
-  description: 'The stored `contentHash` of every live node in `under`\'s subtree (inclusive), keyed by node id. `{}` when the node — or the file — was never synced. Plugin tokens only.',
+  description: 'The stored `contentHash` of every live node in `under`\'s subtree (inclusive), keyed by node id, plus the file\'s `settings` (defaults filled in; read `trackLibraryComponents` when a sync starts). Only `settings` when the node — or the file — was never synced. Plugin tokens only.',
   tags, security,
   params: fileKeyParams,
   querystring: {
@@ -41,7 +41,11 @@ const hashes = {
     },
   },
   response: {
-    200: { type: 'object', description: '`{ [nodeId]: contentHash }`.', additionalProperties: nullable('string') },
+    200: {
+      type: 'object', description: '`{ [nodeId]: contentHash, settings }` — `settings` is never a node id.',
+      properties: { settings: schemas.fileSettings },
+      additionalProperties: nullable('string'),
+    },
     ...problemResponses(ERRORS),
   },
 };
@@ -62,6 +66,7 @@ const upsert = {
     attrs: { type: 'object', additionalProperties: true, description: 'The captured properties.' },
     isInstance: nullable('boolean'),
     mainComponentId: nullable('string', { minLength: 1, description: 'An instance\'s main component (1:2 or 1-2).' }),
+    library: nullable('boolean', { description: 'true: a library node — scanned under a remote (library) main component or set. Optional: main components / sets with a remote `componentReference` and the subtrees of the remote mains instances point at are flagged anyway. Never unset by a later sync.' }),
   },
 };
 
@@ -194,7 +199,7 @@ function registerPluginRoutes(app, { config, nodes }) {
         hint: 'Pass ?under=<scope root node id>, or ?url=<figma link> with a node-id.',
       });
     }
-    return service(() => nodes.subtreeHashes(fileKey, address.normalizeNodeId(under)));
+    return service(async () => ({ ...(await nodes.subtreeHashes(fileKey, address.normalizeNodeId(under))), settings: await nodes.fileSettings(fileKey) }));
   });
 
   app.post('/files/:fileKey/sync', { schema: sync }, async (/** @type {import('./types').V3Request<'/v3/files/{fileKey}/sync', 'post'>} */ request) => {

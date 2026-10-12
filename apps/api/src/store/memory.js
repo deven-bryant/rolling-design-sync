@@ -64,6 +64,8 @@ function v3Matches(n, f, roots) {
   } else if (roots.length) {
     if (!roots.some(root => inSubtree(n, root, f.depth))) return false;
   }
+  if (f.library === 'exclude' && n.library) return false;
+  if (f.library === 'only' && !n.library) return false;
   if (f.types.length && !f.types.includes(n.nodeType)) return false;
   if (f.changeTypes.length && !f.changeTypes.includes(n.changeType)) return false;
   if (f.categories.length && !(n.changeCategories || []).some(c => f.categories.includes(c))) return false;
@@ -83,6 +85,11 @@ function v3Matches(n, f, roots) {
   return true;
 }
 
+/** A file row's trackLibraryComponents setting; true when absent (mirrors trackingSql in store/postgres.js). */
+const tracking = file => !file || !file.settings || file.settings.trackLibraryComponents !== false;
+/** `n` counts towards its file's metrics: not a library node, or the file tracks library components. */
+const counted = (n, file) => !n.library || tracking(file);
+
 /** @typedef {import('./types').Store} Store */
 
 /** @implements {Store} */
@@ -93,6 +100,7 @@ class MemoryStore {
     this.syncEvents = new Map(); // id -> sync_event row
     this.claims = new Map(); // claimId -> v3 claim row
     this.events = new Map(); // id -> event row
+    this.libraryComponents = new Map(); // component key -> library_component row
     this._eventSeq = 0; // like bigserial: never rolled back
     this._lock = Promise.resolve();
   }
@@ -110,7 +118,7 @@ class MemoryStore {
   }
 
   _dump() {
-    return ['nodes', 'files', 'syncEvents', 'claims', 'events'].map(k => [k, new Map(structuredClone(Array.from(this[k].entries())))]);
+    return ['nodes', 'files', 'syncEvents', 'claims', 'events', 'libraryComponents'].map(k => [k, new Map(structuredClone(Array.from(this[k].entries())))]);
   }
 
   _restore(backup) { for (const [k, m] of backup) this[k] = m; }
@@ -178,6 +186,7 @@ class MemoryStore {
       changedProps: clone(row.changedProps) || [],
       changeCategories: clone(row.changeCategories) || [],
       deletedAt: null,
+      library: !!(existing && existing.library) || !!row.library,
       updatedAt: now(),
     };
     this.nodes.set(key, node);
@@ -345,6 +354,7 @@ class MemoryStore {
       name: name ?? (existing ? existing.name : null),
       lastSyncAt: lastSyncAt ?? now(),
       createdAt: existing ? existing.createdAt : now(),
+      settings: existing ? existing.settings : {},
     };
     this.files.set(fileKey, file);
     return clone(file);
@@ -354,6 +364,47 @@ class MemoryStore {
     const event = { id: randomUUID(), fileKey, rootNodeId, counts: clone(counts), createdAt: createdAt ?? now() };
     this.syncEvents.set(event.id, event);
     return clone(event);
+  }
+
+  /** Marks every row in the subtree of each stored node in `rootIds` (the root included) as a library node; returns the ids newly marked. */
+  async markLibrarySubtrees(fileKey, rootIds) {
+    const roots = rootIds.map(id => this.nodes.get(this._nodeKey(fileKey, id))).filter(n => n && n.path);
+    const out = [];
+    for (const n of this._fileNodes(fileKey)) {
+      if (n.library || !n.path || !roots.some(r => isDescendant(n.path, r.path))) continue;
+      n.library = true;
+      out.push(n.nodeId);
+    }
+    return out;
+  }
+
+  /** Merges `settings` into the file's settings; null for an unknown file. */
+  async updateFileSettings(fileKey, settings) {
+    const file = this.files.get(fileKey);
+    if (!file) return null;
+    file.settings = { ...(file.settings || {}), ...clone(settings) };
+    return clone(file);
+  }
+
+  /** Cached library component resolutions for `keys`; unknown keys are skipped. */
+  async getLibraryComponents(keys) {
+    return [...new Set(keys)].sort().map(k => this.libraryComponents.get(k)).filter(Boolean).map(clone);
+  }
+
+  /** Inserts or replaces the cached resolution of one library component key. */
+  async upsertLibraryComponent({ componentKey, fileKey = null, nodeId = null, name = null, resolvedAt, error = null }) {
+    const row = { componentKey, fileKey, nodeId, name, resolvedAt, error };
+    this.libraryComponents.set(componentKey, row);
+    return clone(row);
+  }
+
+  /** Mirrors PostgresStore.placementCounts. */
+  async placementCounts(fileKey, mainIds, regions = null) {
+    const live = this._fileNodes(fileKey).filter(n => n.mainComponentId && !n.deletedAt);
+    return [...new Set(mainIds)].sort(cmp).map(id => {
+      const of = live.filter(n => n.mainComponentId === id);
+      return { mainComponentId: id, placements: of.length, placementsInScope: regions === null ? null : of.filter(n => regionOf(n, regions) >= 0).length };
+    });
   }
 
   // --- v3 reads (same contract as PostgresStore) ------------------------------
@@ -403,7 +454,7 @@ class MemoryStore {
     return Array.from(this.files.values())
       .filter(f => fileKey === null || f.fileKey === fileKey)
       .sort((a, b) => cmp(b.lastSyncAt || '', a.lastSyncAt || '') || cmp(a.fileKey, b.fileKey))
-      .map(f => ({ ...clone(f), counts: v3Counts(this._fileNodes(f.fileKey)) }));
+      .map(f => ({ ...clone(f), counts: v3Counts(this._fileNodes(f.fileKey).filter(n => counted(n, f))) }));
   }
 
   async listScopes(fileKey) {
@@ -413,7 +464,8 @@ class MemoryStore {
       const seen = latest.get(e.rootNodeId);
       if (!seen || cmp(e.createdAt, seen.createdAt) > 0 || (e.createdAt === seen.createdAt && cmp(e.id, seen.id) > 0)) latest.set(e.rootNodeId, e);
     }
-    const all = this._fileNodes(fileKey);
+    const file = this.files.get(fileKey);
+    const all = this._fileNodes(fileKey).filter(n => counted(n, file));
     return Array.from(latest.values())
       .sort((a, b) => cmp(b.createdAt, a.createdAt) || cmp(a.rootNodeId, b.rootNodeId))
       .map(e => {
@@ -832,11 +884,12 @@ class MemoryStore {
       const row = out.get(e.fileKey);
       const at = Date.parse(e.createdAt);
       if (!row || at < lo || at >= hi) continue;
+      const hidden = !tracking(this.files.get(e.fileKey));
       if (e.type === 'nodes.cleared') {
-        const n = eventClearedCount(e.data);
+        const n = eventClearedCount(e.data) - (hidden && isCount(e.data.libraryCount) ? e.data.libraryCount : 0);
         if (at >= mid) row.cleared += n; else row.clearedPrevious += n;
       } else if (e.type === 'sync.completed' && at >= mid) {
-        row.dirtied += eventDirtyCount(e.data);
+        row.dirtied += eventDirtyCount(e.data) - (hidden && e.data.counts && isCount(e.data.counts.libraryDirty) ? e.data.counts.libraryDirty : 0);
       }
     }
     return [...out.values()];

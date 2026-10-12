@@ -11,10 +11,11 @@ const address = require('./address');
 const schemas = require('./schemas');
 const format = require('./format');
 const { documentSortKey } = require('../documentOrder');
+const { fileSettings } = require('../nodeService');
 
 const isAbsolute = n => !!n.attrs && n.attrs.layoutPositioning === 'ABSOLUTE';
 
-const FILTER_KEYS = ['state', 'under', 'depth', 'type', 'changeType', 'changed', 'category', 'component', 'instance', 'name', 'since', 'claimed', 'worker'];
+const FILTER_KEYS = ['state', 'under', 'depth', 'type', 'changeType', 'changed', 'category', 'component', 'instance', 'name', 'since', 'claimed', 'worker', 'library'];
 const CLAIMED = ['true', 'false', 'mine'];
 const BOOLEANS = ['true', 'false'];
 
@@ -123,8 +124,60 @@ function buildFilter(p, nowIso) {
     claimed,
     worker,
     now: nowIso,
+    library: p.library === undefined ? null : /** @type {'include' | 'exclude' | 'only'} */ (oneOf('library', [String(p.library).trim()], schemas.LIBRARY_MODES)[0]),
   };
 }
+
+/** Sets an unset `filter.library` to the file's default: include library nodes when it tracks them, else exclude them. */
+function applyLibraryDefault(filter, file) {
+  if (filter.library === null) filter.library = fileSettings(file).trackLibraryComponents ? 'include' : 'exclude';
+  return filter;
+}
+
+const COMPONENT_TYPES = ['COMPONENT', 'COMPONENT_SET'];
+
+/**
+ * Annotates the library rows of `rows` with `libraryRef` (`{ key, type,
+ * fileKey, nodeId, resolved }`): the component key of their nearest
+ * COMPONENT / COMPONENT_SET ancestor-or-self and, with a Figma token, where it
+ * lives in the library file (library.js). One batched read for missing
+ * ancestors; returns `rows`.
+ *
+ * @param {import('../store/types').Store} store
+ * @param {import('../library').LibraryLinks | null | undefined} links
+ */
+async function withLibraryRefs(store, links, fileKey, rows) {
+  const lib = rows.filter(n => n && n.library);
+  if (!lib.length) return rows;
+  const byId = new Map(rows.filter(Boolean).map(n => [n.nodeId, n]));
+  const missing = [...new Set(lib.flatMap(n => pathNodeIds(n.path)))].filter(id => !byId.has(id));
+  for (const n of missing.length ? await store.getNodes(fileKey, missing) : []) byId.set(n.nodeId, n);
+  const ownerOf = n => {
+    const ids = pathNodeIds(n.path);
+    for (let i = ids.length - 1; i >= 0; i -= 1) {
+      const a = byId.get(ids[i]);
+      if (a && COMPONENT_TYPES.includes(a.nodeType) && a.attrs?.componentReference?.key) return a;
+    }
+    return null;
+  };
+  const owners = new Map(lib.map(n => [n.nodeId, ownerOf(n)]));
+  const refs = [...owners.values()].filter(Boolean).map(o => ({ key: o.attrs.componentReference.key, type: o.nodeType }));
+  const cached = links ? await links.lookup(refs) : new Map();
+  for (const n of lib) {
+    const owner = owners.get(n.nodeId);
+    const key = owner ? owner.attrs.componentReference.key : null;
+    const hit = key ? cached.get(key) : null;
+    const resolved = !!(hit && !hit.error && hit.fileKey && hit.nodeId);
+    n.libraryRef = { key, type: owner ? owner.nodeType : null, resolved, fileKey: resolved ? hit.fileKey : null, nodeId: resolved ? hit.nodeId : null };
+  }
+  return rows;
+}
+
+/** A library node's or item's `library` field from its `libraryRef`. */
+const libraryOut = ref => ({ key: ref ? ref.key ?? null : null, ...(ref && ref.resolved ? { fileKey: ref.fileKey } : {}), resolved: !!(ref && ref.resolved) });
+/** The Figma link of a node: its own file's, or for a library node its library file's (null until resolved). */
+const nodeUrl = (fileKey, n) => (!n.library ? core.link(fileKey, n.nodeId)
+  : n.libraryRef && n.libraryRef.resolved ? core.link(n.libraryRef.fileKey, n.libraryRef.nodeId) : null);
 
 function parseSort(sort = 'document') {
   const desc = sort.startsWith('-');
@@ -388,7 +441,8 @@ function nodeFields(fileKey, n, nowIso, changes = 'diff') {
     changedProps: n.dirty ? [...(n.changedProps ?? [])].sort() : [],
     ...changesOf(n, changeType, changes),
     contentHash: n.contentHash ?? null,
-    figmaUrl: core.link(fileKey, n.nodeId),
+    figmaUrl: nodeUrl(fileKey, n),
+    library: n.library ? libraryOut(n.libraryRef) : null,
     claim: claimOf(n, nowIso),
     blocked: n.blockedAt ? { reason: n.blockedReason ?? null, by: n.blockedBy ?? null, at: n.blockedAt } : null,
     attrs: n.attrs ?? {},
@@ -437,14 +491,14 @@ function pick(obj, keys) {
 }
 
 const withClean = c => ({ total: c.total, dirty: c.dirty, clean: c.total - c.dirty - c.blocked, blocked: c.blocked });
-const fileOut = f => ({ fileKey: f.fileKey, name: f.name ?? null, lastSyncAt: f.lastSyncAt ?? null, createdAt: f.createdAt ?? null, counts: withClean(f.counts) });
+const fileOut = f => ({ fileKey: f.fileKey, name: f.name ?? null, lastSyncAt: f.lastSyncAt ?? null, createdAt: f.createdAt ?? null, settings: fileSettings(f), counts: withClean(f.counts) });
 
 // --- routes ----------------------------------------------------------------------
 /**
  * @param {any} app
  * @param {{ store: import('../store/types').Store } & Record<string, any>} deps
  */
-function registerReadRoutes(app, { store, now }) {
+function registerReadRoutes(app, { store, now, libraryLinks = null }) {
   const nowIso = () => now().toISOString();
 
   async function trackedFile(fileKey) {
@@ -506,13 +560,18 @@ function registerReadRoutes(app, { store, now }) {
     const pos = decodeOutlineCursor(outline ? query.cursor : undefined, fp);
     const after = outline ? pos.after : query.cursor === undefined ? null : decodeCursor(query.cursor, fp);
 
-    await trackedFile(fileKey);
+    applyLibraryDefault(filter, await trackedFile(fileKey));
     const underNodes = filter.under === null ? null : await resolveUnder(fileKey, filter.under, findNode);
     if (underNodes) filter.under = underNodes.map(n => n.nodeId);
     const expansion = expand ? await expandScope(store, fileKey, underNodes, expand) : null;
     if (expansion) filter.regions = expansion.regions;
 
-    const result = await store.listNodes(fileKey, filter, { sort, desc, limit, after, counts });
+    const list = async options => {
+      const r = await store.listNodes(fileKey, filter, options);
+      await withLibraryRefs(store, libraryLinks, fileKey, r.nodes);
+      return r;
+    };
+    const result = await list({ sort, desc, limit, after, counts });
     const base = view === 'full' ? schemas.FULL_FIELDS : schemas.COMPACT_FIELDS;
     const keys = fields ?? (expansion ? [...base, 'via'] : base);
     const shown = counts && !keys.includes('descendants') ? [...keys, 'descendants'] : keys;
@@ -530,7 +589,7 @@ function registerReadRoutes(app, { store, now }) {
       const rows = [...result.nodes];
       let { next } = result;
       while (next && rows.length < format.OUTLINE_LINES) {
-        const r = await store.listNodes(fileKey, filter, { sort, desc, limit: Math.min(format.OUTLINE_LINES - rows.length, format.STREAM_PAGE), after: next, counts });
+        const r = await list({ sort, desc, limit: Math.min(format.OUTLINE_LINES - rows.length, format.STREAM_PAGE), after: next, counts });
         rows.push(...r.nodes);
         next = r.next;
       }
@@ -547,7 +606,7 @@ function registerReadRoutes(app, { store, now }) {
     if (fmt !== 'json') {
       return format.stream(reply, fmt, {
         first: { rows: result.nodes, next: result.next },
-        fetch: async next => { const r = await store.listNodes(fileKey, filter, { sort, desc, limit, after: next, counts }); return { rows: r.nodes, next: r.next }; },
+        fetch: async next => { const r = await list({ sort, desc, limit, after: next, counts }); return { rows: r.nodes, next: r.next }; },
         cap: query.limit ?? null,
         total: result.total,
         toObject,
@@ -572,6 +631,7 @@ function registerReadRoutes(app, { store, now }) {
     const changes = parseChanges(request.query.changes, 'diff');
     await trackedFile(fileKey);
     const node = await findNode(fileKey, raw, { counts: true });
+    await withLibraryRefs(store, libraryLinks, fileKey, [node]);
     const all = { fileKey, ...nodeFields(fileKey, node, nowIso(), changes) };
     return fields ? pick(all, ['fileKey', ...fields]) : pick(all, ['fileKey', ...schemas.DETAIL_FIELDS, 'descendants']);
   });
@@ -580,6 +640,6 @@ function registerReadRoutes(app, { store, now }) {
 }
 
 module.exports = {
-  registerReadRoutes, parseQ, filterParams, buildFilter, parseChanges, nodeFields, truncateChanges, pick, FILTER_KEYS, MAX_UNDER,
+  registerReadRoutes, parseQ, filterParams, buildFilter, applyLibraryDefault, withLibraryRefs, libraryOut, nodeUrl, parseChanges, nodeFields, truncateChanges, pick, FILTER_KEYS, MAX_UNDER,
   singleRoot, resolveUnder, mergeReach, queryFingerprint, encodeCursor, decodeCursor, encodeOutlineCursor, decodeOutlineCursor, offsetAfter, parseExpand, planExpansion, expandScope, isAbsolute,
 };

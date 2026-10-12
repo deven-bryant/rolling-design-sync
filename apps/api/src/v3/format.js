@@ -145,17 +145,19 @@ function changeText(n) {
 /** `- [ ] **Name** (TYPE) — paddingLeft 16 → 24; fills color/brand/500 → color/brand/600 · [Figma](url)` for a node (`nodeFields` shape). */
 function nodeLine(n) {
   const blocked = n.blocked ? ` · blocked: ${escape(truncate(n.blocked.reason || 'no reason'))}` : '';
-  return `- [${n.state === 'clean' ? 'x' : ' '}] **${escape(n.name ?? n.nodeId)}** (${escape(n.type ?? 'NODE')}) — ${changeText(n)}${blocked} · [Figma](${n.figmaUrl})`;
+  return `- [${n.state === 'clean' ? 'x' : ' '}] **${escape(n.name ?? n.nodeId)}** (${escape(n.type ?? 'NODE')}) — ${changeText(n)}${blocked}${n.figmaUrl ? ` · [Figma](${n.figmaUrl})` : n.library ? ' · library' : ''}`;
 }
 
 /** One checklist line for a work item (route shape). */
 function itemLine(fileKey, group, i) {
-  const title = (i.kind === 'removed' ? 'Removed: ' : '') + (i.key === null ? `**(no ${group})**` : `**${escape(i.name ?? i.key)}** (${escape(i.type ?? 'NODE')})`);
+  const title = (i.kind === 'removed' ? 'Removed: ' : i.kind === 'library' ? 'Library: ' : '') + (i.key === null ? `**(no ${group})**` : `**${escape(i.name ?? i.key)}** (${escape(i.type ?? 'NODE')})`);
   const props = i.changedProps.length ? `: ${listed(i.changedProps.map(escape))}` : '';
   const placements = i.placements === undefined || i.placements === null ? '' : ` · ${i.placements} placement${i.placements === 1 ? '' : 's'}`;
   const uses = i.uses && i.uses.length ? ` · uses ${i.uses.length} component${i.uses.length === 1 ? '' : 's'} (${i.uses.filter(u => u.livePlacements === 0).length} unused elsewhere)` : '';
-  const link = i.key === null || i.kind === 'removed' ? '' : ` · [Figma](${core.link(fileKey, group === 'set' && i.set ? i.set.id : i.key)})`;
-  return `- [ ] ${title} — ${i.nodeCount} node${i.nodeCount === 1 ? '' : 's'}${props}${placements}${uses}${link}`;
+  const url = i.key === null || i.kind === 'removed' ? null : i.library ? i.figmaUrl ?? null : core.link(fileKey, group === 'set' && i.set ? i.set.id : i.key);
+  const link = i.key === null || i.kind === 'removed' || !url ? '' : ` · [Figma](${url})`;
+  const nodes = i.kind === 'library' ? 'reference (not tracked)' : `${i.nodeCount} node${i.nodeCount === 1 ? '' : 's'}`;
+  return `- [${i.kind === 'library' ? 'x' : ' '}] ${title} — ${nodes}${props}${placements}${uses}${link}`;
 }
 
 /** One list line for an event (route shape). */
@@ -265,8 +267,8 @@ function outlineTree(rows, { base = 0, attach = new Map(), mainNames = new Map()
 
 /** `Name (TYPE) · 3 nodes · changed (4: characters, fills, …) · 2 placements` for a work item (route shape). */
 function itemOutline(group, i) {
-  const title = (i.kind === 'removed' ? 'removed: ' : '') + (i.key === null ? `(no ${group})` : `${plain(i.name ?? i.key)} (${plain(i.type ?? 'NODE')})`);
-  const nodes = plural(i.nodeCount, 'node') + (i.more ? ` (first ${i.nodeIds.length} below)` : '');
+  const title = (i.kind === 'removed' ? 'removed: ' : i.kind === 'library' ? 'library: ' : '') + (i.key === null ? `(no ${group})` : `${plain(i.name ?? i.key)} (${plain(i.type ?? 'NODE')})`);
+  const nodes = i.kind === 'library' ? 'reference (not tracked)' : plural(i.nodeCount, 'node') + (i.more ? ` (first ${i.nodeIds.length} below)` : '');
   const props = i.changedProps.length ? ` · changed (${firstProps(i.changedProps)})` : '';
   const placements = i.placements === undefined || i.placements === null ? '' : ` · ${plural(i.placements, 'placement')}`;
   const inScope = i.placementsInScope === undefined || i.placementsInScope === null ? '' : ` · ${i.placementsInScope} in scope`;

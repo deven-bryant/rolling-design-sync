@@ -162,6 +162,45 @@ those with `0`, and then clears the root with `subtree: true`.
   plugin): `layout`, `color`, `typography`, `effects`, `component`, `content`,
   `structure`, `prototype`, `other`.
 
+### Library components
+
+- **Library nodes.** `node.library` (migration
+  `20261013000000_api_v3_library_components.sql`) flags a **remote** (library)
+  main component / component set and every row inside it. A sync upsert may
+  send `library: true`; the server also flags COMPONENT / COMPONENT_SET rows
+  whose own `componentReference.remote` is true and the subtrees of the mains
+  (and sets) that instance rows with a remote reference point at. The flag is
+  never unset by a later sync. The migration backfills rows stored before it
+  (Postgres and PGlite); the memory store has no stored data to backfill.
+  Instances (placements, overrides) are never library nodes.
+- **File settings.** `file.settings` (jsonb); one setting,
+  `trackLibraryComponents` (default `true` when absent). `GET /v3/files`,
+  `GET /v3/files/{fileKey}` and the plugin's `…/hashes` return `settings` with
+  defaults filled in. `PATCH /v3/files/{fileKey}` with
+  `{ settings: { trackLibraryComponents }, worker? }` (agent token or agent
+  session; viewers `403`; unknown setting `invalid_parameter`; unknown file
+  `file_not_found`) emits `file.settings_changed` (`data: { settings }`) when a
+  setting changes; its actor follows the clear rules.
+- **Tracking off.** Library nodes are left out of node listings, summaries,
+  file and scope counts, work-item `progress` and trends (`sync.completed`
+  `counts.libraryDirty` and `nodes.cleared` `data.libraryCount`, present when
+  non-zero, are subtracted); nothing is deleted and turning it back on restores
+  them. The `library=include|exclude|only` filter (default: include when on,
+  exclude when off) still reaches them. With `expand=instances`
+  (`group=component` or `set`) every library main the expansion reaches is a
+  **reference item**: `kind: "library"`, `tracked: false`, `nodeCount: 0`, no
+  `nodeIds`, no `progress`, `placements` / `placementsInScope` as usual.
+  Clearing or claiming library nodes by id still works.
+- **Library links.** With `RDS_FIGMA_TOKEN` (optional, server-side only) a
+  library component key resolves through `GET /v1/components/{key}` /
+  `/v1/component_sets/{key}` (`meta.file_key`, `meta.node_id`) into the
+  `library_component` cache — in the background after a sync commits and on
+  read, never blocking or failing a request, with a short timeout and at most
+  one retry per hour for failures. Library nodes and items carry
+  `library: { key, fileKey?, resolved }`; `figmaUrl` is the library file + the
+  main's node id when resolved, else `null`. `GET /v3/status` reports
+  `libraryLinks: true|false`.
+
 ### Diff rules
 
 - Compare **top-level attribute keys** of `implemented_attrs` and `attrs` with

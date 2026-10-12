@@ -17,13 +17,14 @@ const CHANGES_MODES = ['auto', 'diff', 'names'];
 /** Longest JSON (bytes) a change side keeps in compact listing / work responses before `{ truncated, bytes }`. */
 const MAX_CHANGE_SIDE_BYTES = 1024;
 const EXPANDS = ['instances'];
+const LIBRARY_MODES = ['include', 'exclude', 'only'];
 const DEFAULT_EXPAND_DEPTH = 10;
 const MAX_EXPAND_DEPTH = 20;
 /** `expand=instances` expands at most this many distinct main components per request. */
 const EXPANSION_LIMIT = 500;
 
 const COMPACT_FIELDS = ['nodeId', 'name', 'type', 'parentId', 'isInstance', 'mainComponentId', 'component', 'state', 'changeType', 'changedProps',
-  'changes', 'changesKnown', 'contentHash', 'figmaUrl', 'claim', 'blocked'];
+  'changes', 'changesKnown', 'contentHash', 'figmaUrl', 'library', 'claim', 'blocked'];
 const FULL_FIELDS = [...COMPACT_FIELDS, 'attrs', 'implementedAttrs', 'path'];
 const DETAIL_FIELDS = [...FULL_FIELDS, 'deleted', 'history'];
 const NODE_FIELDS = [...DETAIL_FIELDS, 'descendants'];
@@ -74,6 +75,23 @@ const component = {
   properties: { id: { type: 'string' }, key: { type: 'string' }, name: { type: 'string' }, remote: { type: 'boolean' }, set: componentSet },
 };
 
+const library = {
+  type: ['object', 'null'],
+  description: 'Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component\'s); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`.',
+  properties: { key: nullable('string'), fileKey: { type: 'string' }, resolved: { type: 'boolean' } },
+};
+
+const fileSettings = {
+  type: 'object',
+  description: 'Per-file settings, defaults filled in.',
+  properties: {
+    trackLibraryComponents: {
+      type: 'boolean',
+      description: 'Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked.',
+    },
+  },
+};
+
 const node = {
   type: 'object',
   description: 'A node. Compact nodes carry the first group of properties; `view=full` adds `attrs`, `implementedAttrs` and `path`; `fields` picks any subset.',
@@ -95,7 +113,8 @@ const node = {
     }),
     changesKnown: { type: 'boolean' },
     contentHash: nullable('string'),
-    figmaUrl: { type: 'string' },
+    figmaUrl: nullable('string', { description: 'The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`).' }),
+    library,
     claim: nullable('object', {
       properties: { claimId: nullable('string'), worker: { type: 'string' }, label: nullable('string'), expiresAt: { type: 'string' } },
     }),
@@ -151,6 +170,7 @@ const file = {
     name: nullable('string'),
     lastSyncAt: nullable('string'),
     createdAt: nullable('string'),
+    settings: fileSettings,
     counts,
   },
 };
@@ -192,6 +212,10 @@ const listQuery = {
     claimed: str('Comma-separated: true (leased), false (free), mine (leased to `worker`).'),
     worker: str('Your worker id; needed with `claimed=mine`.'),
     instance: { type: 'string', enum: ['true', 'false'], description: 'true: only component instances (`isInstance`); false: only other nodes.' },
+    library: {
+      type: 'string', enum: LIBRARY_MODES,
+      description: 'Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude.',
+    },
     q: str('All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter.'),
     view: { type: 'string', enum: ['compact', 'full'], description: 'compact (default: state, changes, hash, claim, block) or full (adds attrs, implementedAttrs, path; change values never truncated).' },
     changes: {
@@ -344,7 +368,7 @@ const OPENAPI_OPTIONS = {
 };
 
 module.exports = {
-  componentSet,
+  componentSet, library, fileSettings, LIBRARY_MODES,
   problemResponses,
   CATEGORIES, STATES, CHANGE_TYPES, SORTS, MAX_LIMIT, DEFAULT_LIMIT, CHANGES_MODES, MAX_CHANGE_SIDE_BYTES, COMPACT_FIELDS, FULL_FIELDS, DETAIL_FIELDS, NODE_FIELDS,
   LISTING_FIELDS, EXPANDS, DEFAULT_EXPAND_DEPTH, MAX_EXPAND_DEPTH, EXPANSION_LIMIT, expansion, expandQuery,

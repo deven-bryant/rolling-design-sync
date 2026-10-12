@@ -10,7 +10,7 @@ const { writeActor } = require('../auth');
 const { withEvents } = require('../events/outbox');
 const address = require('./address');
 const schemas = require('./schemas');
-const { nodeFields, pick } = require('./read');
+const { nodeFields, pick, withLibraryRefs } = require('./read');
 const { rejectUnknownKeys } = require('./actions');
 
 const MAX_REASON_LENGTH = 500;
@@ -84,7 +84,7 @@ const unblock = {
  * @param {any} app
  * @param {{ store: import('../store/types').Store } & Record<string, any>} deps
  */
-function registerBlockRoutes(app, { store, now, bus = null }) {
+function registerBlockRoutes(app, { store, now, bus = null, libraryLinks = null }) {
   const compact = (fileKey, n, at) => pick(nodeFields(fileKey, n, at), schemas.COMPACT_FIELDS);
   // `by`: the body `worker` when given; `portal:<label>` on a session-authenticated
   // call; else the token label — recorded as both the event actor and `blocked_by`.
@@ -122,6 +122,7 @@ function registerBlockRoutes(app, { store, now, bus = null }) {
       await emit(fileKey, 'node.blocked', { actor: by, data: { nodeId, reason, by, auto: false } });
       return done;
     });
+    await withLibraryRefs(store, libraryLinks, fileKey, [node]);
     return { fileKey, node: compact(fileKey, node, at), released };
   });
 
@@ -137,6 +138,7 @@ function registerBlockRoutes(app, { store, now, bus = null }) {
       await emit(fileKey, 'node.unblocked', { actor: by, data: { nodeId, reason: done.prior.reason, by, auto: false } });
       return { node: done.node, unblocked: true };
     });
+    await withLibraryRefs(store, libraryLinks, fileKey, [result.node]);
     return { fileKey, node: compact(fileKey, result.node, at), unblocked: result.unblocked };
   });
 }

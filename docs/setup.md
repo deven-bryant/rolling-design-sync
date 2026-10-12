@@ -388,6 +388,7 @@ replacement, so rename it.
 | `RDS_LISTEN_URL` | API | `DATABASE_URL` | Direct (non-pooler) Postgres URL for the live-event listener; without `LISTEN` the API polls every 2 s |
 | `RDS_EVENT_REPLAY_HOURS` | API | `24` | How far back an event stream replays on reconnect; older cursors get a `reset` |
 | `RDS_EVENT_RETENTION_DAYS` | API | `30` | Events older than this are pruned (startup and hourly) |
+| `RDS_FIGMA_TOKEN` | API (optional) | — | Figma personal access token with the `library_assets:read` scope: library component keys resolve to their library file, so library nodes link there. Without it their `figmaUrl` is null. Server-side only; never logged or returned |
 | `RDS_API_BASE_URL` | CLI / MCP | — | API base URL |
 | `RDS_AGENT_TOKEN` | CLI / MCP | — | This worker's agent token (one of `RDS_AGENT_TOKENS`) |
 | `RDS_FILE_KEY` | MCP (optional) | — | Default Figma file key, so tools can omit `fileKey` |

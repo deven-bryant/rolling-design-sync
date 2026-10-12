@@ -11,7 +11,7 @@ const { withEvents, capIds } = require('../events/outbox');
 const { problem } = require('./problem');
 const address = require('./address');
 const schemas = require('./schemas');
-const { filterParams, buildFilter, nodeFields, pick, FILTER_KEYS } = require('./read');
+const { filterParams, buildFilter, applyLibraryDefault, withLibraryRefs, nodeFields, pick, FILTER_KEYS } = require('./read');
 
 const MAX_CLEAR_ITEMS = 500;
 const MAX_CLAIM_NODES = schemas.MAX_LIMIT;
@@ -207,7 +207,7 @@ const claimData = (claim, nodeIds) => ({
  * @param {any} app
  * @param {{ store: import('../store/types').Store } & Record<string, any>} deps
  */
-function registerActionRoutes(app, { store, now, config, bus = null }) {
+function registerActionRoutes(app, { store, now, config, bus = null, libraryLinks = null }) {
   const defaultTtl = Math.min(config.claimTtlSeconds, MAX_TTL_SECONDS);
   const expiry = (at, ttl) => new Date(Date.parse(at) + Math.min(ttl ?? defaultTtl, MAX_TTL_SECONDS) * 1000).toISOString();
   const compact = (fileKey, n, at) => pick(nodeFields(fileKey, n, at), schemas.COMPACT_FIELDS);
@@ -215,6 +215,7 @@ function registerActionRoutes(app, { store, now, config, bus = null }) {
   async function trackedFile(fileKey) {
     const [file] = await store.listFiles({ fileKey });
     if (!file) throw address.fileNotFound(fileKey);
+    return file;
   }
 
   /** Caller ids (`1:2` / `1-2`) → stored node ids, via one batched lookup. */
@@ -264,9 +265,10 @@ function registerActionRoutes(app, { store, now, config, bus = null }) {
         const clearedIds = [...new Set(cleared.map(c => c.nodeId))];
         const holders = new Set(clearedIds.map(id => rows.get(id)).map(n => (n && n.claimedBy) || null));
         const worker = holders.size === 1 ? [...holders][0] : null;
+        const libraryCount = clearedIds.filter(id => rows.get(id)?.library).length;
         await emit(fileKey, 'nodes.cleared', {
           actor,
-          data: { nodeIds: capIds(clearedIds), count: clearedIds.length, commitRef: commitRef || null, worker },
+          data: { nodeIds: capIds(clearedIds), count: clearedIds.length, commitRef: commitRef || null, worker, ...(libraryCount ? { libraryCount } : {}) },
         });
       }
       return items.map((item, i) => {
@@ -301,7 +303,8 @@ function registerActionRoutes(app, { store, now, config, bus = null }) {
       if (params.under === undefined && urlNodeId) params.under = urlNodeId;
       storeFilter = { ...buildFilter(params, at), claimed: ['false', 'mine'], worker };
     }
-    await trackedFile(fileKey);
+    const file = await trackedFile(fileKey);
+    if (storeFilter) applyLibraryDefault(storeFilter, file);
 
     const { claim, nodes } = await withEvents(store, bus, async (tx, emit) => {
       let ids;
@@ -324,6 +327,7 @@ function registerActionRoutes(app, { store, now, config, bus = null }) {
       await emit(fileKey, 'claim.created', { actor: writeActor(request, worker), data: claimData(taken.claim, leased.map(n => n.nodeId)) });
       return { claim: taken.claim, nodes: leased };
     });
+    await withLibraryRefs(store, libraryLinks, fileKey, nodes);
     return {
       claimId: claim.claimId, worker: claim.worker, label: claim.label, expiresAt: claim.expiresAt,
       nodes: nodes.map(n => compact(fileKey, n, at)),
@@ -347,6 +351,7 @@ function registerActionRoutes(app, { store, now, config, bus = null }) {
     });
     if (!result) throw claimNotFound(claimId);
     const { claim, nodes } = result;
+    await withLibraryRefs(store, libraryLinks, fileKey, nodes);
     return { claimId: claim.claimId, worker: claim.worker, label: claim.label, expiresAt: claim.expiresAt, nodes: nodes.map(n => compact(fileKey, n, at)) };
   });
 

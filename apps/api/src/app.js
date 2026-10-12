@@ -11,6 +11,7 @@ const { requestOrigin } = require('./session');
 const { registerRateLimits } = require('./rateLimit');
 const { MemoryBus } = require('./events/bus');
 const { withClient } = require('./events/outbox');
+const { LibraryLinks } = require('./library');
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const MAX_CLIENT_LENGTH = 100;
@@ -33,9 +34,10 @@ function isLoopbackHostHeader(header) {
  *   logger?: import('fastify').FastifyServerOptions['logger'],
  *   bus?: import('./events/bus').MemoryBus | import('./events/postgres').PostgresBus,
  *   now?: () => number,
+ *   libraryLinks?: LibraryLinks,
  * }} [options]
  */
-function buildApp({ store, config = loadConfig(), logger = false, bus = new MemoryBus(), now = Date.now } = {}) {
+function buildApp({ store, config = loadConfig(), logger = false, bus = new MemoryBus(), now = Date.now, libraryLinks } = {}) {
   if (!store) throw new Error('buildApp requires a store.');
   // Fastify takes a hop count for trustProxy too; its typings omit `number`.
   const app = Fastify({ logger, bodyLimit: config.bodyLimit, trustProxy: /** @type {any} */ (config.trustProxy || false) });
@@ -73,7 +75,7 @@ function buildApp({ store, config = loadConfig(), logger = false, bus = new Memo
   // security boundary everywhere.
   app.register(cors, {
     origin: true,
-    methods: ['GET', 'POST', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['authorization', 'content-type', 'x-rds-client'],
     exposedHeaders: ['x-rds-server', 'x-rds-next-cursor', 'retry-after', 'ratelimit-limit', 'ratelimit-remaining', 'ratelimit-reset'],
     maxAge: 86400,
@@ -82,8 +84,11 @@ function buildApp({ store, config = loadConfig(), logger = false, bus = new Memo
   // Rate limits run after CORS so a 429 still reaches a browser caller.
   app.after(() => registerRateLimits(app, config.rateLimit, { now }));
 
-  const nodes = new NodeSyncService(store, { bus });
+  const links = libraryLinks || new LibraryLinks({ store, token: config.figmaToken, log: app.log });
+  app.addHook('onClose', async () => links.close());
+  const nodes = new NodeSyncService(store, { bus, libraryLinks: links });
   app.decorate('nodeService', nodes);
+  app.decorate('libraryLinks', links);
   app.decorate('store', store);
   app.decorate('eventBus', bus);
 

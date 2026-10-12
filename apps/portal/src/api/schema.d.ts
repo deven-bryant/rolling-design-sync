@@ -402,6 +402,11 @@ export interface paths {
                                 name?: null | string;
                                 lastSyncAt?: null | string;
                                 createdAt?: null | string;
+                                /** @description Per-file settings, defaults filled in. */
+                                settings?: {
+                                    /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
+                                    trackLibraryComponents?: boolean;
+                                };
                                 counts?: {
                                     total?: number;
                                     dirty?: number;
@@ -547,6 +552,11 @@ export interface paths {
                             name?: null | string;
                             lastSyncAt?: null | string;
                             createdAt?: null | string;
+                            /** @description Per-file settings, defaults filled in. */
+                            settings?: {
+                                /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
+                                trackLibraryComponents?: boolean;
+                            };
                             counts?: {
                                 total?: number;
                                 dirty?: number;
@@ -673,7 +683,174 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Change file settings
+         * @description Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
+         */
+        patch: {
+            parameters: {
+                query?: {
+                    /** @description A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. */
+                    url?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description The settings to change (trackLibraryComponents); others keep their value. */
+                        settings: {
+                            /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
+                            trackLibraryComponents?: boolean;
+                        };
+                        /** @description Your worker id; recorded as the event actor (default: the token label). */
+                        worker?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            name?: null | string;
+                            lastSyncAt?: null | string;
+                            createdAt?: null | string;
+                            /** @description Per-file settings, defaults filled in. */
+                            settings?: {
+                                /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
+                                trackLibraryComponents?: boolean;
+                            };
+                            counts?: {
+                                total?: number;
+                                dirty?: number;
+                                clean?: number;
+                                blocked?: number;
+                            };
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/v3/files/{fileKey}/scopes": {
@@ -890,13 +1067,15 @@ export interface paths {
                     worker?: string;
                     /** @description true: only component instances (`isInstance`); false: only other nodes. */
                     instance?: "true" | "false";
+                    /** @description Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. */
+                    library?: "include" | "exclude" | "only";
                     /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
                     q?: string;
                     /** @description compact (default: state, changes, hash, claim, block) or full (adds attrs, implementedAttrs, path; change values never truncated). */
                     view?: "compact" | "full";
                     /** @description auto (default): the built→now diff for modified and deleted nodes, omitted for added ones (their property names are in `changedProps`) — keeps fresh-sync pages small; diff: the diff for every node, including added ones' full values; names: never `changes`, only `changedProps`. Ask for `changes=diff` (or `get_node`) when you need the values of added nodes. */
                     changes?: "auto" | "diff" | "names";
-                    /** @description Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, via (`via` needs `expand=instances`). */
+                    /** @description Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, via (`via` needs `expand=instances`). */
                     fields?: string;
                     /** @description `counts` adds subtree counts (`descendants`) to each node. */
                     include?: "counts";
@@ -966,7 +1145,14 @@ export interface paths {
                                 };
                                 changesKnown?: boolean;
                                 contentHash?: null | string;
-                                figmaUrl?: string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
                                 claim?: null | {
                                     claimId?: null | string;
                                     worker?: string;
@@ -1159,7 +1345,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    /** @description Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants. */
+                    /** @description Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants. */
                     fields?: string;
                     /** @description diff (default): the whole built→now diff, never truncated — the way to read an added node's values; auto: omitted for added nodes; names: never `changes`, only `changedProps`. */
                     changes?: "auto" | "diff" | "names";
@@ -1218,7 +1404,14 @@ export interface paths {
                             };
                             changesKnown?: boolean;
                             contentHash?: null | string;
-                            figmaUrl?: string;
+                            /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                            figmaUrl?: null | string;
+                            /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                            library?: null | {
+                                key?: null | string;
+                                fileKey?: string;
+                                resolved?: boolean;
+                            };
                             claim?: null | {
                                 claimId?: null | string;
                                 worker?: string;
@@ -1739,6 +1932,11 @@ export interface paths {
                             name?: string;
                             /** @description ISO 8601 time: only nodes changed at or after it. */
                             since?: string;
+                            /**
+                             * @description Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude.
+                             * @enum {string}
+                             */
+                            library?: "include" | "exclude" | "only";
                         };
                     };
                 };
@@ -1790,7 +1988,14 @@ export interface paths {
                                 };
                                 changesKnown?: boolean;
                                 contentHash?: null | string;
-                                figmaUrl?: string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
                                 claim?: null | {
                                     claimId?: null | string;
                                     worker?: string;
@@ -2355,7 +2560,14 @@ export interface paths {
                                 };
                                 changesKnown?: boolean;
                                 contentHash?: null | string;
-                                figmaUrl?: string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
                                 claim?: null | {
                                     claimId?: null | string;
                                     worker?: string;
@@ -2690,7 +2902,7 @@ export interface paths {
         };
         /**
          * List file events
-         * @description The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
+         * @description The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
          */
         get: {
             parameters: {
@@ -2701,7 +2913,7 @@ export interface paths {
                     before?: number;
                     /** @description `asc` (default): oldest first, page with `after` / `nextAfter`. `desc`: newest first, page with `before` / `nextBefore`. JSON pages only; SSE is unchanged. */
                     order?: "asc" | "desc";
-                    /** @description Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. */
+                    /** @description Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed. */
                     types?: string;
                     /** @description JSON page size (default 100, max 1000). */
                     limit?: number;
@@ -2736,7 +2948,7 @@ export interface paths {
                                 id?: number;
                                 fileKey?: string;
                                 /** @enum {string} */
-                                type?: "sync.completed" | "nodes.cleared" | "claim.created" | "claim.renewed" | "claim.released" | "node.blocked" | "node.unblocked";
+                                type?: "sync.completed" | "nodes.cleared" | "claim.created" | "claim.renewed" | "claim.released" | "node.blocked" | "node.unblocked" | "file.settings_changed";
                                 /** @description `plugin`, or the worker / token label that caused it. */
                                 actor?: null | string;
                                 /** @description IDs, counts, labels and commit refs; never design content. */
@@ -2883,7 +3095,7 @@ export interface paths {
         };
         /**
          * List events across files
-         * @description Activity across all files in global event-id order. Every event includes fileKey and, on JSON pages, fileName; fileKey optionally narrows to a tracked file. The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
+         * @description Activity across all files in global event-id order. Every event includes fileKey and, on JSON pages, fileName; fileKey optionally narrows to a tracked file. The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
          */
         get: {
             parameters: {
@@ -2894,7 +3106,7 @@ export interface paths {
                     before?: number;
                     /** @description `asc` (default): oldest first, page with `after` / `nextAfter`. `desc`: newest first, page with `before` / `nextBefore`. JSON pages only; SSE is unchanged. */
                     order?: "asc" | "desc";
-                    /** @description Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. */
+                    /** @description Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed. */
                     types?: string;
                     /** @description JSON page size (default 100, max 1000). */
                     limit?: number;
@@ -2928,7 +3140,7 @@ export interface paths {
                                 id?: number;
                                 fileKey?: string;
                                 /** @enum {string} */
-                                type?: "sync.completed" | "nodes.cleared" | "claim.created" | "claim.renewed" | "claim.released" | "node.blocked" | "node.unblocked";
+                                type?: "sync.completed" | "nodes.cleared" | "claim.created" | "claim.renewed" | "claim.released" | "node.blocked" | "node.unblocked" | "file.settings_changed";
                                 /** @description `plugin`, or the worker / token label that caused it. */
                                 actor?: null | string;
                                 /** @description IDs, counts, labels and commit refs; never design content. */
@@ -3150,7 +3362,14 @@ export interface paths {
                                 };
                                 changesKnown?: boolean;
                                 contentHash?: null | string;
-                                figmaUrl?: string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
                                 claim?: null | {
                                     claimId?: null | string;
                                     worker?: string;
@@ -3399,7 +3618,14 @@ export interface paths {
                                 };
                                 changesKnown?: boolean;
                                 contentHash?: null | string;
-                                figmaUrl?: string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
                                 claim?: null | {
                                     claimId?: null | string;
                                     worker?: string;
@@ -3603,6 +3829,8 @@ export interface paths {
                     claimed?: string;
                     /** @description Your worker id; needed with `claimed=mine`. */
                     worker?: string;
+                    /** @description Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. */
+                    library?: "include" | "exclude" | "only";
                     /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
                     q?: string;
                     /** @description A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. */
@@ -4027,6 +4255,8 @@ export interface paths {
                     claimed?: string;
                     /** @description Your worker id; needed with `claimed=mine`. */
                     worker?: string;
+                    /** @description Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. */
+                    library?: "include" | "exclude" | "only";
                     /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
                     q?: string;
                     /** @description A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. */
@@ -4069,10 +4299,20 @@ export interface paths {
                             group?: "component" | "frame" | "set";
                             items?: {
                                 /**
-                                 * @description `removed`: design deleted in Figma that was built — one item per removed root (the topmost tombstoned node; key = its id), listing the components it used (`uses`). Absent on component, set and frame items.
+                                 * @description `removed`: design deleted in Figma that was built — one item per removed root (the topmost tombstoned node; key = its id), listing the components it used (`uses`). `library`: a reference item — a library (remote) main component the scope uses while the file does not track library components (`expand=instances`, group=component or set): `tracked: false`, `nodeCount: 0`, no `nodeIds`, no `progress`, with `placements` / `placementsInScope`. Use the library component as is; there is nothing to build or clear. Absent on other component, set and frame items.
                                  * @enum {string}
                                  */
-                                kind?: "removed";
+                                kind?: "removed" | "library";
+                                /** @description Reference (`kind: "library"`) items only: false — the library component is not tracked in this file. */
+                                tracked?: boolean;
+                                /** @description Items whose component is a library (remote) component: `{ key, fileKey?, resolved }` as on nodes. Absent on other items. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
+                                /** @description Library items only: the component in its library file, or null while unresolved. */
+                                figmaUrl?: null | string;
                                 /** @description The component or frame node id; with group=set, the Figma set key (id when no key is available). Standalone components retain their node id; removed items: the removed root's id; null for nodes with none. */
                                 key?: null | string;
                                 name?: null | string;
@@ -4287,7 +4527,7 @@ export interface paths {
         };
         /**
          * Server and plugin status
-         * @description Connection diagnostics: server version, storage mode, live event bus mode and replay window. `plugin` describes the newest retained sync.completed across all files; its fields are null before the first sync.
+         * @description Connection diagnostics: server version, storage mode, live event bus mode and replay window, and whether library links are on (`libraryLinks`). `plugin` describes the newest retained sync.completed across all files; its fields are null before the first sync.
          */
         get: {
             parameters: {
@@ -4311,6 +4551,8 @@ export interface paths {
                             /** @enum {string} */
                             events?: "listening" | "polling";
                             replayHours?: number;
+                            /** @description True when RDS_FIGMA_TOKEN is set: library nodes link to their library file once resolved. False: their `figmaUrl` is null. */
+                            libraryLinks?: boolean;
                             plugin?: {
                                 lastSyncAt?: null | string;
                                 client?: null | string;
@@ -4513,7 +4755,7 @@ export interface paths {
         };
         /**
          * Subtree hashes (plugin)
-         * @description The stored `contentHash` of every live node in `under`'s subtree (inclusive), keyed by node id. `{}` when the node — or the file — was never synced. Plugin tokens only.
+         * @description The stored `contentHash` of every live node in `under`'s subtree (inclusive), keyed by node id, plus the file's `settings` (defaults filled in; read `trackLibraryComponents` when a sync starts). Only `settings` when the node — or the file — was never synced. Plugin tokens only.
          */
         get: {
             parameters: {
@@ -4532,13 +4774,19 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description `{ [nodeId]: contentHash }`. */
+                /** @description `{ [nodeId]: contentHash, settings }` — `settings` is never a node id. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": {
+                            /** @description Per-file settings, defaults filled in. */
+                            settings?: {
+                                /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
+                                trackLibraryComponents?: boolean;
+                            };
+                        } & {
                             [key: string]: null | string;
                         };
                     };
@@ -4722,6 +4970,8 @@ export interface paths {
                             isInstance?: boolean | null;
                             /** @description An instance's main component (1:2 or 1-2). */
                             mainComponentId?: string | null;
+                            /** @description true: a library node — scanned under a remote (library) main component or set. Optional: main components / sets with a remote `componentReference` and the subtrees of the remote mains instances point at are flagged anyway. Never unset by a later sync. */
+                            library?: boolean | null;
                         }[];
                         /**
                          * @description Nodes that vanished from the scope; tombstoned.

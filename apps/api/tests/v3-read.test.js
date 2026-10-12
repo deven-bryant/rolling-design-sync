@@ -724,7 +724,7 @@ test('/v3/openapi.json is an OpenAPI 3 document listing every v3 route', async t
   assert.equal(doc.components.securitySchemes.agentToken.scheme, 'bearer');
 
   const routes = {
-    '/v3/files': ['get'], '/v3/files/{fileKey}': ['get'], '/v3/files/{fileKey}/scopes': ['get'], '/v3/files/{fileKey}/nodes': ['get'],
+    '/v3/files': ['get'], '/v3/files/{fileKey}': ['get', 'patch'], '/v3/files/{fileKey}/scopes': ['get'], '/v3/files/{fileKey}/nodes': ['get'],
     '/v3/files/{fileKey}/nodes/{nodeId}': ['get'], '/v3/resolve': ['get'], '/v3/openapi.json': ['get'],
     '/v3/files/{fileKey}/clear': ['post'], '/v3/files/{fileKey}/claims': ['post', 'get'],
     '/v3/files/{fileKey}/claims/{claimId}/renew': ['post'], '/v3/files/{fileKey}/claims/{claimId}': ['delete'],
@@ -798,6 +798,7 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     'get /v3/files/{fileKey}/work': ['list_work_items', 'work'],
     'get /v3/insights/trends': ['get_trends', 'trends'],
     'post /v3/files/{fileKey}/clear': ['clear_nodes', 'clear'],
+    'patch /v3/files/{fileKey}': ['update_file_settings', 'files settings'],
     'post /v3/files/{fileKey}/claims': ['claim_nodes', 'claim'],
     'get /v3/files/{fileKey}/claims': ['list_claims', 'claims ls'],
     'post /v3/files/{fileKey}/claims/{claimId}/renew': ['renew_claim', 'renew'],
@@ -826,8 +827,8 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     assert.equal(op['x-rds-mcp'], undefined, key);
     assert.equal(op['x-rds-cli'], undefined, key);
   }
-  assert.equal(new Set(Object.values(expected).map(([tool]) => tool)).size, 17);
-  assert.equal(new Set(Object.values(expected).map(([, command]) => command)).size, 17);
+  assert.equal(new Set(Object.values(expected).map(([tool]) => tool)).size, 18);
+  assert.equal(new Set(Object.values(expected).map(([, command]) => command)).size, 18);
 
   const described = s => typeof s === 'string' && s.trim().length > 0;
   for (const [key, op] of ops.filter(([k]) => expected[k])) {

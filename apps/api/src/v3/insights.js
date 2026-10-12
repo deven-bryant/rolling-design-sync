@@ -13,8 +13,9 @@ const schemas = require('./schemas');
 const format = require('./format');
 const {
   filterParams, buildFilter, parseChanges, nodeFields, truncateChanges, queryFingerprint, encodeCursor, decodeCursor, encodeOutlineCursor, decodeOutlineCursor, offsetAfter, FILTER_KEYS,
-  parseExpand, expandScope, isAbsolute, resolveUnder, singleRoot,
+  parseExpand, expandScope, isAbsolute, resolveUnder, singleRoot, applyLibraryDefault, withLibraryRefs, libraryOut, nodeUrl,
 } = require('./read');
+const { documentSortKey } = require('../documentOrder');
 
 const GROUPS = ['component', 'frame', 'set'];
 /** `nodeIds` of a work item holds at most this many ids; `more` counts the rest. */
@@ -127,9 +128,13 @@ const workItem = {
   type: 'object',
   properties: {
     kind: {
-      type: 'string', enum: ['removed'],
-      description: '`removed`: design deleted in Figma that was built — one item per removed root (the topmost tombstoned node; key = its id), listing the components it used (`uses`). Absent on component, set and frame items.',
+      type: 'string', enum: ['removed', 'library'],
+      description: '`removed`: design deleted in Figma that was built — one item per removed root (the topmost tombstoned node; key = its id), listing the components it used (`uses`). '
+        + '`library`: a reference item — a library (remote) main component the scope uses while the file does not track library components (`expand=instances`, group=component or set): `tracked: false`, `nodeCount: 0`, no `nodeIds`, no `progress`, with `placements` / `placementsInScope`. Use the library component as is; there is nothing to build or clear. Absent on other component, set and frame items.',
     },
+    tracked: { type: 'boolean', description: 'Reference (`kind: "library"`) items only: false — the library component is not tracked in this file.' },
+    library: { ...schemas.library, description: 'Items whose component is a library (remote) component: `{ key, fileKey?, resolved }` as on nodes. Absent on other items.' },
+    figmaUrl: { type: ['string', 'null'], description: 'Library items only: the component in its library file, or null while unresolved.' },
     key: { ...nullableString, description: 'The component or frame node id; with group=set, the Figma set key (id when no key is available). Standalone components retain their node id; removed items: the removed root\'s id; null for nodes with none.' },
     name: nullableString,
     type: nullableString,
@@ -219,6 +224,8 @@ const work = format.withFormat({
 // --- representation ------------------------------------------------------------
 const itemOut = (group, expanded) => i => ({
   ...(i.kind ? { kind: i.kind } : {}),
+  ...(i.kind === 'library' ? { tracked: false } : {}),
+  ...(i.libraryRef ? { library: libraryOut(i.libraryRef), figmaUrl: i.libraryRef.resolved ? nodeUrl('', { library: true, libraryRef: i.libraryRef }) : null } : {}),
   key: i.keyId,
   name: i.name,
   type: i.type,
@@ -229,12 +236,13 @@ const itemOut = (group, expanded) => i => ({
   changedProps: i.changedProps,
   ...(i.changes ? { changes: i.changes } : {}),
   ...(i.progress ? { progress: i.progress } : {}),
-  ...(group === 'component' && !i.kind ? { placements: i.placements } : {}),
-  ...(group === 'component' && !i.kind && expanded ? { placementsInScope: i.placementsInScope } : {}),
+  ...(group === 'component' && (!i.kind || i.kind === 'library') ? { placements: i.placements } : {}),
+  ...(group === 'component' && (!i.kind || i.kind === 'library') && expanded ? { placementsInScope: i.placementsInScope } : {}),
   ...(i.kind === 'removed' ? { uses: i.uses, warnings: i.warnings } : {}),
-  nodeIds: i.nodeIds,
-  more: i.nodeCount - i.nodeIds.length,
+  ...(i.kind === 'library' ? {} : { nodeIds: i.nodeIds, more: i.nodeCount - i.nodeIds.length }),
 });
+
+const byK = (a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : 0);
 
 const zeros = keys => Object.fromEntries(keys.map(k => [k, 0]));
 const sortedKeys = obj => Object.fromEntries(Object.keys(obj).sort().map(k => [k, obj[k]]));
@@ -253,10 +261,74 @@ const trendOf = ({ cleared, clearedPrevious, dirtied }) => ({
  * @param {any} app
  * @param {{ store: import('../store/types').Store } & Record<string, any>} deps
  */
-function registerInsightRoutes(app, { store, now, config }) {
+function registerInsightRoutes(app, { store, now, config, libraryLinks = null }) {
   async function trackedFile(fileKey) {
     const [file] = await store.listFiles({ fileKey });
     if (!file) throw address.fileNotFound(fileKey);
+    return file;
+  }
+
+  /**
+   * Reference items (`kind: "library"`): with `expand=instances` while library
+   * nodes are excluded, each library main component the expansion reached —
+   * by set with group=set — with its placements and no nodes.
+   */
+  async function libraryRefItems(fileKey, filter, group, expansion) {
+    if (!expansion || filter.library !== 'exclude' || group === 'frame') return [];
+    const mainIds = [...new Set(expansion.vias.slice(expansion.scopes).map(v => v && v.mainComponentId).filter(Boolean))];
+    const mains = mainIds.length ? (await store.getNodes(fileKey, mainIds)).filter(n => n.library && n.path) : [];
+    if (!mains.length) return [];
+    await withLibraryRefs(store, libraryLinks, fileKey, mains);
+    const counts = new Map((await store.placementCounts(fileKey, mains.map(m => m.nodeId), filter.regions ?? null)).map(c => [c.mainComponentId, c]));
+    const base = { nodeCount: 0, categories: [], changedProps: [], nodeIds: [], kind: 'library' };
+    if (group === 'component') {
+      return mains.map(m => {
+        const set = m.attrs?.componentReference?.set;
+        const c = counts.get(m.nodeId);
+        return {
+          ...base, k: `${documentSortKey(m)} ${m.path}`, keyId: m.nodeId, name: m.name ?? null, type: m.nodeType ?? null, ...(set ? { set } : {}),
+          libraryRef: m.libraryRef, placements: c ? c.placements : 0, placementsInScope: c ? c.placementsInScope : null,
+        };
+      }).sort(byK);
+    }
+    const setRows = new Map((await store.getNodes(fileKey, [...new Set(mains.map(m => m.attrs?.componentReference?.set?.id).filter(Boolean))])).map(n => [n.nodeId, n]));
+    await withLibraryRefs(store, libraryLinks, fileKey, [...setRows.values()]);
+    const items = new Map();
+    for (const m of mains) {
+      const set = m.attrs?.componentReference?.set || null;
+      const identity = set ? `set:${set.key ?? set.id}` : m.path;
+      const owner = (set && setRows.get(set.id)) || m;
+      const k = `${documentSortKey(owner)} ${identity}`;
+      if (!items.has(identity)) {
+        items.set(identity, {
+          ...base, k, keyId: set ? set.key ?? set.id : m.nodeId, name: set ? set.name ?? null : m.name ?? null, type: set ? 'COMPONENT_SET' : m.nodeType ?? null,
+          ...(set ? { set, variants: [] } : {}), libraryRef: (set && setRows.get(set.id)?.libraryRef) || m.libraryRef,
+        });
+      }
+      const item = items.get(identity);
+      if (k < item.k) item.k = k;
+      if (set) item.variants.push({ key: m.attrs?.componentReference?.key ?? m.nodeId, name: m.name ?? null, nodeCount: 0 });
+    }
+    return [...items.values()].sort(byK);
+  }
+
+  /** `store.listWorkItems` with the reference items `refs` merged in key order; the key nodes of library items get `libraryRef`. */
+  async function listItems(fileKey, filter, page, refs) {
+    const r = await store.listWorkItems(fileKey, filter, page);
+    const keyIds = r.items.map(i => (i.kind ? [] : [page.group === 'set' && i.set ? i.set.id : i.keyId, i.nodeIds[0]]));
+    const rows = filter.library === 'exclude' ? new Map() : new Map((await store.getNodes(fileKey, [...new Set(keyIds.flat().filter(Boolean))])).map(n => [n.nodeId, n]));
+    const keyRows = r.items.map((i, x) => (i.kind ? null : rows.get(keyIds[x][0]) || rows.get(keyIds[x][1]) || null));
+    await withLibraryRefs(store, libraryLinks, fileKey, [...new Set(keyRows.filter(n => n && n.library))]);
+    r.items.forEach((i, x) => { if (keyRows[x] && keyRows[x].library) i.libraryRef = keyRows[x].libraryRef; });
+    if (!refs.length) return r;
+    const pending = refs.filter(i => !page.after || i.k > page.after.k);
+    const merged = [...r.items, ...pending].sort(byK);
+    const bound = r.next && r.items.length ? r.items[r.items.length - 1].k : null;
+    const eligible = merged.filter(i => bound === null || i.k <= bound);
+    const items = eligible.slice(0, page.limit);
+    const last = items[items.length - 1];
+    const more = eligible.length > page.limit || !!r.next;
+    return { items, total: r.total + refs.length, next: more && last ? { k: last.k, id: last.keyId ?? '' } : null };
   }
 
   async function findNode(fileKey, raw) {
@@ -279,7 +351,7 @@ function registerInsightRoutes(app, { store, now, config }) {
 
   /** Resolves the `under` ids to stored node ids and, with `expand`, sets `filter.regions`; returns the expansion (or null). */
   async function resolveScope(fileKey, filter, expand) {
-    await trackedFile(fileKey);
+    applyLibraryDefault(filter, await trackedFile(fileKey));
     const underNodes = filter.under === null ? null : await resolveUnder(fileKey, filter.under, findNode);
     if (underNodes) filter.under = underNodes.map(n => n.nodeId);
     if (!expand) return null;
@@ -331,10 +403,10 @@ function registerInsightRoutes(app, { store, now, config }) {
    * tree; whole items from the cursor's, as many as fit in OUTLINE_LINES lines
    * (at least one), rendered once and paged by `limit` lines.
    */
-  async function outlineWork(reply, { fileKey, filter, group, pos, fp, limit, toItem, lineLimit, progress }) {
+  async function outlineWork(reply, { fileKey, filter, group, pos, fp, limit, toItem, lineLimit, progress, refs }) {
     const at = now().toISOString();
     const lines = [];
-    let shown = 0, last = null, page = await store.listWorkItems(fileKey, filter, { group, limit, after: pos.after, maxIds: MAX_ITEM_NODE_IDS, progress });
+    let shown = 0, last = null, page = await listItems(fileKey, filter, { group, limit, after: pos.after, maxIds: MAX_ITEM_NODE_IDS, progress }, refs);
     const { total } = page;
     let full = false;
     for (;;) {
@@ -343,7 +415,7 @@ function registerInsightRoutes(app, { store, now, config }) {
       const mains = new Map([...rows.values(), ...(mainIds.length ? await store.getNodes(fileKey, mainIds) : [])].map(n => [n.nodeId, n.name]));
       for (const raw of page.items) {
         const item = toItem(raw);
-        const nodes = item.nodeIds.flatMap(id => {
+        const nodes = (item.nodeIds || []).flatMap(id => {
           const row = rows.get(id);
           return row ? [{ node: nodeFields(fileKey, row, at, 'names'), path: row.path, absolute: isAbsolute(row), region: 0 }] : [];
         });
@@ -354,7 +426,7 @@ function registerInsightRoutes(app, { store, now, config }) {
         last = raw;
       }
       if (full || !page.next) break;
-      page = await store.listWorkItems(fileKey, filter, { group, limit, after: page.next, maxIds: MAX_ITEM_NODE_IDS, progress });
+      page = await listItems(fileKey, filter, { group, limit, after: page.next, maxIds: MAX_ITEM_NODE_IDS, progress }, refs);
     }
     const shownTo = pos.offset + shown;
     const next = full && last ? { k: last.k, id: last.keyId ?? '' } : null;
@@ -387,6 +459,7 @@ function registerInsightRoutes(app, { store, now, config }) {
     const after = outline ? pos.after : query.cursor === undefined ? null : decodeCursor(query.cursor, fp);
     const expansion = await resolveScope(fileKey, filter, expand);
     if (group === 'frame' && filter.under && filter.under.length > 1) throw singleRoot('group', `'frame' needs exactly one under (got ${filter.under.length} distinct nodes).`);
+    const refs = await libraryRefItems(fileKey, filter, group, expansion);
 
     const limit = outline ? format.STREAM_PAGE : format.pageSize(fmt, query.limit, schemas.DEFAULT_LIMIT);
     let truncated = false;
@@ -406,11 +479,11 @@ function registerInsightRoutes(app, { store, now, config }) {
       return items.map(i => ({ ...i, changes: Object.fromEntries(i.nodeIds.filter(id => diffs.has(id)).map(id => [id, diffs.get(id)])) }));
     }
     const read = async next => {
-      const r = await store.listWorkItems(fileKey, filter, { group, limit, after: next, maxIds: MAX_ITEM_NODE_IDS, progress });
+      const r = await listItems(fileKey, filter, { group, limit, after: next, maxIds: MAX_ITEM_NODE_IDS, progress }, refs);
       return { ...r, items: await withChanges(r.items) };
     };
     const toItem = itemOut(group, !!expansion);
-    if (outline) return outlineWork(reply, { fileKey, filter, group, pos, fp, limit, toItem, lineLimit: query.limit ?? null, progress });
+    if (outline) return outlineWork(reply, { fileKey, filter, group, pos, fp, limit, toItem, lineLimit: query.limit ?? null, progress, refs });
     const result = await read(after);
     if (fmt !== 'json') {
       return format.stream(reply, fmt, {

@@ -19,6 +19,20 @@ const nonEmptyString = v => typeof v === 'string' && v.trim().length > 0;
 /** Instances are stored as placement rows (docs/node-sync-design.md, "Instance placements"). */
 const isInstanceNode = u => u.isInstance === true || u.nodeType === 'INSTANCE';
 
+const COMPONENT_TYPES = ['COMPONENT', 'COMPONENT_SET'];
+const remoteRef = attrs => !!attrs && !!attrs.componentReference && attrs.componentReference.remote === true;
+
+/** Per-file settings and their defaults (docs/api-v3-design.md, "Library components"). */
+const DEFAULT_SETTINGS = Object.freeze({ trackLibraryComponents: true });
+
+/** A file's effective settings: the stored known ones over the defaults. */
+function fileSettings(file) {
+  const stored = (file && file.settings) || {};
+  const out = { ...DEFAULT_SETTINGS };
+  for (const k of Object.keys(DEFAULT_SETTINGS)) if (typeof stored[k] === typeof DEFAULT_SETTINGS[k]) out[k] = stored[k];
+  return out;
+}
+
 /**
  * Stamped on every upsert; rows with a lower stored `capture_version` are
  * reported as `stale` by `POST /v3/files/{fileKey}/exists` so the plugin re-scans them
@@ -78,16 +92,24 @@ const EXISTS_MAX_IDS = 5000;
 class NodeSyncService {
   /**
    * @param {import('./store/types').Store} store
-   * @param {{ now?: () => Date, existsMaxIds?: number, bus?: import('./events/bus').MemoryBus | import('./events/postgres').PostgresBus | null }} [options]
+   * @param {{ now?: () => Date, existsMaxIds?: number, bus?: import('./events/bus').MemoryBus | import('./events/postgres').PostgresBus | null, libraryLinks?: import('./library').LibraryLinks | null }} [options]
    */
-  constructor(store, { now = () => new Date(), existsMaxIds = EXISTS_MAX_IDS, bus = null } = {}) {
+  constructor(store, { now = () => new Date(), existsMaxIds = EXISTS_MAX_IDS, bus = null, libraryLinks = null } = {}) {
     this.store = store;
     this.bus = bus;
+    /** @type {import('./library').LibraryLinks | null} */
+    this.libraryLinks = libraryLinks;
     this.now = now;
     this.existsMaxIds = existsMaxIds;
   }
 
   // --- plugin -------------------------------------------------------------
+
+  /** The file's effective settings (defaults when the file was never synced). */
+  async fileSettings(fileKey) {
+    const [file] = await this.store.listFiles({ fileKey });
+    return fileSettings(file);
+  }
 
   /** `{ [nodeId]: contentHash }` for the node's subtree; `{}` when never scanned. */
   async subtreeHashes(fileKey, nodeId) {
@@ -166,7 +188,11 @@ class NodeSyncService {
       if (u.attrs !== undefined && !isObject(u.attrs)) throw badRequest(`upsert.attrs must be an object (node ${u.nodeId}).`);
       if (u.isInstance !== undefined && u.isInstance !== null && typeof u.isInstance !== 'boolean') throw badRequest('upsert.isInstance must be a boolean.');
       if (u.mainComponentId !== undefined && u.mainComponentId !== null && !nonEmptyString(u.mainComponentId)) throw badRequest('upsert.mainComponentId must be a node id string or null.');
-      rows.push({ ...u, isInstance: isInstanceNode(u), ancestors: pathInput(u.path) });
+      if (u.library !== undefined && u.library !== null && typeof u.library !== 'boolean') throw badRequest('upsert.library must be a boolean.');
+      const isInstance = isInstanceNode(u);
+      // A library node: flagged by the plugin, or a main component / set whose own reference is remote.
+      const library = u.library === true || (!isInstance && COMPONENT_TYPES.includes(u.nodeType) && remoteRef(u.attrs));
+      rows.push({ ...u, isInstance, library, ancestors: pathInput(u.path) });
     }
 
     const nowIso = this.now().toISOString();
@@ -185,7 +211,7 @@ class NodeSyncService {
       const counts = { uploaded: rows.length, changed: 0, added: 0, deleted: 0, baselined: 0, autoResolved: 0 };
       const upserted = [];
       const unblocked = [];
-      let dirtied = 0;
+      const dirtiedIds = new Set();
       const reorderParents = new Set();
       for (const row of rows) {
         const ancestors = await ancestorsOf(row);
@@ -212,6 +238,7 @@ class NodeSyncService {
           mainComponentId: row.mainComponentId ?? null,
           contentHash: row.contentHash,
           captureVersion: CAPTURE_VERSION,
+          library: row.library,
           ...expected,
         }, markImplemented ? { implementedAt: nowIso } : null);
         // The upsert result is authoritative (a concurrent writer may have inserted the row meanwhile).
@@ -223,18 +250,39 @@ class NodeSyncService {
         if (existing && existing.parentId && existing.parentId !== node.parentId) reorderParents.add(existing.parentId);
         if (!existing || existing.deletedAt || orderInputsChanged(existing.attrs, node.attrs)) reorderParents.add(node.nodeId);
         if (existing && existing.blockedAt && !node.blockedAt) unblocked.push(existing);
-        if (node.dirty && !(existing && existing.dirty)) dirtied += 1;
+        if (node.dirty && !(existing && existing.dirty)) dirtiedIds.add(node.nodeId);
 
         if (!existing) counts[node.baselined ? 'baselined' : 'added'] += 1;
         else if (existing.deletedAt || existing.contentHash !== row.contentHash) counts.changed += 1;
       }
       const wasDirty = new Set((deletedNodeIds.length ? await tx.getNodes(fileKey, [...new Set(deletedNodeIds)]) : []).filter(n => n.dirty).map(n => n.nodeId));
       const tombstoned = await tx.tombstoneNodes(fileKey, deletedNodeIds, nowIso);
-      dirtied += tombstoned.filter(n => n.dirty && !wasDirty.has(n.nodeId)).length;
+      for (const n of tombstoned) if (n.dirty && !wasDirty.has(n.nodeId)) dirtiedIds.add(n.nodeId);
       for (const node of tombstoned) await tx.updateNode(fileKey, node.nodeId, changeColumns(node));
       counts.deleted = tombstoned.length;
       counts.autoResolved = tombstoned.filter(n => !n.dirty).length;
       for (const node of tombstoned) if (node.parentId) reorderParents.add(node.parentId);
+
+      // Library roots: the library rows of this batch, and the mains (and sets) its instances with a remote reference point at.
+      const libraryRoots = new Set(upserted.filter(n => n.library).map(n => n.nodeId));
+      for (const n of upserted) {
+        if (!n.isInstance || !remoteRef(n.attrs)) continue;
+        if (n.mainComponentId) libraryRoots.add(n.mainComponentId);
+        const set = n.attrs.componentReference.set;
+        if (set && nonEmptyString(set.id)) libraryRoots.add(set.id);
+      }
+      const marked = new Set(await tx.markLibrarySubtrees(fileKey, [...libraryRoots]));
+      const libraryIds = new Set([...upserted, ...tombstoned].filter(n => n.library).map(n => n.nodeId));
+      for (const id of marked) libraryIds.add(id);
+      const libraryDirty = [...dirtiedIds].filter(id => libraryIds.has(id)).length;
+      if (libraryDirty) counts.libraryDirty = libraryDirty;
+      const libraryRefs = [];
+      if (this.libraryLinks && this.libraryLinks.enabled && libraryIds.size) {
+        for (const n of await tx.getNodes(fileKey, [...libraryIds])) {
+          const key = n.attrs && n.attrs.componentReference && n.attrs.componentReference.key;
+          if (COMPONENT_TYPES.includes(n.nodeType) && nonEmptyString(key)) libraryRefs.push({ key, type: n.nodeType });
+        }
+      }
 
       const storedParents = new Set((await tx.getNodes(fileKey, [...new Set(upserted.map(n => n.parentId).filter(Boolean))])).map(n => n.nodeId));
       const rootIds = upserted.filter(n => !n.parentId || !storedParents.has(n.parentId)).map(n => n.nodeId);
@@ -253,13 +301,16 @@ class NodeSyncService {
       };
       if (markImplemented) summary.baselined = upserted.filter(n => n.baselined).length;
 
-      await emit(fileKey, 'sync.completed', { actor: 'plugin', data: { rootNodeId, counts: { ...counts, dirty: dirtied } } });
+      await emit(fileKey, 'sync.completed', { actor: 'plugin', data: { rootNodeId, counts: { ...counts, dirty: dirtiedIds.size } } });
       for (const n of unblocked) {
         await emit(fileKey, 'node.unblocked', { actor: 'plugin', data: { nodeId: n.nodeId, reason: n.blockedReason ?? null, by: null, auto: true } });
       }
+      return { summary, libraryRefs };
+    }).then(({ summary, libraryRefs }) => {
+      if (libraryRefs.length && this.libraryLinks) this.libraryLinks.enqueue(libraryRefs).catch(() => {});
       return summary;
     });
   }
 }
 
-module.exports = { NodeSyncService, changeColumns, sameChanges, EXISTS_MAX_IDS, CAPTURE_VERSION };
+module.exports = { NodeSyncService, changeColumns, sameChanges, fileSettings, DEFAULT_SETTINGS, EXISTS_MAX_IDS, CAPTURE_VERSION };

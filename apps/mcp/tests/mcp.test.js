@@ -243,6 +243,10 @@ test('every tool round-trips: inputs → HTTP request → JSON result', async t 
   await expectCall('unblock_node', { nodeId: ROOT }, { method: 'POST', path: `${file}/nodes/${encodeURIComponent(ROOT)}/unblock`, body: {} });
   assert.equal((await get(`${file}/nodes/${encodeURIComponent(ROOT)}`)).state, 'dirty');
 
+  const settings = await expectCall('update_file_settings', { settings: { trackLibraryComponents: true } },
+    { method: 'PATCH', path: file, body: { settings: { trackLibraryComponents: true } } });
+  assert.deepEqual(settings.settings, { trackLibraryComponents: true });
+
   const cleared = await expectCall('clear_nodes', { commitRef: 'abc123', items: [{ nodeId: CHILD, contentHash: node.contentHash }] },
     { method: 'POST', path: `${file}/clear`, body: { commitRef: 'abc123', items: [{ nodeId: CHILD, contentHash: node.contentHash }] } });
   assert.deepEqual(cleared.results, [{ nodeId: CHILD, status: 'cleared', contentHash: node.contentHash }]);

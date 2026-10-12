@@ -652,7 +652,7 @@ test('GET /v3/openapi.json is reachable without a token and lists the phase-1 ro
   assert.equal(doc.info.title, 'Rolling Design Sync API v3');
   const routes = {
     '/v3/files': ['get'],
-    '/v3/files/{fileKey}': ['get'],
+    '/v3/files/{fileKey}': ['get', 'patch'],
     '/v3/files/{fileKey}/scopes': ['get'],
     '/v3/files/{fileKey}/nodes': ['get'],
     '/v3/files/{fileKey}/nodes/{nodeId}': ['get'],
@@ -794,7 +794,7 @@ test('v3 fresh sync: the default listing is compact — changedProps, no added v
   assert.equal(page.truncated, undefined);
   for (const n of page.nodes) {
     assert.deepEqual(Object.keys(n).sort(), ['blocked', 'changeType', 'changedProps', 'changesKnown', 'claim', 'component', 'contentHash', 'figmaUrl',
-      'isInstance', 'mainComponentId', 'name', 'nodeId', 'parentId', 'state', 'type']);
+      'isInstance', 'library', 'mainComponentId', 'name', 'nodeId', 'parentId', 'state', 'type']);
     assert.equal(n.changeType, 'added');
   }
   assert.deepEqual(page.nodes.map(n => [n.nodeId, n.changedProps, n.isInstance, n.mainComponentId]), [
@@ -854,7 +854,7 @@ test('v3 plugin routes: a full sync as the plugin runs it', async () => {
 
   // First scan: nothing stored yet, so the plugin baselines.
   assert.deepEqual(await ok(call('POST', `/v3/files/${fileKey}/exists`, { headers: client, body: { nodeIds: IDS.map(dashed) } })), { present: [], stale: [] });
-  assert.deepEqual(await ok(call('GET', `/v3/files/${fileKey}/hashes`, { headers: client, query: { under: dashed(ROOT) } })), {});
+  assert.deepEqual(await ok(call('GET', `/v3/files/${fileKey}/hashes`, { headers: client, query: { under: dashed(ROOT) } })), { settings: { trackLibraryComponents: true } });
   const baseline = await ok(call('POST', '/v3/files/-/sync', {
     headers: client, query: url, body: { fileName: 'E2E File', rootNodeId: dashed(ROOT), upserts: BUILT.map(dashedUp), markImplemented: true },
   }));
@@ -862,7 +862,7 @@ test('v3 plugin routes: a full sync as the plugin runs it', async () => {
 
   // Re-scan: send only what changed against the stored hashes, tombstone what vanished.
   const stored = await ok(call('GET', '/v3/files/-/hashes', { headers: client, query: url }));
-  assert.deepEqual(Object.keys(stored).sort(), BUILT.map(u => u.nodeId).sort());
+  assert.deepEqual(Object.keys(stored).filter(k => k !== 'settings').sort(), BUILT.map(u => u.nodeId).sort());
   const changed = NOW.filter(u => stored[u.nodeId] !== u.contentHash);
   const edit = await ok(call('POST', `/v3/files/${fileKey}/sync`, { headers: client, body: { fileName: 'E2E File', rootNodeId: ROOT, upserts: changed } }));
   assert.deepEqual(edit, { fileKey, upserted: changed.length, dirty: DIRTY.length, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
@@ -870,7 +870,7 @@ test('v3 plugin routes: a full sync as the plugin runs it', async () => {
   assert.equal(gone.tombstoned, 1);
 
   const hashes = await hashesUnder(fileKey, ROOT);
-  assert.deepEqual(Object.keys(hashes).sort(), NOW.map(u => u.nodeId).filter(id => id !== '2:3').sort());
+  assert.deepEqual(Object.keys(hashes).filter(k => k !== 'settings').sort(), NOW.map(u => u.nodeId).filter(id => id !== '2:3').sort());
   for (const u of NOW.filter(u => u.nodeId !== '2:3')) assert.equal(hashes[u.nodeId], u.contentHash);
   const present = await existing(fileKey, IDS);
   sameSet(present.present, NOW.map(u => u.nodeId).filter(id => id !== '2:3'));
@@ -1207,7 +1207,7 @@ test('v3 sync markImplemented: never-seen nodes are baselined clean; existing an
   const fileKey = newFileKey();
   const bad = await sync(fileKey, { upserts: BUILT, markImplemented: 'yes' });
   assertProblem(bad, 400, 'invalid_parameter');
-  assert.deepEqual(await hashesUnder(fileKey, ROOT), {}, 'a rejected sync writes nothing');
+  assert.deepEqual(await hashesUnder(fileKey, ROOT), { settings: { trackLibraryComponents: true } }, 'a rejected sync writes nothing');
 
   // Existing dirty rows: 2:1 + 3:1 synced without the flag, then 3:1 tombstoned.
   await batch(fileKey, { upserts: BUILT.slice(1, 3) });
@@ -1343,4 +1343,47 @@ test('v3 removed design: a never-built deletion is no work; a built screen is on
   assert.deepEqual((await ok(files(fileKey, '/work'))).items, []);
   const events = await ok(files(fileKey, '/events', { query: { types: 'nodes.cleared' } }));
   assert.equal(events.events[events.events.length - 1].data.count, 4);
+});
+
+// --- library components -------------------------------------------------------------
+
+test('v3 library components: flagged at sync, the setting off hides them and lists the main as a reference item', async () => {
+  const fileKey = newFileKey();
+  const libRef = { id: '9:1', key: 'E2ELIBKEY', name: 'Lib button', remote: true };
+  await batch(fileKey, {
+    rootNodeId: ROOT, fileName: 'E2E library',
+    upserts: [
+      upsert(ROOT, 'SECTION', 'Page', { childOrder: ['2:1'] }),
+      upsert('2:1', 'FRAME', 'Screen', { childOrder: ['3:1'] }, [ROOT]),
+      { ...upsert('3:1', 'INSTANCE', 'Btn', { componentReference: libRef }, [ROOT, '2:1']), mainComponentId: '9:1' },
+      upsert('9:1', 'COMPONENT', 'Lib button', { componentReference: libRef, childOrder: ['9:2'] }),
+      upsert('9:2', 'TEXT', 'Label', { characters: 'OK' }, ['9:1']),
+    ],
+  });
+  const label = await node(fileKey, '9:2');
+  assert.deepEqual(label.library, { key: 'E2ELIBKEY', resolved: false });
+  assert.equal(label.figmaUrl, null);
+  assert.equal((await ok(call('GET', '/v3/status', { headers: viewer }))).libraryLinks, false);
+  assert.deepEqual((await ok(files(fileKey))).settings, { trackLibraryComponents: true });
+  sameSet(await listIds(fileKey, {}), [ROOT, '2:1', '3:1', '9:1', '9:2']);
+
+  const denied = await call('PATCH', `/v3/files/${fileKey}`, { headers: viewer, body: { settings: { trackLibraryComponents: false } } });
+  assert.equal(denied.status, 403);
+  assert.equal((await call('PATCH', `/v3/files/${fileKey}`, { body: { settings: { nope: true } } })).body.code, 'invalid_parameter');
+  const off = await ok(call('PATCH', `/v3/files/${fileKey}`, { body: { settings: { trackLibraryComponents: false } } }));
+  assert.deepEqual(off.settings, { trackLibraryComponents: false });
+  assert.equal(off.counts.dirty, 3);
+  assert.deepEqual((await hashesUnder(fileKey, ROOT)).settings, { trackLibraryComponents: false });
+
+  sameSet(await listIds(fileKey, {}), [ROOT, '2:1', '3:1']);
+  sameSet(await listIds(fileKey, { library: 'only' }), ['9:1', '9:2']);
+  const { items } = await ok(files(fileKey, '/work', { query: { under: '2:1', expand: 'instances', changes: 'names' } }));
+  const ref = items.find(i => i.key === '9:1');
+  assert.equal(ref.kind, 'library');
+  assert.equal(ref.tracked, false);
+  assert.equal(ref.nodeCount, 0);
+  assert.equal(ref.nodeIds, undefined);
+  assert.equal(ref.placementsInScope, 1);
+  const events = await ok(files(fileKey, '/events', { query: { types: 'file.settings_changed' } }));
+  assert.deepEqual(events.events.at(-1).data.settings, { trackLibraryComponents: false });
 });

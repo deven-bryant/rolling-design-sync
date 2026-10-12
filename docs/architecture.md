@@ -327,6 +327,11 @@ dirties it against the baseline hash.
 rows and the agent routes read and act on them. Migration
 `20260929180000_api_v3_change_model.sql` only adds columns and tables.
 
+**Library components.** `node.library` flags library (remote) mains and their
+subtrees, `file.settings.trackLibraryComponents` hides them from counts and
+listings when off, and `library_component` caches their library-file links
+(`RDS_FIGMA_TOKEN`); see `docs/api-v3-design.md`, "Library components".
+
 **Change columns on `node`.** Every sync upsert and every clear maintains:
 
 - `implemented_attrs` — the attrs as last cleared (or baselined): "what was
