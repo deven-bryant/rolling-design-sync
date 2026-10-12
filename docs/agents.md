@@ -286,6 +286,20 @@ CLI: node scripts/rds-agent.js work "$LINK" --group set --expand instances --cha
 5. **Block** a node you can't implement instead of clearing it:
    `block_node` / `node scripts/rds-agent.js block 5:2 --file-key AbC123 --reason "…"`.
 
+6. **Removed design.** A work item with `kind: "removed"` is a built screen
+   (or layer) that was deleted in Figma — one item per removed root, cleared
+   once. Remove the code that rendered the root; keep the components in its
+   `uses` with `livePlacements > 0` (still used elsewhere), consider removing
+   those with `livePlacements: 0`, and heed `warnings`
+   (`main_removed_with_live_placements`: a deleted main component still has
+   live instances). Then clear just the root with `subtree: true`:
+   ```text
+   MCP: clear_nodes { "url": "<link>", "commitRef": "<sha>", "items": [ { "nodeId": "2:1", "contentHash": "<hash>", "subtree": true } ] }
+   ```
+   The result's `subtreeCleared` counts the deleted nodes below it cleared with
+   it. `not_removed` means the node isn't deleted — clear it normally.
+   Deleting something that was never built creates no work at all.
+
 Repeat until the listing is empty.
 
 ### Parallel agents with claims

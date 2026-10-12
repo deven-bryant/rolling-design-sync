@@ -114,6 +114,50 @@ A dirty node's `changes` is a property-level diff against what was built:
   `styleDefinitions` the plugin already captures. Unbound values are raw.
 - `added` nodes have `built: null` for every property; `deleted` nodes have
   `now: null` and keep their last-known attributes.
+
+### Removed design
+
+- **Never-built deletions resolve themselves.** A sync that tombstones a node
+  whose `implemented_hash` is null (it was never built) stores it as a
+  **clean** tombstone (`dirty = false`, change columns cleared): it is not
+  work. The sync result and the `sync.completed` event count them as
+  `autoResolved`; they are not in `counts.dirty` (nor in trends' `dirtied`). If
+  the node reappears in a later sync it is `added` again. Dirty never-built
+  tombstones stored before this rule are resolved by migration
+  `20261012000000_api_v3_auto_resolve_never_built.sql` (Postgres, and the
+  local PGlite store, which applies migrations at startup); the memory store
+  keeps no data across restarts, so it has none to migrate.
+- **Removed work items.** With `group=component` and `group=set`, a deleted
+  node's **removed root** is the topmost tombstoned node on its path (its
+  parent is live or not stored). Deleted nodes whose removed root is not inside
+  a live `COMPONENT` / `COMPONENT_SET` form one item per removed root:
+  `kind: "removed"`, `key` = the root's id, the root's `name` / `type`,
+  `nodeCount`, `nodeIds` (document order, root first), `changedProps` /
+  `categories`, `progress` with `include=progress`, and
+  - `uses: [{ componentId, name, set?, remote?, placementsRemoved, livePlacements }]`
+    — the main components referenced by instance rows inside the removed
+    subtree; `livePlacements` counts the file's non-tombstoned instance rows of
+    that main. Those with `livePlacements: 0` come first, then by name and id.
+  - `warnings: [{ code: "main_removed_with_live_placements", componentId, livePlacements }]`
+    — a COMPONENT / COMPONENT_SET inside the removed subtree (the root
+    included) that still has live instances elsewhere; empty when none.
+
+  Removed items come after the component (and set) items and before the
+  `key: null` item, in the document order of their roots. Other items have no
+  `kind`. A layer deleted inside a live component stays in that component's
+  item; `group=frame` is unchanged; `expand=instances` never expands removed
+  design (only live instances reach main components).
+- **Subtree clear.** A `clear` item with `subtree: true` on a tombstoned root
+  clears, when the root's `contentHash` matches, the root and every dirty
+  tombstoned descendant (live descendants are untouched) and reports
+  `subtreeCleared: n` on the root's result; the `nodes.cleared` event lists
+  and counts them all. `subtree: true` on a live node is the per-item status
+  `not_removed` (nothing cleared). `MAX_CLEAR_ITEMS` still bounds the items per
+  request, and each request is one transaction.
+
+An agent handling a removed item removes the code that rendered the root,
+keeps the components in `uses` with `livePlacements > 0`, considers removing
+those with `0`, and then clears the root with `subtree: true`.
 - **Categories** come from one static map in `packages/core` (shared with the
   plugin): `layout`, `color`, `typography`, `effects`, `component`, `content`,
   `structure`, `prototype`, `other`.
@@ -250,7 +294,7 @@ otherwise). Compact nodes carry: `nodeId`, `name`, `type`, `parentId`,
 ## Supporting data
 
 - **`sync_event`** — one row per plugin sync: `file_key`, `root_node_id`,
-  `counts` (`uploaded`, `changed`, `added`, `deleted`, `baselined`), `created_at`. Powers
+  `counts` (`uploaded`, `changed`, `added`, `deleted`, `baselined`, `autoResolved`), `created_at`. Powers
   `/scopes`, "last sync" times, and the events stream, and is the raw material
   for activity history.
 - **`file`** — `file_key` (PK), `name`, `last_sync_at`, `created_at`. The name

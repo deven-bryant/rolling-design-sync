@@ -262,6 +262,19 @@ routes outside `/v3` (except `/health`).
   `docs/setup.md`). `RDS_STORE` modes generate one into `tokens.json`
   automatically.
 
+<a id="clear-statuses"></a>
+## Clear result statuses
+
+`POST /v3/files/{fileKey}/clear` (`clear_nodes`) is `200` for a valid body;
+each item gets its own `status` (and `totals` counts them):
+
+| Status | Meaning | Fix |
+|---|---|---|
+| `cleared` | Recorded as implemented. With `subtree: true`, `subtreeCleared` counts the deleted descendants cleared with it. | — |
+| `stale` | The design changed since you read it; `contentHash` is the current hash. | Re-read the node, implement the change, clear with the new hash. |
+| `not_found` | No such node in this file. | Check the id. |
+| `not_removed` | `subtree: true` on a node that is not deleted; nothing was cleared. `contentHash` is the current hash. | Clear it without `subtree` (subtree clears are for `kind: "removed"` work items). |
+
 <a id="openapi"></a>
 ## OpenAPI
 

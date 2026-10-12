@@ -83,7 +83,7 @@ than the path is `400 url_mismatch`; a URL pasted as the key is
 | `GET /v3/files/{fileKey}/scopes` | `url?` | `{fileKey, scopes: [{nodeId, name, type, deleted, figmaUrl, lastSyncAt, lastSyncCounts, counts}]}` — one per synced root, latest sync |
 | `GET /v3/files/{fileKey}/nodes` | filters (below), `view`, `changes`, `fields`, `include`, `sort`, `limit`, `cursor`, `format?`, `url?` | `{fileKey, nodes: [node], nextCursor, total, truncated?}` |
 | `GET /v3/files/{fileKey}/nodes/{nodeId}` | `fields?`, `changes?`, `url?` | detail node |
-| `POST /v3/files/{fileKey}/clear` | `{commitRef?, worker?, items: [{nodeId, contentHash}]}` (1–500) | `{fileKey, commitRef, results: [{nodeId, status, contentHash}], totals: {cleared, stale, notFound}}` |
+| `POST /v3/files/{fileKey}/clear` | `{commitRef?, worker?, items: [{nodeId, contentHash, subtree?}]}` (1–500) | `{fileKey, commitRef, results: [{nodeId, status, contentHash, subtreeCleared?}], totals: {cleared, stale, notFound, notRemoved}}` |
 | `POST /v3/files/{fileKey}/claims` | `{worker, label?, ttlSeconds?, limit?, nodeIds? \| filter?}` | `claim` |
 | `POST /v3/files/{fileKey}/claims/{claimId}/renew` | `{ttlSeconds?}` (body optional) | `claim` |
 | `DELETE /v3/files/{fileKey}/claims/{claimId}` | — | `{claimId, worker, label, released: [nodeId]}` |
@@ -130,7 +130,7 @@ no `x-rds-mcp` / `x-rds-cli` annotations, so they are never agent tools.
 | Route | Query / body | Returns |
 |---|---|---|
 | `GET /v3/files/{fileKey}/hashes` | `under` (the scope root; defaults to the `?url=` link's node), `url?` | `{[nodeId]: contentHash}` for the live subtree, `{}` if never synced |
-| `POST /v3/files/{fileKey}/sync` | `{upserts: [{nodeId, parentId, path, nodeType, name, attrs, contentHash, isInstance?, mainComponentId?}], deletedNodeIds, markImplemented?, fileName?, rootNodeId?}`; `url?` | `{fileKey, upserted, dirty, tombstoned, skippedInstances, baselined?}` |
+| `POST /v3/files/{fileKey}/sync` | `{upserts: [{nodeId, parentId, path, nodeType, name, attrs, contentHash, isInstance?, mainComponentId?}], deletedNodeIds, markImplemented?, fileName?, rootNodeId?}`; `url?` | `{fileKey, upserted, dirty, tombstoned, autoResolved, skippedInstances, baselined?}` |
 | `POST /v3/files/{fileKey}/exists` | `{nodeIds}` (max 5000); `url?` | `{present, stale}` |
 
 `markImplemented: true` (boolean, default `false`) inserts never-seen nodes
@@ -202,7 +202,10 @@ Actions:
   `contentHash` still matches (stores the attrs as built, resets the change
   columns, records `commitRef`, releases the node's lease), `stale` when the
   design changed since (the current `contentHash` is returned), `not_found`
-  for unknown ids. Always `200` for a valid body. `worker`, when given, is
+  for unknown ids. `subtree: true` on a tombstoned root also clears every
+  dirty tombstoned descendant (live ones are untouched; the root's result has
+  `subtreeCleared`, and `nodes.cleared` counts them all); on a live node the
+  item is `not_removed` and nothing is cleared. Always `200` for a valid body. `worker`, when given, is
   the `nodes.cleared` actor; otherwise the token label (or `portal:<label>`
   for a cookie-authenticated call).
 - Claims lease `nodeIds` (unknown ids skipped) or the nodes a `filter` of
@@ -253,6 +256,15 @@ every listing filter (default `state=dirty`) and aggregate in the store (SQL
   `include=progress` adds `{total, clean}` across all states of each item,
   independent of `state=` and the node ID cap; other filters still apply.
   Cleared tombstones are excluded from these counts.
+- Removed design (`group=component` and `group=set`): tombstones whose
+  removed root (the topmost tombstoned node on their path) is not inside a
+  live component form one `kind: "removed"` item per root (`key` = root id),
+  after the component items and before `key: null`, in the roots' document
+  order, with `uses: [{componentId, name, set?, remote?, placementsRemoved,
+  livePlacements}]` (zero live placements first) and `warnings: [{code:
+  "main_removed_with_live_placements", componentId, livePlacements}]`; no
+  `placements`. Other items have no `kind`. See `docs/api-v3-design.md`,
+  "Removed design".
 
 Formats (`docs/api-v3-phase2.md`, section 4): the listing, work items and the
 events JSON page take `format` (`outline`: the listing and work items only):
@@ -303,7 +315,9 @@ Events (`docs/api-v3-phase2.md`, section 1):
   type, actor, data, createdAt}`; `data` carries ids and counts only (node ids
   capped at 500), never design content. `nodes.cleared` has `count` (all
   cleared nodes, beyond the id cap); `sync.completed` `counts.dirty` is the
-  number of nodes the batch made dirty (new, or changed / deleted while clean).
+  number of nodes the batch made dirty (new, or changed / deleted while clean);
+  `counts.autoResolved` the never-built nodes it tombstoned as clean
+  tombstones (not work, not in `dirty`).
 - Trends (`GET /v3/insights/trends`) sum those counts over the half-open
   window `[from, to)` = the last `windowDays` days, and `clearedPrevious` over
   the window before. `clearedChangePct` is `round((cleared − clearedPrevious)
