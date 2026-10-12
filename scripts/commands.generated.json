@@ -35,6 +35,46 @@
       ]
     },
     {
+      "command": "files settings",
+      "summary": "Change file settings",
+      "description": "Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: \"library\"` reference items. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.",
+      "method": "PATCH",
+      "path": "/v3/files/{fileKey}",
+      "flags": [
+        {
+          "flag": "file-key",
+          "in": "path",
+          "name": "fileKey",
+          "type": "string",
+          "required": true,
+          "description": "The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead."
+        },
+        {
+          "flag": "url",
+          "in": "query",
+          "name": "url",
+          "type": "string",
+          "description": "A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`."
+        },
+        {
+          "flag": "track-library-components",
+          "in": "body",
+          "name": "trackLibraryComponents",
+          "object": "settings",
+          "type": "boolean",
+          "description": "Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked."
+        },
+        {
+          "flag": "worker",
+          "in": "body",
+          "name": "worker",
+          "type": "string",
+          "description": "Your worker id; recorded as the event actor (default: the token label)."
+        }
+      ],
+      "body": true
+    },
+    {
       "command": "scopes ls",
       "summary": "List synced scopes",
       "description": "The scopes (sections/frames) the plugin has synced in a file: each root's name, last sync, and current counts. Only nodes under these roots exist in the API; a `node_not_found` usually means the node is outside every scope and must be synced from the plugin first.",
@@ -170,6 +210,18 @@
           "description": "true: only component instances (`isInstance`); false: only other nodes."
         },
         {
+          "flag": "library",
+          "in": "query",
+          "name": "library",
+          "type": "string",
+          "enum": [
+            "include",
+            "exclude",
+            "only"
+          ],
+          "description": "Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude."
+        },
+        {
           "flag": "q",
           "in": "query",
           "name": "q",
@@ -204,7 +256,7 @@
           "in": "query",
           "name": "fields",
           "type": "string",
-          "description": "Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, via (`via` needs `expand=instances`)."
+          "description": "Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, via (`via` needs `expand=instances`)."
         },
         {
           "flag": "include",
@@ -321,7 +373,7 @@
           "in": "query",
           "name": "fields",
           "type": "string",
-          "description": "Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants."
+          "description": "Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants."
         },
         {
           "flag": "changes",
@@ -547,6 +599,19 @@
           "object": "filter",
           "type": "string",
           "description": "ISO 8601 time: only nodes changed at or after it."
+        },
+        {
+          "flag": "library",
+          "in": "body",
+          "name": "library",
+          "object": "filter",
+          "type": "string",
+          "enum": [
+            "include",
+            "exclude",
+            "only"
+          ],
+          "description": "Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude."
         }
       ],
       "body": true
@@ -673,7 +738,7 @@
     {
       "command": "events",
       "summary": "List file events",
-      "description": "The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).",
+      "description": "The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).",
       "method": "GET",
       "path": "/v3/files/{fileKey}/events",
       "flags": [
@@ -718,7 +783,7 @@
           "in": "query",
           "name": "types",
           "type": "string",
-          "description": "Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked."
+          "description": "Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed."
         },
         {
           "flag": "limit",
@@ -965,6 +1030,18 @@
           "description": "Your worker id; needed with `claimed=mine`."
         },
         {
+          "flag": "library",
+          "in": "query",
+          "name": "library",
+          "type": "string",
+          "enum": [
+            "include",
+            "exclude",
+            "only"
+          ],
+          "description": "Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude."
+        },
+        {
           "flag": "q",
           "in": "query",
           "name": "q",
@@ -1135,6 +1212,18 @@
           "name": "worker",
           "type": "string",
           "description": "Your worker id; needed with `claimed=mine`."
+        },
+        {
+          "flag": "library",
+          "in": "query",
+          "name": "library",
+          "type": "string",
+          "enum": [
+            "include",
+            "exclude",
+            "only"
+          ],
+          "description": "Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude."
         },
         {
           "flag": "q",

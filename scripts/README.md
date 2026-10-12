@@ -139,6 +139,7 @@ Generated from the API's OpenAPI document (API 3.0.0) — one command per `x-rds
 |---------|---------|---------|
 | [`files ls`](#rds-agent-files-ls) | `GET /v3/files` | List tracked files |
 | [`files show`](#rds-agent-files-show) | `GET /v3/files/{fileKey}` | Get a file |
+| [`files settings`](#rds-agent-files-settings) | `PATCH /v3/files/{fileKey}` | Change file settings |
 | [`scopes ls`](#rds-agent-scopes-ls) | `GET /v3/files/{fileKey}/scopes` | List synced scopes |
 | [`nodes ls`](#rds-agent-nodes-ls) | `GET /v3/files/{fileKey}/nodes` | List nodes |
 | [`nodes show`](#rds-agent-nodes-show) | `GET /v3/files/{fileKey}/nodes/{nodeId}` | Get a node |
@@ -171,6 +172,19 @@ One tracked file's node counts and last sync time: a quick check of how much is 
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
+
+### rds-agent files settings
+
+`PATCH /v3/files/{fileKey}`
+
+Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+| `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
+| `--track-library-components` | boolean | body `settings.trackLibraryComponents` | Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. |
+| `--worker` | string | body `worker` | Your worker id; recorded as the event actor (default: the token label). |
 
 ### rds-agent scopes ls
 
@@ -205,10 +219,11 @@ Nodes of a file with their property-level changes — by default the dirty ones 
 | `--claimed` | string | query `claimed` | Comma-separated: true (leased), false (free), mine (leased to `worker`). |
 | `--worker` | string | query `worker` | Your worker id; needed with `claimed=mine`. |
 | `--instance` | true\|false | query `instance` | true: only component instances (`isInstance`); false: only other nodes. |
+| `--library` | include\|exclude\|only | query `library` | Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. |
 | `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
 | `--view` | compact\|full | query `view` | compact (default: state, changes, hash, claim, block) or full (adds attrs, implementedAttrs, path; change values never truncated). |
 | `--changes` | auto\|diff\|names | query `changes` | auto (default): the built→now diff for modified and deleted nodes, omitted for added ones (their property names are in `changedProps`) — keeps fresh-sync pages small; diff: the diff for every node, including added ones' full values; names: never `changes`, only `changedProps`. Ask for `changes=diff` (or `get_node`) when you need the values of added nodes. |
-| `--fields` | string | query `fields` | Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, via (`via` needs `expand=instances`). |
+| `--fields` | string | query `fields` | Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, via (`via` needs `expand=instances`). |
 | `--include` | counts | query `include` | `counts` adds subtree counts (`descendants`) to each node. |
 | `--sort` | document\|path\|updatedAt\|name\|-document\|-path\|-updatedAt\|-name | query `sort` | document (default: the design's layer order — auto-layout flow order, else top-to-bottom, left-to-right), path (node-id path order), updatedAt or name; prefix `-` for descending. |
 | `--limit` | integer | query `limit` | Page size (default 100, max 1000). With format=outline: rendered lines per page (default: every line). |
@@ -228,7 +243,7 @@ One node in full: state, property changes (whole values, never truncated), compo
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
-| `--fields` | string | query `fields` | Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants. |
+| `--fields` | string | query `fields` | Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants. |
 | `--changes` | auto\|diff\|names | query `changes` | diff (default): the whole built→now diff, never truncated — the way to read an added node's values; auto: omitted for added nodes; names: never `changes`, only `changedProps`. |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 
@@ -280,6 +295,7 @@ Leases nodes to `worker` so parallel agents do not implement the same nodes. Cla
 | `--instance` | true\|false | body `filter.instance` | true: only component instances (`isInstance`); false: only other nodes. |
 | `--name` | string | body `filter.name` | Comma-separated case-insensitive name globs (`*`, `?`), e.g. Button*. |
 | `--since` | string | body `filter.since` | ISO 8601 time: only nodes changed at or after it. |
+| `--library` | include\|exclude\|only | body `filter.library` | Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. |
 
 ### rds-agent clear
 
@@ -323,7 +339,7 @@ Ends the claim and frees the nodes still under it, so other agents can take them
 
 `GET /v3/files/{fileKey}/events`
 
-The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
+The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
 
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
@@ -331,7 +347,7 @@ The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, count
 | `--after` | integer | query `after` | Only events with a greater id: the previous page's `nextAfter` (default 0 = from the start of the log). |
 | `--before` | integer | query `before` | Only events with a smaller id: with order=desc, the previous page's `nextBefore` (default: from the newest event). JSON pages only. |
 | `--order` | asc\|desc | query `order` | Default `"asc"`. `asc` (default): oldest first, page with `after` / `nextAfter`. `desc`: newest first, page with `before` / `nextBefore`. JSON pages only; SSE is unchanged. |
-| `--types` | string | query `types` | Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. |
+| `--types` | string | query `types` | Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed. |
 | `--limit` | integer | query `limit` | JSON page size (default 100, max 1000). |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--node-id` | string | query `nodeId` | Only events mentioning this node in data.nodeId or data.nodeIds (1:2 or 1-2); JSON and SSE. |
@@ -386,6 +402,7 @@ Counts of the nodes the `list_nodes` filters match (default: dirty) by state, ch
 | `--since` | string | query `since` | ISO 8601 time: only nodes changed at or after it. |
 | `--claimed` | string | query `claimed` | Comma-separated: true (leased), false (free), mine (leased to `worker`). |
 | `--worker` | string | query `worker` | Your worker id; needed with `claimed=mine`. |
+| `--library` | include\|exclude\|only | query `library` | Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. |
 | `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--expand` | instances | query `expand` | `instances`: also include the subtree of every main component the scope's instances use (the scope is `under`, or the whole file) — transitively through instances inside those components, breadth-first, each component once. Use it for "everything this screen uses" / "which components do I build for this screen". Other filters apply after expansion; `depth` cannot be combined with it. |
@@ -424,6 +441,7 @@ The nodes the `list_nodes` filters match (default: dirty) bundled into work item
 | `--since` | string | query `since` | ISO 8601 time: only nodes changed at or after it. |
 | `--claimed` | string | query `claimed` | Comma-separated: true (leased), false (free), mine (leased to `worker`). |
 | `--worker` | string | query `worker` | Your worker id; needed with `claimed=mine`. |
+| `--library` | include\|exclude\|only | query `library` | Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. |
 | `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--expand` | instances | query `expand` | `instances`: also include the subtree of every main component the scope's instances use (the scope is `under`, or the whole file) — transitively through instances inside those components, breadth-first, each component once. Use it for "everything this screen uses" / "which components do I build for this screen". Other filters apply after expansion; `depth` cannot be combined with it. |
