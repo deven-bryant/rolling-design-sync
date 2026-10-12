@@ -7,6 +7,8 @@ export interface NodeCellProps extends Omit<HTMLAttributes<HTMLDivElement>, 'onT
   name: ReactNode;
   /** Figma `Meta`, e.g. `COMPONENT · 1:95540`. */
   meta?: ReactNode;
+  /** Badges after the name (e.g. `Removed`, `Library`); they never truncate. */
+  badges?: ReactNode;
   /** Tree depth; each level indents by `spacing-2xl` (20 px). */
   depth?: number;
   /** Figma `Chevron`: the node has children. */
@@ -22,6 +24,7 @@ export interface NodeCellProps extends Omit<HTMLAttributes<HTMLDivElement>, 'onT
 export function NodeCell({
   name,
   meta,
+  badges,
   depth = 0,
   expandable = false,
   expanded = false,
@@ -46,9 +49,18 @@ export function NodeCell({
           </AriaButton>
         )}
         <div className="flex min-w-0 flex-1 flex-col">
-          <Text weight="medium" truncate>
-            {name}
-          </Text>
+          {badges != null ? (
+            <span className="flex min-w-0 items-center gap-md">
+              <Text weight="medium" truncate>
+                {name}
+              </Text>
+              {badges}
+            </span>
+          ) : (
+            <Text weight="medium" truncate>
+              {name}
+            </Text>
+          )}
           {meta != null && (
             <Text color="tertiary" truncate>
               {meta}

@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../../test/axe';
+import { Badge } from '../../Badge';
 import { Table } from '../../Table';
 import { NodeCell, figmaNodeCell } from '.';
 
@@ -35,6 +36,15 @@ describe('NodeCell', () => {
     const { container } = render(<NodeCell name="Team View" depth={depth} />);
     const indent = container.querySelector<HTMLElement>('[data-slot=indent]');
     expect(indent?.style.width).toBe(`calc(var(--spacing-2xl) * ${depth})`);
+  });
+
+  it('places badges after the name, outside its truncation', async () => {
+    const { container } = render(<NodeCell name="Files" meta="FRAME · 12:345" badges={<Badge color="error">Removed</Badge>} />);
+    const badge = screen.getByText('Removed');
+    expect(badge.previousElementSibling?.textContent).toBe('Files');
+    expect(classesOf(badge.parentElement)).toEqual(expect.arrayContaining(['flex', 'items-center', 'gap-md', 'min-w-0']));
+    expect(classesOf(screen.getByText('Files'))).toContain('truncate');
+    await expectNoAxeViolations(container);
   });
 
   it('shows the chevron only when expandable', () => {

@@ -7,6 +7,7 @@ import {
   ChartPie,
   ChevronsUpDown,
   Circle,
+  CircleAlert,
   CircleCheck,
   CircleHelp,
   CopyCheck,
@@ -17,6 +18,7 @@ import {
   Moon,
   Rows2,
   Search,
+  Settings,
   SquareKanban,
   Sun,
   Users,
@@ -26,16 +28,17 @@ import {
 export interface FigmaIcon {
   /** The icon set's component that draws it. */
   component: LucideIcon;
-  /** The Figma main component (Portal file, Section 1, revision 3). */
-  nodeId: string;
-  /** The Figma component key. */
-  key: string;
+  /** The Figma main component (Portal file, Section 1, revision 3); null for icons the design file doesn't have. */
+  nodeId: string | null;
+  /** The Figma component key; null for icons the design file doesn't have. */
+  key: string | null;
   /** Classes that adapt the icon set's glyph to the Figma drawing. */
   className?: string;
 }
 
 /** Every icon in the design file, by its Figma component name. */
 export const figmaIcons = {
+  'alert-circle': { component: CircleAlert, nodeId: null, key: null },
   'arrow-left': { component: ArrowLeft, nodeId: '90:8962', key: '650f4c2f034d0f8b88d444003b4c13593b84dc9e' },
   'arrow-right': { component: ArrowRight, nodeId: '90:8970', key: '9cde613e50d96ee88077ff2c579619ed32af71fa' },
   'arrow-up-right': { component: ArrowUpRight, nodeId: '92:24845', key: 'f13bc12ee71870f70f9b2cec6432adc9f8bc9bab' },
@@ -63,6 +66,7 @@ export const figmaIcons = {
   placeholder: { component: Circle, nodeId: '90:8859', key: '2a70a20746e7417e58420f790c4dfad9f2cea3e7' },
   'rows-01': { component: Rows2, nodeId: '92:10659', key: '53ee5aed82280971f9ce3f436937444a2adf4aa8' },
   'search-lg': { component: Search, nodeId: '92:12877', key: 'd39ae03289e2aafb53d968c58a47b601ba0377f4' },
+  'settings-01': { component: Settings, nodeId: null, key: null },
   sun: { component: Sun, nodeId: '121:41382', key: 'c983c55630ca893381d73f470ba81f42ee462aa8' },
   'users-01': { component: Users, nodeId: '92:10690', key: '97ca2ee36bcb4cf58f4b357f369b045b02e71eff' },
   'x-close': { component: X, nodeId: '92:12932', key: '92bd92978c27878daa77962cabf85a96f14bc67b' },
