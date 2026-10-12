@@ -652,7 +652,7 @@ test('GET /v3/openapi.json is reachable without a token and lists the phase-1 ro
   assert.equal(doc.info.title, 'Rolling Design Sync API v3');
   const routes = {
     '/v3/files': ['get'],
-    '/v3/files/{fileKey}': ['get'],
+    '/v3/files/{fileKey}': ['get', 'patch'],
     '/v3/files/{fileKey}/scopes': ['get'],
     '/v3/files/{fileKey}/nodes': ['get'],
     '/v3/files/{fileKey}/nodes/{nodeId}': ['get'],
@@ -1343,4 +1343,47 @@ test('v3 removed design: a never-built deletion is no work; a built screen is on
   assert.deepEqual((await ok(files(fileKey, '/work'))).items, []);
   const events = await ok(files(fileKey, '/events', { query: { types: 'nodes.cleared' } }));
   assert.equal(events.events[events.events.length - 1].data.count, 4);
+});
+
+// --- library components -------------------------------------------------------------
+
+test('v3 library components: flagged at sync, the setting off hides them and lists the main as a reference item', async () => {
+  const fileKey = newFileKey();
+  const libRef = { id: '9:1', key: 'E2ELIBKEY', name: 'Lib button', remote: true };
+  await batch(fileKey, {
+    rootNodeId: ROOT, fileName: 'E2E library',
+    upserts: [
+      upsert(ROOT, 'SECTION', 'Page', { childOrder: ['2:1'] }),
+      upsert('2:1', 'FRAME', 'Screen', { childOrder: ['3:1'] }, [ROOT]),
+      { ...upsert('3:1', 'INSTANCE', 'Btn', { componentReference: libRef }, [ROOT, '2:1']), mainComponentId: '9:1' },
+      upsert('9:1', 'COMPONENT', 'Lib button', { componentReference: libRef, childOrder: ['9:2'] }),
+      upsert('9:2', 'TEXT', 'Label', { characters: 'OK' }, ['9:1']),
+    ],
+  });
+  const label = await node(fileKey, '9:2');
+  assert.deepEqual(label.library, { key: 'E2ELIBKEY', resolved: false });
+  assert.equal(label.figmaUrl, null);
+  assert.equal((await ok(call('GET', '/v3/status', { headers: viewer }))).libraryLinks, false);
+  assert.deepEqual((await ok(files(fileKey))).settings, { trackLibraryComponents: true });
+  sameSet(await listIds(fileKey, {}), [ROOT, '2:1', '3:1', '9:1', '9:2']);
+
+  const denied = await call('PATCH', `/v3/files/${fileKey}`, { headers: viewer, body: { settings: { trackLibraryComponents: false } } });
+  assert.equal(denied.status, 403);
+  assert.equal((await call('PATCH', `/v3/files/${fileKey}`, { body: { settings: { nope: true } } })).body.code, 'invalid_parameter');
+  const off = await ok(call('PATCH', `/v3/files/${fileKey}`, { body: { settings: { trackLibraryComponents: false } } }));
+  assert.deepEqual(off.settings, { trackLibraryComponents: false });
+  assert.equal(off.counts.dirty, 3);
+  assert.deepEqual((await hashesUnder(fileKey, ROOT)).settings, { trackLibraryComponents: false });
+
+  sameSet(await listIds(fileKey, {}), [ROOT, '2:1', '3:1']);
+  sameSet(await listIds(fileKey, { library: 'only' }), ['9:1', '9:2']);
+  const { items } = await ok(files(fileKey, '/work', { query: { under: '2:1', expand: 'instances', changes: 'names' } }));
+  const ref = items.find(i => i.key === '9:1');
+  assert.equal(ref.kind, 'library');
+  assert.equal(ref.tracked, false);
+  assert.equal(ref.nodeCount, 0);
+  assert.equal(ref.nodeIds, undefined);
+  assert.equal(ref.placementsInScope, 1);
+  const events = await ok(files(fileKey, '/events', { query: { types: 'file.settings_changed' } }));
+  assert.deepEqual(events.events.at(-1).data.settings, { trackLibraryComponents: false });
 });
