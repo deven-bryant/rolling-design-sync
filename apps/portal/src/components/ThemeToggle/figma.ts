@@ -1,7 +1,7 @@
 /**
  * Figma ↔ code for ThemeToggle (Portal file `PORTAL_DESIGN_FILE`, Section 1): the sidebar header's
  * `Color Mode Toggle`. `State` is the theme in effect: `Light` shows the sun with the switch off,
- * `Dark` the moon with the switch on (`Toggle` `Size=md`).
+ * `Dark` the moon with the switch on (`Toggle` `Size=sm`, `spacing-md` after the icon).
  */
 export const figmaThemeToggle = {
   component: 'ThemeToggle',
