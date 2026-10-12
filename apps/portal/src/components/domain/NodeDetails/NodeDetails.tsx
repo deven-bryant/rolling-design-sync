@@ -144,7 +144,7 @@ function ChangeList({
 
 /**
  * Figma `Node Details` (`State=Change List` · `State=Change History`): a node's header, status badges and
- * claim, then its changes as a table or its history as a feed, switched by `button-gray` tabs. It fills its
+ * claim, then its changes as a table or its history as a feed, switched by full-width `button-brand` tabs. It fills its
  * container; status, claim text and table columns hug, and the claim row is space-between (`gap-4xl`, or
  * `gap-6xl` in `Change History`).
  */
@@ -217,16 +217,17 @@ export function NodeDetails({
         {claimContent}
       </div>
       <Tabs
-        type="button-gray"
+        type="button-brand"
         size="md"
-        className="gap-lg"
+        fullWidth
+        className="gap-3xl"
         selectedKey={current}
         onSelectionChange={key => {
           setUncontrolledState(key as NodeDetailsState);
           onStateChange?.(key as NodeDetailsState);
         }}
       >
-        <Tabs.List aria-label="Node details" className="px-xs">
+        <Tabs.List aria-label="Node details">
           <Tabs.Tab id="change-list">Change List</Tabs.Tab>
           <Tabs.Tab id="change-history">Change History</Tabs.Tab>
         </Tabs.List>
