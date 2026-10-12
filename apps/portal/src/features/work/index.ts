@@ -12,4 +12,4 @@ export {
 } from './api';
 export { WorkFiltersBar, type WorkFilters, type WorkFiltersBarProps } from './WorkFiltersBar';
 export { WorkGroupSwitch, type WorkGroupSwitchProps } from './WorkGroupSwitch';
-export { isLibraryItem, isReference, itemProgress, nodesSummary, WorkTable, type WorkTableProps } from './WorkTable';
+export { isLibraryItem, isReference, isTokensItem, itemProgress, nodesSummary, WorkTable, type WorkTableProps } from './WorkTable';

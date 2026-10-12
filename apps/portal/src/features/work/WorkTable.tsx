@@ -49,15 +49,20 @@ export const isReference = (item: WorkItem): boolean => item.kind === 'library' 
 export const isLibraryItem = (item: WorkItem, group: WorkGroup = 'component'): boolean =>
   item.kind === 'library' || (group !== 'frame' && item.key != null && item.library != null);
 
+/** A design-token collection's item (`kind: "tokens"`). */
+export const isTokensItem = (item: WorkItem): boolean => item.kind === 'tokens';
+
 /**
  * `22 dirty` / `of 30 nodes`, or `Done` / `11 nodes cleared` once every node is clean; a removed item reads
- * `41 layers removed`, a reference item `Library · not tracked`.
+ * `41 layers removed`, a reference item `Library · not tracked`, a token item `3 tokens changed`.
  */
 export function nodesSummary(item: WorkItem): { text: string; supporting?: string } {
   if (isReference(item)) return { text: 'Library · not tracked' };
   const total = item.progress?.total ?? item.nodeCount ?? 0;
   const clean = item.progress?.clean ?? 0;
-  if (total > 0 && clean >= total) return { text: 'Done', supporting: `${plural(clean, 'node')} cleared` };
+  const unit = isTokensItem(item) ? 'token' : 'node';
+  if (total > 0 && clean >= total) return { text: 'Done', supporting: `${plural(clean, unit)} cleared` };
+  if (isTokensItem(item)) return { text: `${plural(total - clean, 'token')} changed`, supporting: `of ${plural(total, 'token')}` };
   if (item.kind === 'removed') return { text: `${plural(total, 'layer')} removed` };
   return { text: `${formatCount(total - clean)} dirty`, supporting: `of ${plural(total, 'node')}` };
 }
@@ -68,6 +73,7 @@ function ItemBadges({ item, group }: { item: WorkItem; group: WorkGroup }) {
   return (
     <>
       {removed && <Badge color="error">Removed</Badge>}
+      {isTokensItem(item) && <Badge color="gray">Tokens</Badge>}
       {library && <Badge color="gray">Library</Badge>}
     </>
   );
@@ -114,6 +120,7 @@ function WorkRow({
   const nodes = nodesSummary(item);
   const removed = item.kind === 'removed';
   const reference = isReference(item);
+  const tokens = isTokensItem(item);
   const open = removed ? onOpenRemoved : reference ? onOpenPlacements : onOpenComponent;
   return (
     <Table.Row aria-label={name} onAction={key ? () => open(key) : undefined}>
@@ -121,12 +128,12 @@ function WorkRow({
         <NodeCell
           className="max-w-60"
           name={name}
-          meta={key ? `${item.type ?? 'NODE'} · ${key}` : undefined}
-          badges={removed || isLibraryItem(item, group) ? <ItemBadges item={item} group={group} /> : undefined}
+          meta={tokens ? (item.type ?? 'VARIABLE_COLLECTION') : key ? `${item.type ?? 'NODE'} · ${key}` : undefined}
+          badges={removed || tokens || isLibraryItem(item, group) ? <ItemBadges item={item} group={group} /> : undefined}
         />
       </Table.Cell>
       {group === 'component' &&
-        (key && !removed ? (
+        (key && !removed && !tokens ? (
           <TextCell supportingText={`${formatCount(item.placements ?? 0)} in file`}>
             {formatCount(item.placementsInScope ?? 0)} in this screen
           </TextCell>
