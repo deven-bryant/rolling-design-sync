@@ -72,6 +72,7 @@ const typeName = (type: string | null | undefined) => (type ? type.charAt(0) + t
 function ScopeMeta({ fileKey, scope }: { fileKey: string; scope: Scope }) {
   const now = useNow();
   const client = useLastSyncClient(fileKey, scope.lastSyncAt);
+  const tokens = scope.type === 'TOKENS';
   const components = useWorkItems({
     fileKey,
     under: scope.nodeId,
@@ -81,9 +82,10 @@ function ScopeMeta({ fileKey, scope }: { fileKey: string; scope: Scope }) {
   const synced = scope.lastSyncAt ? `synced ${timeAgo(scope.lastSyncAt, now)}${client.data ? ` by ${client.data}` : ''}` : 'never synced';
   const counts = [
     scope.counts?.total !== undefined ? `${formatCount(scope.counts.total)} nodes` : null,
-    components !== undefined ? `${formatCount(components)} ${scope.type === 'TOKENS' ? 'collections' : 'components'}` : null,
+    components !== undefined && !tokens ? `${formatCount(components)} components` : null,
   ].filter(Boolean);
-  return <>{[`${typeName(scope.type)} ${scope.nodeId ?? ''}`, synced, counts.join(', ')].filter(Boolean).join(' · ')}</>;
+  const kind = tokens ? 'Figma variables' : `${typeName(scope.type)} ${scope.nodeId ?? ''}`;
+  return <>{[kind, synced, counts.join(', ')].filter(Boolean).join(' · ')}</>;
 }
 
 /** Several scopes: their summed node counts, the components they use and the latest sync. */
