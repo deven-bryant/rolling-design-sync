@@ -137,7 +137,7 @@ const node = {
     descendants,
     usage: {
       type: 'object',
-      description: 'Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has its `variableId`). Always on `get_node`; on listings with `include=usage`.',
+      description: 'Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has an entry with its variable key, under any imported id). Always on `get_node`; on listings with `include=usage`.',
       properties: { layers: { type: 'integer' } },
     },
     via: nullable('object', {

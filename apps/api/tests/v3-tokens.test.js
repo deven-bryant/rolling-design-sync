@@ -56,7 +56,9 @@ const alias = (id, name) => ({ alias: id, name });
  *    └─ token:222… bg/hover    value:Dark → alias gray/900
  */
 const R = ['1:1'];
-const uses = (...ids) => ({ resolvedVariables: Object.fromEntries(ids.map(id => [id, { name: id }])) });
+// Layers record `{ name, key, … }` per bound variable id; `VariableID:1:<c>` is the variable keyed `key(c)`.
+const keyOfId = id => key(id.split(':').pop().split('/')[0].slice(-1));
+const uses = (...ids) => ({ resolvedVariables: Object.fromEntries(ids.map(id => [id, { name: id, key: keyOfId(id) }])) });
 const LAYERS = () => [
   up('1:1', 'SECTION', 'Page', { childOrder: ['2:1', '2:2', '2:3', '2:5'] }),
   up('2:1', 'FRAME', 'Card', { width: 10, ...uses('VariableID:1:1') }, R),
@@ -174,10 +176,10 @@ for (const kind of Object.keys(STORES)) {
     t.after(close);
     const hashes = ok(await get(app, `/v3/files/${FK}/hashes?under=tokens`, plugin));
     assert.deepEqual(hashes.tokens, {
-      [ACTIVE]: { variableId: 'VariableID:1:1', remote: false },
-      [HOVER]: { variableId: 'VariableID:1:2', remote: false },
-      [GRAY]: { variableId: 'VariableID:1:3', remote: true },
-      [ACCENT]: { variableId: 'VariableID:1:4', remote: false },
+      [ACTIVE]: { variableId: 'VariableID:1:1', remote: false, collectionId: SEMANTIC },
+      [HOVER]: { variableId: 'VariableID:1:2', remote: false, collectionId: SEMANTIC },
+      [GRAY]: { variableId: 'VariableID:1:3', remote: true, collectionId: PRIMITIVES },
+      [ACCENT]: { variableId: 'VariableID:1:4', remote: false, collectionId: SEMANTIC },
     });
     assert.equal(hashes[ACTIVE], hashOf(ACTIVE));
     assert.equal(hashes[SEMANTIC], hashOf(SEMANTIC));
@@ -266,6 +268,76 @@ for (const kind of Object.keys(STORES)) {
     assert.equal(deleted.changeType, 'deleted');
     ok(await app.inject({ method: 'POST', url: `/v3/files/${FK}/clear`, headers: agent, payload: { items: [{ nodeId: ACCENT, contentHash: deleted.contentHash }] } }));
     assert.equal(ok(await get(app, `/v3/files/${FK}/nodes/${ACCENT}`)).state, 'clean');
+  });
+  test(`[${kind}] a token whose Figma id alone changed stays clean (rebaselined); id + value is dirty with only the value in its diff`, async t => {
+    const { app, store, close } = await openApp(kind);
+    t.after(close);
+    const tokenNode = (nodeId, name, variableId, values, extra = {}) => up(nodeId, 'VARIABLE', name, variable(name, variableId, values, extra), [...T, SEMANTIC]);
+    const accent = (variableId, dark = '#aa0000') => tokenNode(ACCENT, 'bg/accent', variableId, { 'value:Light': '#ff0000', 'value:Dark': dark });
+    const before = ok(await get(app, `/v3/files/${FK}/nodes/${ACCENT}`));
+    // bg/accent is clean; reached through another imported copy: not work.
+    const flipped = await sync(app, { rootNodeId: 'tokens', upserts: [accent('VariableID:1:9')] });
+    assert.equal(flipped.dirty, 0);
+    assert.equal(flipped.rebaselined, 1);
+    let n = ok(await get(app, `/v3/files/${FK}/nodes/${ACCENT}`));
+    assert.equal(n.state, 'clean');
+    assert.equal(n.history.implementedHash, accent('VariableID:1:9').contentHash);
+    assert.equal(n.implementedAttrs.variableId, 'VariableID:1:9');
+    assert.equal(n.history.implementedAt, before.history.implementedAt, 'not a clear');
+    const events = await store.listEvents({ fileKey: FK, types: ['sync.completed', 'nodes.cleared'], limit: 100 });
+    const last = events.filter(e => e.type === 'sync.completed').at(-1);
+    assert.equal(last.data.counts.rebaselined, 1);
+    assert.equal(last.data.counts.dirty, 0);
+    assert.equal(last.data.counts.changed, 0);
+    assert.equal(events.some(e => e.type === 'nodes.cleared'), false);
+
+    // A real change with a new id: dirty, and the id is not part of the diff.
+    const edited = await sync(app, { rootNodeId: 'tokens', upserts: [accent('VariableID:1:7', '#bb0000')] });
+    assert.equal(edited.dirty, 1);
+    assert.equal(edited.rebaselined, undefined);
+    n = ok(await get(app, `/v3/files/${FK}/nodes/${ACCENT}`));
+    assert.equal(n.state, 'dirty');
+    assert.deepEqual(n.changedProps, ['value:Dark']);
+    assert.deepEqual(n.changes, { 'value:Dark': { built: '#aa0000', now: '#bb0000', category: 'token' } });
+    // bg/active is dirty for its Dark value; a new id on top keeps it dirty for that value only.
+    await sync(app, { rootNodeId: 'tokens', upserts: [tokenNode(ACTIVE, 'bg/active', 'VariableID:1:8', { 'value:Light': '#ffffff', 'value:Dark': '#2b3033' }, { codeSyntax: { WEB: '--bg-active' } })] });
+    n = ok(await get(app, `/v3/files/${FK}/nodes/${ACTIVE}`));
+    assert.equal(n.state, 'dirty');
+    assert.deepEqual(n.changedProps, ['value:Dark']);
+    // Usage follows the key: the layers that bound bg/active through VariableID:1:1 still count.
+    assert.deepEqual(n.usage, { layers: 2 });
+  });
+
+  test(`[${kind}] real-world shapes: a library token under another imported id; usage by key; a token stored dirty only by its id cleans at the next tokens sync`, async t => {
+    const { app, store, close } = await openApp(kind);
+    t.after(close);
+    const libKey = 'f'.repeat(40);
+    const LIB = `token:${libKey}`;
+    const lib = variableId => up(LIB, 'VARIABLE', 'bg-active', variable('bg-active', variableId,
+      { 'value:Light': '#ffffff', 'value:Dark': '#202527' }, { remote: true, codeSyntax: { WEB: '--bg-active' } }), [...T, SEMANTIC]);
+    const OLD = `VariableID:${libKey}/19492:2364`, NEW = `VariableID:${libKey}/8790:603`;
+    await sync(app, { rootNodeId: 'tokens', upserts: [lib(OLD)], markImplemented: true });
+    const flipped = await sync(app, { rootNodeId: 'tokens', upserts: [lib(NEW)] });
+    assert.equal(flipped.dirty, 0);
+    assert.equal(flipped.rebaselined, 1);
+    assert.equal(ok(await get(app, `/v3/files/${FK}/nodes/${LIB}`)).state, 'clean');
+    // A layer bound through the old imported copy still counts (same key).
+    await sync(app, { rootNodeId: '1:1', upserts: [up('2:6', 'FRAME', 'Chip bg', { width: 3, resolvedVariables: { [OLD]: { name: 'bg-active', key: libKey } } }, R)] });
+    assert.deepEqual(ok(await get(app, `/v3/files/${FK}/nodes/${LIB}`)).usage, { layers: 1 });
+
+    // Stored dirty only by its id (before this rule); the plugin skips its unchanged hash and re-sends the root.
+    const back = lib(OLD);
+    await store.updateNode(FK, LIB, { attrs: back.attrs, contentHash: back.contentHash, dirty: true, changeType: 'modified', changedProps: ['variableId'], changeCategories: ['content'] });
+    assert.equal(ok(await get(app, `/v3/files/${FK}/nodes/${LIB}`)).state, 'dirty');
+    const swept = await sync(app, { rootNodeId: 'tokens', upserts: [up('tokens', 'TOKENS', 'Design tokens', {})] });
+    assert.equal(swept.rebaselined, 1);
+    assert.equal(swept.dirty, 0);
+    const n = ok(await get(app, `/v3/files/${FK}/nodes/${LIB}`));
+    assert.equal(n.state, 'clean');
+    assert.deepEqual(n.changedProps, []);
+    assert.equal(n.history.implementedHash, back.contentHash);
+    // Real changes are left dirty by the sweep.
+    for (const id of [ACTIVE, HOVER, GRAY]) assert.equal(ok(await get(app, `/v3/files/${FK}/nodes/${id}`)).state, 'dirty', id);
   });
 }
 

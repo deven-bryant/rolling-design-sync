@@ -1402,14 +1402,14 @@ test('v3 design tokens: a tokens scope syncs, diffs per mode, groups per collect
   ];
   await batch(fileKey, {
     rootNodeId: ROOT, fileName: 'E2E tokens', markImplemented: true,
-    upserts: [upsert(ROOT, 'SECTION', 'Page', { childOrder: ['2:1'] }), upsert('2:1', 'FRAME', 'Card', { width: 1, resolvedVariables: { 'VariableID:7:1': { name: 'bg-active' } } }, [ROOT])],
+    upserts: [upsert(ROOT, 'SECTION', 'Page', { childOrder: ['2:1'] }), upsert('2:1', 'FRAME', 'Card', { width: 1, resolvedVariables: { 'VariableID:7:1': { name: 'bg-active', key: 'd'.repeat(40) } } }, [ROOT])],
   });
   await batch(fileKey, { rootNodeId: 'tokens', markImplemented: true, upserts: tokens('#202527') });
   const edit = await batch(fileKey, { rootNodeId: 'tokens', upserts: tokens('#2b3033') });
   assert.equal(edit.dirty, 1);
 
   const hashes = await hashesUnder(fileKey, 'tokens');
-  assert.deepEqual(hashes.tokens, { [active]: { variableId: 'VariableID:7:1', remote: false } });
+  assert.deepEqual(hashes.tokens, { [active]: { variableId: 'VariableID:7:1', remote: false, collectionId: collection } });
   const scope = (await ok(files(fileKey, '/scopes'))).scopes.find(s => s.nodeId === 'tokens');
   assert.equal(scope.name, 'Design tokens');
   assert.equal(scope.type, 'TOKENS');

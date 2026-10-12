@@ -228,10 +228,15 @@ the `tokens` root every time, and uploads changed tokens with
 `rootNodeId: "tokens"` in the same batches (**Uploading tokens** progress,
 same `markImplemented`). Editing a value in any mode — e.g. a library
 variable's Dark value — dirties only that token, not the layers using it.
-A stored token is deleted only when its variable no longer exists in Figma
-(never because nothing references it any more); a collection goes once all its
-stored tokens are gone, and an older server without the token map gets no
-token deletions. The result shows a **tokens** stat and *"Tokens: 48 tracked,
+A token is its variable key, not its Figma id: a library re-import can change
+the id (another imported copy of the same variable), and the API keeps a token
+whose only change is its id clean. Deletion is conservative: a token collected
+in this sync is never deleted; a local token is deleted only when it is absent
+from the file's local variables (never when they could not be listed) and its
+stored id no longer resolves; a library token is never deleted automatically
+(nothing referencing it, or a stale imported id that no longer resolves, is not
+a deleted variable). A collection goes only once every stored token in it is
+deleted, and an older server without the token map gets no token deletions. The result shows a **tokens** stat and *"Tokens: 48 tracked,
 1 changed, 0 new."*; the already-built prompt still counts layers only.
 
 From there, coding agents pull the dirty nodes and clear them via the API / the
