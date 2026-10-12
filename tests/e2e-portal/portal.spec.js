@@ -200,7 +200,7 @@ test('file settings: an agent turns library tracking off and on; a viewer sees i
   await expect(settings.getByText(/^Links to library files: /)).toBeVisible();
 
   const patched = page.waitForResponse(res => res.request().method() === 'PATCH' && res.url().endsWith(`/v3/files/${fileKey}`));
-  await toggle.click({ force: true });
+  await settings.getByText('Track library components', { exact: true }).click();
   expect((await patched).status()).toBe(200);
   await expect(page.getByRole('region', { name: 'Notifications' }).getByText('Library components are no longer tracked')).toBeVisible();
   await expect(toggle).not.toBeChecked();
@@ -209,9 +209,12 @@ test('file settings: an agent turns library tracking off and on; a viewer sees i
 
   await page.reload();
   await page.getByRole('button', { name: 'File settings' }).click();
-  await expect(page.getByRole('dialog', { name: 'File settings' }).getByRole('switch', { name: /Track library components/ })).not.toBeChecked();
-  await page.getByRole('dialog', { name: 'File settings' }).getByRole('switch', { name: /Track library components/ }).click({ force: true });
-  await expect(page.getByRole('dialog', { name: 'File settings' }).getByRole('switch', { name: /Track library components/ })).toBeChecked();
+  const reopened = page.getByRole('dialog', { name: 'File settings' });
+  const again = reopened.getByRole('switch', { name: /Track library components/ });
+  await expect(again).not.toBeChecked();
+  await expect(again).toBeEnabled();
+  await reopened.getByText('Track library components', { exact: true }).click();
+  await expect(again).toBeChecked();
   await page.keyboard.press('Escape');
 
   await signOut(page);
