@@ -19,9 +19,12 @@ const mapNode = r => r && ({
   claimExpiresAt: iso(r.claim_expires_at), deletedAt: iso(r.deleted_at), createdAt: iso(r.created_at), updatedAt: iso(r.updated_at),
   implementedAttrs: r.implemented_attrs ?? null, changeType: r.change_type ?? null, changedProps: r.changed_props ?? [],
   changeCategories: r.change_categories ?? [], claimId: r.claim_id ?? null, blockedAt: iso(r.blocked_at),
-  blockedBy: r.blocked_by ?? null, blockedReason: r.blocked_reason ?? null, orderKey: r.order_key ?? null,
+  blockedBy: r.blocked_by ?? null, blockedReason: r.blocked_reason ?? null, orderKey: r.order_key ?? null, library: !!r.library,
 });
-const mapFile = r => r && ({ fileKey: r.file_key, name: r.name, lastSyncAt: iso(r.last_sync_at), createdAt: iso(r.created_at) });
+const mapFile = r => r && ({ fileKey: r.file_key, name: r.name, lastSyncAt: iso(r.last_sync_at), createdAt: iso(r.created_at), settings: r.settings ?? {} });
+const mapLibraryComponent = r => r && ({
+  componentKey: r.component_key, fileKey: r.file_key ?? null, nodeId: r.node_id ?? null, name: r.name ?? null, resolvedAt: iso(r.resolved_at), error: r.error ?? null,
+});
 const mapEvent = r => r && ({
   id: Number(r.id), fileKey: r.file_key, type: r.type, actor: r.actor ?? null, data: r.data ?? {}, createdAt: iso(r.created_at),
 });
@@ -38,7 +41,7 @@ const NODE_COLUMNS = {
   implementedHash: 'implemented_hash', dirty: 'dirty', implementedCommit: 'implemented_commit', implementedAt: 'implemented_at',
   claimedBy: 'claimed_by', claimExpiresAt: 'claim_expires_at', deletedAt: 'deleted_at',
   implementedAttrs: 'implemented_attrs', changeType: 'change_type', changedProps: 'changed_props', changeCategories: 'change_categories',
-  claimId: 'claim_id', blockedAt: 'blocked_at', blockedBy: 'blocked_by', blockedReason: 'blocked_reason',
+  claimId: 'claim_id', blockedAt: 'blocked_at', blockedBy: 'blocked_by', blockedReason: 'blocked_reason', library: 'library',
 };
 const LTREE_COLUMNS = new Set(['path']);
 
@@ -73,6 +76,8 @@ const v3CountsSql = a => {
   const s = v3StateSql(a);
   return `json_build_object('total', count(*) filter (where ${v3VisibleSql(a)}), 'dirty', count(*) filter (where ${s.dirty}), 'blocked', count(*) filter (where ${s.blocked}))`;
 };
+/** The file's trackLibraryComponents setting (alias `f` of `file`) as SQL; true when absent. */
+const trackingSql = f => `coalesce((${f}.settings ->> 'trackLibraryComponents')::boolean, true)`;
 /** Mirrors documentSortKey (src/documentOrder.js) over alias `a`: root path, ' ', order key (no key: path, ' '). */
 const documentSortSql = a => `coalesce(case when ${a}.order_key is null then ${a}.path::text || ' '
   else coalesce(subpath(${a}.path, 0, greatest(1, nlevel(${a}.path) - nlevel(${a}.order_key::ltree) + 1))::text, '') || ' ' || ${a}.order_key end, '')`;
@@ -107,6 +112,8 @@ function v3Where(fileKey, f, params) {
       where.push(`exists (select 1 from node u where u.file_key = ${fk} and u.node_id = any(${ids}::text[]) and n.path <@ u.path and nlevel(n.path) <= nlevel(u.path) + ${p(f.depth)}::int)`);
     }
   }
+  if (f.library === 'exclude') where.push('not n.library');
+  else if (f.library === 'only') where.push('n.library');
   if (f.types.length) where.push(`n.node_type = any(${p(f.types)}::text[])`);
   if (f.changeTypes.length) where.push(`n.change_type = any(${p(f.changeTypes)}::text[])`);
   if (f.categories.length) where.push(`n.change_categories && ${p(f.categories)}::text[]`);
@@ -256,20 +263,21 @@ class PostgresStore {
     const { rows } = await this.query(
       `insert into node (file_key, node_id, node_type, name, parent_id, path, attrs, is_instance, main_component_id, content_hash, capture_version,
                          dirty, implemented_hash, implemented_commit, implemented_at, implemented_attrs,
-                         change_type, changed_props, change_categories)
+                         change_type, changed_props, change_categories, library)
        values ($1, $2, $3, $4, $5, $6::ltree, $7::jsonb, $8, $9, $10, $11,
                not $12::boolean,
                case when $12::boolean then $10 end,
                case when $12::boolean then 'baseline' end,
                case when $12::boolean then $13::timestamptz end,
                case when $12::boolean then $7::jsonb end,
-               $14, $15::text[], $16::text[])
+               $14, $15::text[], $16::text[], $17::boolean)
        on conflict (file_key, node_id) do update set
          node_type = excluded.node_type, name = excluded.name, parent_id = excluded.parent_id, path = excluded.path,
          attrs = excluded.attrs, is_instance = excluded.is_instance, main_component_id = excluded.main_component_id,
          content_hash = excluded.content_hash, capture_version = excluded.capture_version, deleted_at = null,
          dirty = excluded.content_hash is distinct from node.implemented_hash,
          change_type = excluded.change_type, changed_props = excluded.changed_props, change_categories = excluded.change_categories,
+         library = node.library or excluded.library,
          blocked_at = case when node.content_hash is distinct from excluded.content_hash then null else node.blocked_at end,
          blocked_by = case when node.content_hash is distinct from excluded.content_hash then null else node.blocked_by end,
          blocked_reason = case when node.content_hash is distinct from excluded.content_hash then null else node.blocked_reason end
@@ -277,7 +285,7 @@ class PostgresStore {
       [fileKey, row.nodeId, row.nodeType ?? null, row.name ?? null, row.parentId ?? null, row.path, json(row.attrs || {}),
         !!row.isInstance, row.mainComponentId ?? null, row.contentHash, row.captureVersion ?? 1,
         !!baseline, baseline ? baseline.implementedAt : null,
-        row.changeType ?? null, row.changedProps || [], row.changeCategories || []]);
+        row.changeType ?? null, row.changedProps || [], row.changeCategories || [], !!row.library]);
     return { ...mapNode(rows[0]), baselined: !!rows[0].baselined };
   }
 
@@ -445,6 +453,66 @@ class PostgresStore {
       `insert into sync_event (file_key, root_node_id, counts, created_at) values ($1, $2, $3::jsonb, coalesce($4::timestamptz, now()))
        returning *`, [fileKey, rootNodeId ?? null, json(counts || {}), createdAt ?? null]);
     return mapSyncEvent(rows[0]);
+  }
+
+  /**
+   * Library nodes: marks every row in the subtree of each stored node in
+   * `rootIds` (the root included) `library = true`. Returns the ids newly marked.
+   */
+  async markLibrarySubtrees(fileKey, rootIds) {
+    if (!rootIds.length) return [];
+    const { rows } = await this.query(
+      `update node n set library = true
+       where n.file_key = $1 and not n.library
+         and n.path <@ any(array(select r.path from node r where r.file_key = $1 and r.node_id = any($2::text[])))
+       returning n.node_id`, [fileKey, rootIds]);
+    return rows.map(r => r.node_id);
+  }
+
+  /** Merges `settings` into the file's settings; null for an unknown file. */
+  async updateFileSettings(fileKey, settings) {
+    const { rows } = await this.query(
+      'update file set settings = settings || $2::jsonb where file_key = $1 returning *', [fileKey, json(settings)]);
+    return mapFile(rows[0]) || null;
+  }
+
+  /** Cached library component resolutions for `keys`; unknown keys are skipped. */
+  async getLibraryComponents(keys) {
+    if (!keys.length) return [];
+    const { rows } = await this.query('select * from library_component where component_key = any($1::text[]) order by component_key', [keys]);
+    return rows.map(mapLibraryComponent);
+  }
+
+  /** Inserts or replaces the cached resolution of one library component key. */
+  async upsertLibraryComponent({ componentKey, fileKey = null, nodeId = null, name = null, resolvedAt, error = null }) {
+    const { rows } = await this.query(
+      `insert into library_component (component_key, file_key, node_id, name, resolved_at, error) values ($1, $2, $3, $4, $5, $6)
+       on conflict (component_key) do update set file_key = excluded.file_key, node_id = excluded.node_id, name = excluded.name,
+         resolved_at = excluded.resolved_at, error = excluded.error
+       returning *`, [componentKey, fileKey, nodeId, name, resolvedAt, error]);
+    return mapLibraryComponent(rows[0]);
+  }
+
+  /**
+   * Per main component id: its live instance rows file-wide (`placements`)
+   * and, with `regions` (ltree paths; a null entry is the whole file), those
+   * inside any region (`placementsInScope`, else null).
+   */
+  /**
+   * @param {string} fileKey
+   * @param {string[]} mainIds
+   * @param {(string | null)[] | null} [regions]
+   */
+  async placementCounts(fileKey, mainIds, regions = null) {
+    if (!mainIds.length) return [];
+    const scoped = regions === null ? 'null::int' : regions.includes(null)
+      ? 'count(i.node_id)::int' : 'count(i.node_id) filter (where i.path <@ any($3::text[]::ltree[]))::int';
+    const { rows } = await this.query(
+      `select m.id, count(i.node_id)::int as placements, ${scoped} as in_scope
+       from unnest($2::text[]) m(id)
+         left join node i on i.file_key = $1 and i.main_component_id = m.id and i.deleted_at is null
+       group by m.id order by m.id`, regions === null || regions.includes(null) ? [fileKey, mainIds] : [fileKey, mainIds, regions]);
+    return rows.map(r => ({ mainComponentId: r.id, placements: r.placements, placementsInScope: r.in_scope ?? null }));
   }
 
   // --- v3 reads -------------------------------------------------------------
@@ -788,7 +856,7 @@ class PostgresStore {
   /** Tracked files with node counts, most recently synced first; `fileKey` narrows to one. */
   async listFiles({ fileKey = null } = {}) {
     const { rows } = await this.query(
-      `select f.*, (select ${v3CountsSql('n')} from node n where n.file_key = f.file_key) as counts
+      `select f.*, (select ${v3CountsSql('n')} from node n where n.file_key = f.file_key and (not n.library or ${trackingSql('f')})) as counts
        from file f
        where $1::text is null or f.file_key = $1
        order by f.last_sync_at desc nulls last, f.file_key collate "C"`, [fileKey]);
@@ -799,7 +867,8 @@ class PostgresStore {
   async listScopes(fileKey) {
     const { rows } = await this.query(
       `select e.root_node_id, e.counts as last_counts, e.created_at, r.name, r.node_type, r.deleted_at,
-              (select ${v3CountsSql('d')} from node d where d.file_key = e.file_key and d.path <@ r.path) as counts
+              (select ${v3CountsSql('d')} from node d where d.file_key = e.file_key and d.path <@ r.path
+                 and (not d.library or (select ${trackingSql('f')} from file f where f.file_key = e.file_key))) as counts
        from (select distinct on (root_node_id) * from sync_event
              where file_key = $1 and root_node_id is not null
              order by root_node_id, created_at desc, id desc) e
@@ -998,7 +1067,10 @@ class PostgresStore {
                   when jsonb_typeof(ev.data->'nodeIds') = 'array' then jsonb_array_length(ev.data->'nodeIds') else 0 end
            else
              case when jsonb_typeof(ev.data->'counts'->'dirty') = 'number' then (ev.data->'counts'->>'dirty')::numeric else 0 end
-           end as n
+           end - case when ${trackingSql('f')} then 0
+             when ev.type = 'nodes.cleared' and jsonb_typeof(ev.data->'libraryCount') = 'number' then (ev.data->>'libraryCount')::numeric
+             when ev.type = 'sync.completed' and jsonb_typeof(ev.data->'counts'->'libraryDirty') = 'number' then (ev.data->'counts'->>'libraryDirty')::numeric
+             else 0 end as n
          from event ev
          where ev.file_key = f.file_key and ev.type in ('nodes.cleared', 'sync.completed')
            and ev.created_at >= $1 and ev.created_at < $3
