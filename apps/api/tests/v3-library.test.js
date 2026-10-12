@@ -194,6 +194,11 @@ for (const kind of Object.keys(STORES)) {
     assert.equal(tracked.kind, undefined);
     assert.deepEqual(tracked.library, { key: 'LIBKEY1', resolved: false });
     assert.deepEqual(tracked.nodeIds, ['9:1', '9:2']);
+    const frames = ok(await get(app, `/v3/files/${FK}/work?under=2:1&group=frame&expand=instances&changes=names&type=TEXT`));
+    assert.deepEqual(frames.items.map(i => [i.key, i.nodeIds]), [[null, ['9:2']]]);
+    assert.ok(frames.items.every(i => !('library' in i) && !('figmaUrl' in i)), 'frame items and the key: null item are never library items');
+    const outside = ok(await get(app, `/v3/files/${FK}/work?under=2:1&expand=instances&changes=names&type=TEXT`));
+    assert.deepEqual(outside.items.map(i => [i.key, 'library' in i]), [['9:1', true]]);
 
     await trackOff(app);
     const off = ok(await get(app, `/v3/files/${FK}/work?under=2:1&expand=instances&changes=names&include=progress`));
