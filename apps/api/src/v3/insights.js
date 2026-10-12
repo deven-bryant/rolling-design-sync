@@ -103,10 +103,34 @@ const trends = {
   },
 };
 
+const removedUse = {
+  type: 'object',
+  properties: {
+    componentId: { type: 'string', description: 'The main component\'s node id.' },
+    name: { ...nullableString, description: 'The main component\'s name; null when it was never synced.' },
+    set: schemas.componentSet,
+    remote: { type: 'boolean', description: 'True for a library (remote) main component, when captured.' },
+    placementsRemoved: { type: 'integer', description: 'Instance rows of it inside the removed subtree.' },
+    livePlacements: { type: 'integer', description: 'Live (not tombstoned) instance rows of it anywhere in the file. 0: nothing in the design uses it any more.' },
+  },
+};
+const removedWarning = {
+  type: 'object',
+  properties: {
+    code: { type: 'string', enum: ['main_removed_with_live_placements'], description: 'main_removed_with_live_placements: a main component inside the removed subtree still has live instances elsewhere — keep its code.' },
+    componentId: { type: 'string' },
+    livePlacements: { type: 'integer' },
+  },
+};
+
 const workItem = {
   type: 'object',
   properties: {
-    key: { ...nullableString, description: 'The component or frame node id; with group=set, the Figma set key (id when no key is available). Standalone components retain their node id; null for nodes with none.' },
+    kind: {
+      type: 'string', enum: ['removed'],
+      description: '`removed`: design deleted in Figma that was built — one item per removed root (the topmost tombstoned node; key = its id), listing the components it used (`uses`). Absent on component, set and frame items.',
+    },
+    key: { ...nullableString, description: 'The component or frame node id; with group=set, the Figma set key (id when no key is available). Standalone components retain their node id; removed items: the removed root\'s id; null for nodes with none.' },
     name: nullableString,
     type: nullableString,
     set: schemas.componentSet,
@@ -126,7 +150,15 @@ const workItem = {
       type: ['integer', 'null'],
       description: 'group=component with expand=instances: the instances of the key reached from the scope (inside `under` or inside the expanded components) — how often this screen uses it.',
     },
-    nodeIds: { type: 'array', items: { type: 'string' }, description: `The item's first ${MAX_ITEM_NODE_IDS} node ids, in document order (the design's layer order).` },
+    uses: {
+      type: 'array', items: removedUse,
+      description: 'Removed items only: the main components referenced by instances inside the removed subtree, those with `livePlacements: 0` first (then by name). Keep the code of components with livePlacements > 0; consider removing those with 0.',
+    },
+    warnings: {
+      type: 'array', items: removedWarning,
+      description: 'Removed items only (empty when none): main components removed with the design while other instances of them are still live.',
+    },
+    nodeIds: { type: 'array', items: { type: 'string' }, description: `The item's first ${MAX_ITEM_NODE_IDS} node ids, in document order (the design's layer order; a removed item's root first).` },
     more: { type: 'integer', description: 'How many node ids `nodeIds` leaves out.' },
     progress: {
       type: 'object', description: 'Present with include=progress: counts across all states for this item, independent of state=; other listing filters still apply. Cleared tombstones are excluded.',
@@ -140,6 +172,8 @@ const work = format.withFormat({
   description: [
     'The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design\'s layer order, by each item\'s key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories.',
     '`group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last.',
+    'Removed design (group=component and group=set): deleted nodes that were built are grouped under their removed root — the topmost deleted node — into one `kind: "removed"` item (after the component items, before `key: null`, in the roots\' document order), unless that root sits inside a live component (then they are part of that component\'s item). '
+      + 'For a removed item: remove the code that rendered the root; keep components in `uses` with `livePlacements > 0` (still used elsewhere), consider removing those with 0; heed `warnings`; then clear the root with `subtree: true` (`clear_nodes`) — one item clears the whole removed subtree. Deleted nodes that were never built are not work (they resolve at sync).',
     '`group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged.',
     '`group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item.',
     '`include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar.',
@@ -184,6 +218,7 @@ const work = format.withFormat({
 
 // --- representation ------------------------------------------------------------
 const itemOut = (group, expanded) => i => ({
+  ...(i.kind ? { kind: i.kind } : {}),
   key: i.keyId,
   name: i.name,
   type: i.type,
@@ -194,8 +229,9 @@ const itemOut = (group, expanded) => i => ({
   changedProps: i.changedProps,
   ...(i.changes ? { changes: i.changes } : {}),
   ...(i.progress ? { progress: i.progress } : {}),
-  ...(group === 'component' ? { placements: i.placements } : {}),
-  ...(group === 'component' && expanded ? { placementsInScope: i.placementsInScope } : {}),
+  ...(group === 'component' && !i.kind ? { placements: i.placements } : {}),
+  ...(group === 'component' && !i.kind && expanded ? { placementsInScope: i.placementsInScope } : {}),
+  ...(i.kind === 'removed' ? { uses: i.uses, warnings: i.warnings } : {}),
   nodeIds: i.nodeIds,
   more: i.nodeCount - i.nodeIds.length,
 });

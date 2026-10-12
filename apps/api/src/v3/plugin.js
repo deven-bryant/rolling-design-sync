@@ -67,7 +67,7 @@ const upsert = {
 
 const sync = {
   summary: 'Sync a batch (plugin)',
-  description: 'Upserts scanned nodes and tombstones `deletedNodeIds`: `dirty` becomes `contentHash !== implementedHash`, a hash change unblocks a blocked node, and `markImplemented: true` inserts never-seen nodes as already implemented. `fileName` / `rootNodeId` name the file and record the sync for `…/scopes`. Emits `sync.completed`. Plugin tokens only.',
+  description: 'Upserts scanned nodes and tombstones `deletedNodeIds`: `dirty` becomes `contentHash !== implementedHash`, a hash change unblocks a blocked node, and `markImplemented: true` inserts never-seen nodes as already implemented. A tombstoned node that was never implemented resolves itself (a clean tombstone, counted in `autoResolved`, not dirty). `fileName` / `rootNodeId` name the file and record the sync for `…/scopes`. Emits `sync.completed`. Plugin tokens only.',
   tags, security,
   params: fileKeyParams,
   querystring: urlQuery,
@@ -89,7 +89,8 @@ const sync = {
         fileKey: { type: 'string' },
         upserted: { type: 'integer' },
         dirty: { type: 'integer', description: 'How many of the upserted nodes are dirty.' },
-        tombstoned: { type: 'integer' },
+        tombstoned: { type: 'integer', description: 'Nodes this sync tombstoned (deletedNodeIds that were stored and live).' },
+        autoResolved: { type: 'integer', description: 'Of `tombstoned`, the nodes that were never implemented: stored as clean tombstones at once, so they are not work.' },
         skippedInstances: { type: 'integer', description: 'Always 0; kept for older plugins.' },
         baselined: { type: 'integer', description: 'With markImplemented: nodes inserted as implemented.' },
       },

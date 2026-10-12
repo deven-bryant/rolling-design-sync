@@ -545,7 +545,7 @@ for (const kind of Object.keys(STORES)) {
       assert.equal(scopes[0].name, 'Page');
       assert.equal(scopes[0].type, 'SECTION');
       assert.equal(scopes[0].figmaUrl, core.link(FK, '1:1'));
-      assert.deepEqual(scopes[0].lastSyncCounts, { uploaded: 8, changed: 4, added: 1, deleted: 1, baselined: 0 });
+      assert.deepEqual(scopes[0].lastSyncCounts, { uploaded: 8, changed: 4, added: 1, deleted: 1, baselined: 0, autoResolved: 0 });
       assert.deepEqual(scopes[0].counts, { total: 9, dirty: 5, clean: 3, blocked: 1 });
     });
 
@@ -703,7 +703,7 @@ test('files and scopes after syncs with and without fileName', async t => {
   assert.deepEqual(files.map(f => [f.fileKey, f.name]), [[A, 'File A'], [B, 'File B']]);
   const scopes = (await get(app, `/v3/files/${A}/scopes`)).json().scopes;
   assert.deepEqual(scopes.map(s => [s.nodeId, s.name]), [['1:1', 'Root A'], ['2:1', 'Second']], 'latest per root, newest first');
-  assert.deepEqual(scopes[0].lastSyncCounts, { uploaded: 1, changed: 1, added: 0, deleted: 0, baselined: 0 });
+  assert.deepEqual(scopes[0].lastSyncCounts, { uploaded: 1, changed: 1, added: 0, deleted: 0, baselined: 0, autoResolved: 0 });
   assert.deepEqual(scopes[1].counts, { total: 1, dirty: 1, clean: 0, blocked: 0 });
 
   const unsynced = await batch(app, { fileKey: A, rootNodeId: '9:9', upserts: [] });

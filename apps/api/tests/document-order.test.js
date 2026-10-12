@@ -240,6 +240,9 @@ for (const [kind, open] of Object.entries(STORES)) {
       assert.deepEqual(await ids(fk), ['1:1', '1:95723', '4:2', '4:1', '5:1', '6:1', '1:94997', '5:2', '1:99000']);
       assert.equal((await keys(fk))['6:1'], '00000.00000.00002.00000');
 
+      // Built first, so its deletion is work (a never-built deletion is a clean tombstone, not listed).
+      const [built] = await store.getNodes(fk, ['4:2']);
+      await store.clearNodes(fk, [{ nodeId: '4:2', contentHash: built.contentHash }], { dirty: false, changeType: null, changedProps: [], changeCategories: [] });
       await sync(fk, { upserts: [], deletedNodeIds: ['4:2'] });
       const after = await keys(fk);
       assert.equal(after['4:1'], '00000.00000.00000');
