@@ -146,13 +146,31 @@ while typing.
 4. Click **Upload snapshot**. This clears any previous message and result.
    Pause design edits while it scans — the plugin captures the scope (with a
    verification pass), fetches the stored hashes, compares, and uploads only
-   the delta in batches. A progress bar under the status line follows each
-   phase: phases with a known size (verifying the scan, checking main
-   components, uploading) fill a determinate bar with counts such as
-   `Uploading: 1,200 / 3,400 nodes`; scanning shows a moving bar (static
-   with reduced motion) and the running node count. A successful sync ends
-   with a green **Sync complete** message that stays until the next upload or
-   an error.
+   the delta in batches. The status line follows each phase: phases with a
+   known size (verifying the scan, checking main components, uploading) fill
+   a progress bar with counts such as `Uploading: 1,200 / 3,400 nodes`;
+   phases without one (fetching stored hashes, scanning, comparing, scanning
+   main components) show a small spinner next to the running node count
+   (a static ring with reduced motion). A successful sync ends with a green
+   **Sync complete** message that stays until the next upload or an error.
+
+   *Upload batches.* Each `POST …/sync` carries at most 200 records and
+   250,000 JSON characters (`BATCH_RECORDS`, `BATCH_CHARS` in
+   `src/plugin.js`), so the upload bar advances after every acknowledged
+   batch; deletions travel in the first batch. A 1,000-node first sync is 5
+   batches. On very large syncs both caps grow so one upload takes at most 50
+   requests (`MAX_UPLOAD_BATCHES`, keeping well inside the API's per-token
+   sync rate limit), and no batch exceeds 2,000,000 characters.
+
+   *Verification retries.* The scan is verified by a second pass. If the two
+   differ — typically a value Figma loads lazily on first access, such as a
+   library style or variable, a remote main component, or text metrics once
+   fonts load — the plugin scans again (`Verifying scan (retry 1)`) and
+   compares with the previous pass, up to 2 retries (`VERIFY_RETRIES`); the
+   first matching pair is uploaded. Only if it never settles does the sync
+   fail, naming the layer and up to three changed properties, e.g.
+   *Design kept changing while scanning: "Button" (12:34) fills,
+   styleDefinitions.* A layer deleted mid-scan still fails at once.
 5. Read the **3 · Sync result** panel: counts of **changed**, **new** and
    **deleted** nodes uploaded, plus **unchanged** (skipped because the hash
    matched), **instances recorded**, **inside instances skipped** (layers
