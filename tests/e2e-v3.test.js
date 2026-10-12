@@ -154,7 +154,7 @@ async function seed(fileKey) {
   const baseline = await batch(fileKey, { fileName: 'E2E File', rootNodeId: ROOT, upserts: BUILT, markImplemented: true });
   assert.equal(baseline.baselined, BUILT.length);
   const edit = await batch(fileKey, { fileName: 'E2E File', rootNodeId: ROOT, upserts: NOW });
-  assert.deepEqual(edit, { fileKey, upserted: NOW.length, dirty: DIRTY.length, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(edit, { fileKey, upserted: NOW.length, dirty: DIRTY.length, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
 }
 
 /**
@@ -389,7 +389,7 @@ test('v3 end to end: sync → files/scopes → listing → detail → claims →
     assert.equal(scope.type, 'SECTION');
     assert.equal(scope.deleted, false);
     assert.equal(scope.figmaUrl, core.link(fileKey, ROOT));
-    assert.deepEqual(scope.lastSyncCounts, { uploaded: 6, changed: 3, added: 1, deleted: 0, baselined: 0 });
+    assert.deepEqual(scope.lastSyncCounts, { uploaded: 6, changed: 3, added: 1, deleted: 0, baselined: 0, autoResolved: 0 });
     assert.deepEqual(scope.counts, { total: 6, dirty: 4, clean: 2, blocked: 0 });
   });
 
@@ -526,7 +526,7 @@ test('v3 end to end: sync → files/scopes → listing → detail → claims →
         { nodeId: '2:3', status: 'cleared', contentHash: hashOf(NOW, '2:3') },
         { nodeId: '9:9', status: 'not_found', contentHash: null },
       ],
-      totals: { cleared: 2, stale: 1, notFound: 1 },
+      totals: { cleared: 2, stale: 1, notFound: 1, notRemoved: 0 },
     });
     assert.deepEqual(await listIds(fileKey), ['2:2', '2:4']);
     const caption = await node(fileKey, '2:3');
@@ -858,14 +858,14 @@ test('v3 plugin routes: a full sync as the plugin runs it', async () => {
   const baseline = await ok(call('POST', '/v3/files/-/sync', {
     headers: client, query: url, body: { fileName: 'E2E File', rootNodeId: dashed(ROOT), upserts: BUILT.map(dashedUp), markImplemented: true },
   }));
-  assert.deepEqual(baseline, { fileKey, upserted: BUILT.length, dirty: 0, tombstoned: 0, skippedInstances: 0, baselined: BUILT.length });
+  assert.deepEqual(baseline, { fileKey, upserted: BUILT.length, dirty: 0, tombstoned: 0, autoResolved: 0, skippedInstances: 0, baselined: BUILT.length });
 
   // Re-scan: send only what changed against the stored hashes, tombstone what vanished.
   const stored = await ok(call('GET', '/v3/files/-/hashes', { headers: client, query: url }));
   assert.deepEqual(Object.keys(stored).sort(), BUILT.map(u => u.nodeId).sort());
   const changed = NOW.filter(u => stored[u.nodeId] !== u.contentHash);
   const edit = await ok(call('POST', `/v3/files/${fileKey}/sync`, { headers: client, body: { fileName: 'E2E File', rootNodeId: ROOT, upserts: changed } }));
-  assert.deepEqual(edit, { fileKey, upserted: changed.length, dirty: DIRTY.length, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(edit, { fileKey, upserted: changed.length, dirty: DIRTY.length, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
   const gone = await ok(call('POST', `/v3/files/${fileKey}/sync`, { headers: client, body: { rootNodeId: ROOT, deletedNodeIds: ['2-3'] } }));
   assert.equal(gone.tombstoned, 1);
 
@@ -928,7 +928,7 @@ test('v3 instances: placements live in the page, the main once outside it; no fa
   const fileKey = newFileKey();
   const rows = instanceTree();
   const res = await batch(fileKey, { rootNodeId: ROOT, upserts: rows });
-  assert.deepEqual(res, { fileKey, upserted: rows.length, dirty: rows.length, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(res, { fileKey, upserted: rows.length, dirty: rows.length, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
 
   // The placement is a row in the page subtree under the frame it sits in; the main is not.
   sameSet(await listIds(fileKey, { under: ROOT }), [ROOT, '2:1', INSTANCE]);
@@ -952,7 +952,7 @@ test('v3 instances: placements live in the page, the main once outside it; no fa
   assert.equal(all.totals.cleared, rows.length);
   const editedMain = instanceTree(PLACEMENT_ATTRS, { ...MAIN_ATTRS, width: 160 });
   const mainEdit = await batch(fileKey, { upserts: [editedMain[3], editedMain[2]] });
-  assert.deepEqual(mainEdit, { fileKey, upserted: 2, dirty: 1, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(mainEdit, { fileKey, upserted: 2, dirty: 1, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
   assert.deepEqual(await listIds(fileKey, { under: MAIN }), [MAIN]);
   assert.deepEqual(await listIds(fileKey, { under: ROOT }), [], 'the page (with the instance) stays clean');
 
@@ -1214,7 +1214,7 @@ test('v3 sync markImplemented: never-seen nodes are baselined clean; existing an
   assert.equal((await batch(fileKey, { deletedNodeIds: ['3:1'] })).tombstoned, 1);
 
   const res = await batch(fileKey, { upserts: BUILT, markImplemented: true });
-  assert.deepEqual(res, { fileKey, upserted: BUILT.length, dirty: 2, tombstoned: 0, skippedInstances: 0, baselined: BUILT.length - 2 });
+  assert.deepEqual(res, { fileKey, upserted: BUILT.length, dirty: 2, tombstoned: 0, autoResolved: 0, skippedInstances: 0, baselined: BUILT.length - 2 });
   sameSet(await listIds(fileKey), ['2:1', '3:1']);
   for (const id of ['2:1', '3:1']) {
     const n = await node(fileKey, id);
@@ -1285,4 +1285,62 @@ test('rate limits: a burst over the per-IP limit gets 429 rate_limited, then rec
   const after = await fetch(route);
   await after.arrayBuffer();
   assert.equal(after.status, 200, 'the budget is back once the window ends');
+});
+
+// --- removed design ---------------------------------------------------------------
+
+test('v3 removed design: a never-built deletion is no work; a built screen is one removed item cleared with subtree: true', async () => {
+  const fileKey = newFileKey();
+  const main = upsert('6:1', 'COMPONENT', 'Button', { cornerRadius: 4 }, [ROOT]);
+  const only = upsert('6:2', 'COMPONENT', 'Hero', { cornerRadius: 8 }, [ROOT]);
+  const screen = upsert('2:1', 'FRAME', 'Old screen', { childOrder: ['3:1', '3:2', '3:3'] }, [ROOT]);
+  const removed = [
+    screen,
+    { ...upsert('3:1', 'INSTANCE', 'Button', { fills: ['red'] }, [ROOT, '2:1']), mainComponentId: '6:1' },
+    { ...upsert('3:2', 'INSTANCE', 'Hero', { fills: ['blue'] }, [ROOT, '2:1']), mainComponentId: '6:2' },
+    upsert('3:3', 'TEXT', 'Title', { characters: 'Bye' }, [ROOT, '2:1']),
+  ];
+  const kept = [
+    upsert(ROOT, 'SECTION', 'Page', { childOrder: ['2:1', '2:2', '6:1', '6:2'] }),
+    upsert('2:2', 'FRAME', 'Live screen', {}, [ROOT]),
+    { ...upsert('3:4', 'INSTANCE', 'Button', { fills: ['green'] }, [ROOT, '2:2']), mainComponentId: '6:1' },
+    main, only,
+  ];
+  await batch(fileKey, { upserts: [...kept, ...removed], markImplemented: true, rootNodeId: ROOT });
+
+  // Never built, then deleted: resolves itself.
+  await batch(fileKey, { upserts: [upsert('2:9', 'FRAME', 'Draft', { width: 1 }, [ROOT])] });
+  const draft = await batch(fileKey, { deletedNodeIds: ['2:9'] });
+  assert.equal(draft.tombstoned, 1);
+  assert.equal(draft.autoResolved, 1);
+  assert.deepEqual((await ok(files(fileKey, '/work'))).items, []);
+
+  // Built, then deleted: one removed item listing the components it used.
+  const res = await batch(fileKey, { deletedNodeIds: removed.map(n => n.nodeId) });
+  assert.deepEqual([res.tombstoned, res.autoResolved], [4, 0]);
+  const { items } = await ok(files(fileKey, '/work', { query: { changes: 'names', include: 'progress' } }));
+  assert.equal(items.length, 1);
+  const [item] = items;
+  assert.equal(item.kind, 'removed');
+  assert.equal(item.key, '2:1');
+  assert.equal(item.name, 'Old screen');
+  assert.deepEqual(item.nodeIds, ['2:1', '3:1', '3:2', '3:3']);
+  assert.deepEqual(item.uses, [
+    { componentId: '6:2', name: 'Hero', placementsRemoved: 1, livePlacements: 0 },
+    { componentId: '6:1', name: 'Button', placementsRemoved: 1, livePlacements: 1 },
+  ]);
+  assert.deepEqual(item.warnings, []);
+  assert.deepEqual(item.progress, { total: 4, clean: 0 });
+  assert.equal((await ok(files(fileKey, '/work', { query: { group: 'set', changes: 'names' } }))).items[0].kind, 'removed');
+
+  const live = await ok(call('POST', `/v3/files/${fileKey}/clear`, { body: { items: [{ nodeId: '2:2', contentHash: hashOf(kept, '2:2'), subtree: true }] } }));
+  assert.deepEqual(live.results, [{ nodeId: '2:2', status: 'not_removed', contentHash: hashOf(kept, '2:2') }]);
+  const cleared = await ok(call('POST', `/v3/files/${fileKey}/clear`, {
+    body: { commitRef: 'e2e-removed', items: [{ nodeId: '2:1', contentHash: screen.contentHash, subtree: true }] },
+  }));
+  assert.deepEqual(cleared.results, [{ nodeId: '2:1', status: 'cleared', contentHash: screen.contentHash, subtreeCleared: 3 }]);
+  assert.deepEqual(cleared.totals, { cleared: 1, stale: 0, notFound: 0, notRemoved: 0 });
+  assert.deepEqual((await ok(files(fileKey, '/work'))).items, []);
+  const events = await ok(files(fileKey, '/events', { query: { types: 'nodes.cleared' } }));
+  assert.equal(events.events[events.events.length - 1].data.count, 4);
 });
