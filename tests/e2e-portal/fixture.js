@@ -110,7 +110,7 @@ async function syncTokens(fileKey) {
   ];
   await api('POST', `/v3/files/${fileKey}/sync`, TOKENS.plugin, {
     rootNodeId: ROOT,
-    upserts: [upsert('2:9', 'TEXT', 'Label', { characters: 'Hi', resolvedVariables: { 'VariableID:7:1': { name: 'Colors/bg-active' } } }, [ROOT, FRAME])],
+    upserts: [upsert('2:9', 'TEXT', 'Label', { characters: 'Hi', resolvedVariables: { 'VariableID:7:1': { name: 'Colors/bg-active', key: '1'.repeat(40) } } }, [ROOT, FRAME])],
     markImplemented: true,
   });
   await api('POST', `/v3/files/${fileKey}/sync`, TOKENS.plugin, { rootNodeId: 'tokens', upserts: scope('#202527'), markImplemented: true });
