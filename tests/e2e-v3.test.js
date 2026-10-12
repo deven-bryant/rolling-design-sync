@@ -712,7 +712,7 @@ test('v3 block: block releases the lease → listing shows blocked → unblock �
 test('v3 summary and work items after a sync; format=ndjson and format=md', async () => {
   const fileKey = newFileKey();
   await seed(fileKey);
-  const zero = { layout: 0, color: 0, typography: 0, effects: 0, component: 0, content: 0, structure: 0, prototype: 0, other: 0 };
+  const zero = { layout: 0, color: 0, typography: 0, effects: 0, component: 0, content: 0, structure: 0, prototype: 0, token: 0, other: 0 };
 
   assert.deepEqual(await ok(files(fileKey, '/summary')), {
     fileKey,
@@ -1386,4 +1386,53 @@ test('v3 library components: flagged at sync, the setting off hides them and lis
   assert.equal(ref.placementsInScope, 1);
   const events = await ok(files(fileKey, '/events', { query: { types: 'file.settings_changed' } }));
   assert.deepEqual(events.events.at(-1).data.settings, { trackLibraryComponents: false });
+});
+
+// --- design tokens ------------------------------------------------------------------
+
+test('v3 design tokens: a tokens scope syncs, diffs per mode, groups per collection, reports usage and clears', async () => {
+  const fileKey = newFileKey();
+  const collection = `tokens:${'c'.repeat(40)}`;
+  const active = `token:${'d'.repeat(40)}`;
+  const tokenAttrs = dark => ({ name: 'bg-active', resolvedType: 'COLOR', description: '', scopes: ['ALL_SCOPES'], codeSyntax: { WEB: '--bg-active' }, variableId: 'VariableID:7:1', remote: false, 'value:Light': '#ffffff', 'value:Dark': dark });
+  const tokens = dark => [
+    upsert('tokens', 'TOKENS', 'Design tokens', {}),
+    upsert(collection, 'VARIABLE_COLLECTION', 'Semantic', { name: 'Semantic', modes: ['Light', 'Dark'], remote: false }, ['tokens']),
+    upsert(active, 'VARIABLE', 'bg-active', tokenAttrs(dark), ['tokens', collection]),
+  ];
+  await batch(fileKey, {
+    rootNodeId: ROOT, fileName: 'E2E tokens', markImplemented: true,
+    upserts: [upsert(ROOT, 'SECTION', 'Page', { childOrder: ['2:1'] }), upsert('2:1', 'FRAME', 'Card', { width: 1, resolvedVariables: { 'VariableID:7:1': { name: 'bg-active' } } }, [ROOT])],
+  });
+  await batch(fileKey, { rootNodeId: 'tokens', markImplemented: true, upserts: tokens('#202527') });
+  const edit = await batch(fileKey, { rootNodeId: 'tokens', upserts: tokens('#2b3033') });
+  assert.equal(edit.dirty, 1);
+
+  const hashes = await hashesUnder(fileKey, 'tokens');
+  assert.deepEqual(hashes.tokens, { [active]: { variableId: 'VariableID:7:1', remote: false } });
+  const scope = (await ok(files(fileKey, '/scopes'))).scopes.find(s => s.nodeId === 'tokens');
+  assert.equal(scope.name, 'Design tokens');
+  assert.equal(scope.type, 'TOKENS');
+  assert.equal(scope.figmaUrl, null);
+
+  const detail = await node(fileKey, active);
+  assert.deepEqual(detail.changes, { 'value:Dark': { built: '#202527', now: '#2b3033', category: 'token' } });
+  assert.deepEqual(detail.usage, { layers: 1 });
+  assert.equal(detail.figmaUrl, null);
+  const listed = await list(fileKey, { under: 'tokens', include: 'usage', fields: 'nodeId,usage' });
+  assert.deepEqual(listed.nodes, [{ nodeId: active, usage: { layers: 1 } }]);
+
+  const { items } = await ok(files(fileKey, '/work', { query: { changes: 'names', include: 'progress,usage' } }));
+  assert.deepEqual(items.map(i => [i.kind ?? null, i.key, i.name]), [['tokens', collection, 'Semantic']]);
+  assert.deepEqual(items[0].nodeIds, [active]);
+  assert.deepEqual(items[0].changedProps, ['value:Dark']);
+  assert.deepEqual(items[0].progress, { total: 2, clean: 1 });
+  assert.deepEqual(items[0].usage, { [active]: { layers: 1 } });
+
+  const cleared = await ok(call('POST', `/v3/files/${fileKey}/clear`, { body: { commitRef: 'e2e-tokens', items: [{ nodeId: active, contentHash: detail.contentHash }] } }));
+  assert.equal(cleared.results[0].status, 'cleared');
+  assert.equal((await node(fileKey, active)).state, 'clean');
+  const gone = await batch(fileKey, { rootNodeId: 'tokens', deletedNodeIds: [active] });
+  assert.equal(gone.tombstoned, 1);
+  assert.deepEqual((await hashesUnder(fileKey, 'tokens')).tokens, {});
 });

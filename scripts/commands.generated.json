@@ -161,7 +161,7 @@
           "in": "query",
           "name": "category",
           "type": "string",
-          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other."
+          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other."
         },
         {
           "flag": "component",
@@ -256,17 +256,14 @@
           "in": "query",
           "name": "fields",
           "type": "string",
-          "description": "Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, via (`via` needs `expand=instances`)."
+          "description": "Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, usage, via (`via` needs `expand=instances`)."
         },
         {
           "flag": "include",
           "in": "query",
           "name": "include",
           "type": "string",
-          "enum": [
-            "counts"
-          ],
-          "description": "`counts` adds subtree counts (`descendants`) to each node."
+          "description": "Comma-separated: counts, usage. `counts` adds subtree counts (`descendants`) to each node; `usage` adds `usage: { layers }` to each design token (`token:<variableKey>`)."
         },
         {
           "flag": "sort",
@@ -373,7 +370,7 @@
           "in": "query",
           "name": "fields",
           "type": "string",
-          "description": "Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants."
+          "description": "Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, usage."
         },
         {
           "flag": "changes",
@@ -562,7 +559,7 @@
           "name": "category",
           "object": "filter",
           "type": "string",
-          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other."
+          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other."
         },
         {
           "flag": "component",
@@ -981,7 +978,7 @@
           "in": "query",
           "name": "category",
           "type": "string",
-          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other."
+          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other."
         },
         {
           "flag": "component",
@@ -1105,7 +1102,7 @@
     {
       "command": "work",
       "summary": "List work items",
-      "description": "The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design's layer order, by each item's key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories. `group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last. Removed design (group=component and group=set): deleted nodes that were built are grouped under their removed root — the topmost deleted node — into one `kind: \"removed\"` item (after the component items, before `key: null`, in the roots' document order), unless that root sits inside a live component (then they are part of that component's item). For a removed item: remove the code that rendered the root; keep components in `uses` with `livePlacements > 0` (still used elsewhere), consider removing those with 0; heed `warnings`; then clear the root with `subtree: true` (`clear_nodes`) — one item clears the whole removed subtree. Deleted nodes that were never built are not work (they resolve at sync). `group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged. `group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item. `include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar. `expand=instances` answers \"which components do I need to build for this screen, and how often does it use each?\": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`. Each item's `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.",
+      "description": "The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design's layer order, by each item's key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories. `group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last. Removed design (group=component and group=set): deleted nodes that were built are grouped under their removed root — the topmost deleted node — into one `kind: \"removed\"` item (after the component items, before `key: null`, in the roots' document order), unless that root sits inside a live component (then they are part of that component's item). For a removed item: remove the code that rendered the root; keep components in `uses` with `livePlacements > 0` (still used elsewhere), consider removing those with 0; heed `warnings`; then clear the root with `subtree: true` (`clear_nodes`) — one item clears the whole removed subtree. Deleted nodes that were never built are not work (they resolve at sync). Design tokens (group=component and group=set): the dirty tokens of each collection form one `kind: \"tokens\"` item (key = the collection node id, after the component and removed items, before `key: null`). For each token, update the code variable named by its `codeSyntax` (WEB, else the token name) for every changed `value:<Mode>`, then clear it. `include=usage` adds how many layers use each token. `group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged. `group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item. `include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar. `expand=instances` answers \"which components do I need to build for this screen, and how often does it use each?\": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`. Each item's `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.",
       "method": "GET",
       "path": "/v3/files/{fileKey}/work",
       "flags": [
@@ -1165,7 +1162,7 @@
           "in": "query",
           "name": "category",
           "type": "string",
-          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other."
+          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other."
         },
         {
           "flag": "component",
@@ -1303,10 +1300,7 @@
           "in": "query",
           "name": "include",
           "type": "string",
-          "enum": [
-            "progress"
-          ],
-          "description": "progress: add total and clean node counts across all states for each work item."
+          "description": "Comma-separated: progress, usage. progress: add total and clean node counts across all states for each work item; usage: add `usage: { nodeId: { layers } }` to token items."
         },
         {
           "flag": "format",

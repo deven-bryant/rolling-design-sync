@@ -12,6 +12,16 @@ const AUTO_LAYOUT = new Set(['HORIZONTAL', 'VERTICAL', 'GRID']);
 
 const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
+// Design-token nodes (`tokens:<key>` collections, `token:<key>` variables)
+// rank by name, `/`-separated group by group, so a group's tokens stay together.
+const isToken = id => typeof id === 'string' && (id.startsWith('tokens:') || id.startsWith('token:'));
+const tokenName = c => String(c.name ?? (c.attrs && c.attrs.name) ?? '');
+function byTokenName(a, b) {
+  const x = tokenName(a).split('/'), y = tokenName(b).split('/');
+  for (let i = 0; i < Math.min(x.length, y.length); i += 1) if (x[i] !== y[i]) return cmp(x[i], y[i]);
+  return x.length - y.length;
+}
+
 function translation(attrs) {
   const t = attrs && attrs.relativeTransform;
   if (!Array.isArray(t) || !Array.isArray(t[0]) || !Array.isArray(t[1])) return null;
@@ -20,8 +30,9 @@ function translation(attrs) {
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
 }
 
-// Pure: `parentAttrs` of the parent, `children` = [{ nodeId, attrs }] (its
-// stored children). Returns the children's node ids in document order.
+// Pure: `parentAttrs` of the parent, `children` = [{ nodeId, attrs, name? }]
+// (its stored children). Returns the children's node ids in document order;
+// children not in `childOrder` follow by node id (token nodes by name).
 function rankChildren(parentAttrs, children) {
   const attrs = parentAttrs || {};
   const index = new Map();
@@ -42,7 +53,7 @@ function rankChildren(parentAttrs, children) {
       ...placed.filter(p => !p.t).map(p => p.c).sort(byIndex),
     ];
   }
-  missing.sort((a, b) => cmp(a.nodeId, b.nodeId));
+  missing.sort((a, b) => (isToken(a.nodeId) && isToken(b.nodeId) ? byTokenName(a, b) : 0) || cmp(a.nodeId, b.nodeId));
   return [...ranked, ...missing].map(c => c.nodeId);
 }
 

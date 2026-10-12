@@ -122,11 +122,14 @@ function stream(reply, fmt, { first, fetch, toObject, toLine, cap = null, total 
 // --- markdown ------------------------------------------------------------------
 const escape = v => String(v).replace(/[\\`*_[\]<>#|]/g, '\\$&').replace(/\s*\r?\n\s*/g, ' ');
 const truncate = s => (s.length > MAX_VALUE ? `${s.slice(0, MAX_VALUE - 1)}…` : s);
+/** A design-token alias value (`{ alias: 'token:<key>', name }`). */
+const isAlias = v => !!v && typeof v === 'object' && !Array.isArray(v) && typeof v.alias === 'string' && typeof v.name === 'string';
 const isToken = v => !!v && typeof v === 'object' && !Array.isArray(v) && typeof v.token === 'string' && Object.keys(v).length === 2 && 'value' in v;
 
 /** A change value for a markdown line: the token name when bound, else the raw value (truncated). */
 function valueText(v) {
   if (isToken(v)) return escape(truncate(v.token));
+  if (isAlias(v)) return `{${escape(truncate(v.name))}}`;
   if (v === null || v === undefined) return 'none';
   return escape(truncate(typeof v === 'string' ? v : JSON.stringify(v)));
 }
@@ -150,11 +153,11 @@ function nodeLine(n) {
 
 /** One checklist line for a work item (route shape). */
 function itemLine(fileKey, group, i) {
-  const title = (i.kind === 'removed' ? 'Removed: ' : i.kind === 'library' ? 'Library: ' : '') + (i.key === null ? `**(no ${group})**` : `**${escape(i.name ?? i.key)}** (${escape(i.type ?? 'NODE')})`);
+  const title = (i.kind === 'removed' ? 'Removed: ' : i.kind === 'library' ? 'Library: ' : i.kind === 'tokens' ? 'Tokens: ' : '') + (i.key === null ? `**(no ${group})**` : `**${escape(i.name ?? i.key)}** (${escape(i.type ?? 'NODE')})`);
   const props = i.changedProps.length ? `: ${listed(i.changedProps.map(escape))}` : '';
   const placements = i.placements === undefined || i.placements === null ? '' : ` · ${i.placements} placement${i.placements === 1 ? '' : 's'}`;
   const uses = i.uses && i.uses.length ? ` · uses ${i.uses.length} component${i.uses.length === 1 ? '' : 's'} (${i.uses.filter(u => u.livePlacements === 0).length} unused elsewhere)` : '';
-  const url = i.key === null || i.kind === 'removed' ? null : i.library ? i.figmaUrl ?? null : core.link(fileKey, group === 'set' && i.set ? i.set.id : i.key);
+  const url = i.key === null || i.kind === 'removed' || i.kind === 'tokens' || core.isTokenNodeId(i.key) ? null : i.library ? i.figmaUrl ?? null : core.link(fileKey, group === 'set' && i.set ? i.set.id : i.key);
   const link = i.key === null || i.kind === 'removed' || !url ? '' : ` · [Figma](${url})`;
   const nodes = i.kind === 'library' ? 'reference (not tracked)' : `${i.nodeCount} node${i.nodeCount === 1 ? '' : 's'}`;
   return `- [${i.kind === 'library' ? 'x' : ' '}] ${title} — ${nodes}${props}${placements}${uses}${link}`;
@@ -267,7 +270,7 @@ function outlineTree(rows, { base = 0, attach = new Map(), mainNames = new Map()
 
 /** `Name (TYPE) · 3 nodes · changed (4: characters, fills, …) · 2 placements` for a work item (route shape). */
 function itemOutline(group, i) {
-  const title = (i.kind === 'removed' ? 'removed: ' : i.kind === 'library' ? 'library: ' : '') + (i.key === null ? `(no ${group})` : `${plain(i.name ?? i.key)} (${plain(i.type ?? 'NODE')})`);
+  const title = (i.kind === 'removed' ? 'removed: ' : i.kind === 'library' ? 'library: ' : i.kind === 'tokens' ? 'tokens: ' : '') + (i.key === null ? `(no ${group})` : `${plain(i.name ?? i.key)} (${plain(i.type ?? 'NODE')})`);
   const nodes = i.kind === 'library' ? 'reference (not tracked)' : plural(i.nodeCount, 'node') + (i.more ? ` (first ${i.nodeIds.length} below)` : '');
   const props = i.changedProps.length ? ` · changed (${firstProps(i.changedProps)})` : '';
   const placements = i.placements === undefined || i.placements === null ? '' : ` · ${plural(i.placements, 'placement')}`;

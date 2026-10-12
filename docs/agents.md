@@ -281,6 +281,25 @@ Then library nodes leave listings, counts and progress (`library=include` or
 screen uses is a `kind: "library"` reference item (`tracked: false`, no nodes,
 with `placements`): use the library component as is — nothing to build or clear.
 
+### Design tokens
+
+Figma variables sync as their own scope, `tokens`: one `tokens:<collectionKey>`
+node per collection and one `token:<variableKey>` node per variable, with one
+`value:<Mode>` property per mode. A token change dirties the token, not the
+layers that use it. Work them collection by collection:
+
+```text
+MCP: list_work_items { "fileKey": "<key>", "under": "tokens", "changes": "diff", "include": "usage" }
+CLI: node scripts/rds-agent.js work --file-key <key> --under tokens --changes diff --include usage
+```
+
+Each `kind: "tokens"` item is a collection; its `changes` show each changed
+mode (`value:Dark: #202527 → #2b3033`, an alias as `{ alias, name }`) and
+`usage` how many layers use each token. For every token, update the code
+variable named by its `codeSyntax` (WEB, else the token name) in each changed
+mode, then clear it like any node (`clear_nodes` with its `contentHash`).
+`get_node` on a token shows its `codeSyntax`, every mode's value and `usage`.
+
 ### The clear loop
 
 1. **Read** the dirty nodes of what you're working on, with the hashes:

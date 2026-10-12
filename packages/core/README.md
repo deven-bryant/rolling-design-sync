@@ -37,7 +37,8 @@ core.diffAttrs({ paddingLeft: 16 }, { paddingLeft: 24 }).changes;
 | `normalize`, `stable` | Canonical form of a value (sorted keys, rounded numbers) and its JSON. |
 | `contentHash`, `sha256` | The node hash the plugin uploads and the API compares. |
 | `diffAttrs` | Property-level diff of built vs. current attrs, with design-token names. |
-| `categoryOf`, `CATEGORY_RULES` | Which change category (`layout`, `color`, `typography`, …) a property belongs to. |
+| `categoryOf`, `CATEGORY_RULES` | Which change category (`layout`, `color`, `typography`, …, `token` for a design token's `value:<Mode>`) a property belongs to. |
+| `isTokenNodeId`, `TOKENS_ROOT_ID` | Whether a node id is a design-token node (`tokens`, `tokens:<collectionKey>`, `token:<variableKey>`). |
 | `parseFigmaUrl`, `fileKey`, `normalizeNodeId`, `link` | Figma links ↔ file keys and node ids. |
 
 The API (`/v3`) and its data model are documented in the

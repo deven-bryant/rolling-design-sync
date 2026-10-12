@@ -892,7 +892,8 @@ export interface paths {
                                 name?: null | string;
                                 type?: null | string;
                                 deleted?: boolean;
-                                figmaUrl?: string;
+                                /** @description The scope root in Figma; null for the design-tokens scope (`tokens`). */
+                                figmaUrl?: null | string;
                                 lastSyncAt?: string;
                                 lastSyncCounts?: {
                                     [key: string]: unknown;
@@ -1053,7 +1054,7 @@ export interface paths {
                     changeType?: string;
                     /** @description Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). */
                     changed?: string;
-                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other. */
+                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other. */
                     category?: string;
                     /** @description Comma-separated main component ids: the components and all their instances. */
                     component?: string;
@@ -1075,10 +1076,10 @@ export interface paths {
                     view?: "compact" | "full";
                     /** @description auto (default): the built→now diff for modified and deleted nodes, omitted for added ones (their property names are in `changedProps`) — keeps fresh-sync pages small; diff: the diff for every node, including added ones' full values; names: never `changes`, only `changedProps`. Ask for `changes=diff` (or `get_node`) when you need the values of added nodes. */
                     changes?: "auto" | "diff" | "names";
-                    /** @description Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, via (`via` needs `expand=instances`). */
+                    /** @description Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, usage, via (`via` needs `expand=instances`). */
                     fields?: string;
-                    /** @description `counts` adds subtree counts (`descendants`) to each node. */
-                    include?: "counts";
+                    /** @description Comma-separated: counts, usage. `counts` adds subtree counts (`descendants`) to each node; `usage` adds `usage: { layers }` to each design token (`token:<variableKey>`). */
+                    include?: string;
                     /** @description document (default: the design's layer order — auto-layout flow order, else top-to-bottom, left-to-right), path (node-id path order), updatedAt or name; prefix `-` for descending. */
                     sort?: "document" | "path" | "updatedAt" | "name" | "-document" | "-path" | "-updatedAt" | "-name";
                     /** @description Page size (default 100, max 1000). With format=outline: rendered lines per page (default: every line). */
@@ -1186,6 +1187,10 @@ export interface paths {
                                     total?: number;
                                     dirty?: number;
                                     blocked?: number;
+                                };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has its `variableId`). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
                                 };
                                 /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
                                 via?: null | {
@@ -1345,7 +1350,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    /** @description Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants. */
+                    /** @description Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, usage. */
                     fields?: string;
                     /** @description diff (default): the whole built→now diff, never truncated — the way to read an added node's values; auto: omitted for added nodes; names: never `changes`, only `changedProps`. */
                     changes?: "auto" | "diff" | "names";
@@ -1445,6 +1450,10 @@ export interface paths {
                                 total?: number;
                                 dirty?: number;
                                 blocked?: number;
+                            };
+                            /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has its `variableId`). Always on `get_node`; on listings with `include=usage`. */
+                            usage?: {
+                                layers?: number;
                             };
                             /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
                             via?: null | {
@@ -1919,7 +1928,7 @@ export interface paths {
                             changeType?: string;
                             /** @description Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). */
                             changed?: string;
-                            /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other. */
+                            /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other. */
                             category?: string;
                             /** @description Comma-separated main component ids: the components and all their instances. */
                             component?: string;
@@ -2029,6 +2038,10 @@ export interface paths {
                                     total?: number;
                                     dirty?: number;
                                     blocked?: number;
+                                };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has its `variableId`). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
                                 };
                                 /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
                                 via?: null | {
@@ -2601,6 +2614,10 @@ export interface paths {
                                     total?: number;
                                     dirty?: number;
                                     blocked?: number;
+                                };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has its `variableId`). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
                                 };
                                 /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
                                 via?: null | {
@@ -3404,6 +3421,10 @@ export interface paths {
                                     dirty?: number;
                                     blocked?: number;
                                 };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has its `variableId`). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
+                                };
                                 /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
                                 via?: null | {
                                     instanceId?: string;
@@ -3660,6 +3681,10 @@ export interface paths {
                                     dirty?: number;
                                     blocked?: number;
                                 };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has its `variableId`). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
+                                };
                                 /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
                                 via?: null | {
                                     instanceId?: string;
@@ -3815,7 +3840,7 @@ export interface paths {
                     changeType?: string;
                     /** @description Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). */
                     changed?: string;
-                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other. */
+                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other. */
                     category?: string;
                     /** @description Comma-separated main component ids: the components and all their instances. */
                     component?: string;
@@ -3879,6 +3904,7 @@ export interface paths {
                                 content?: number;
                                 structure?: number;
                                 prototype?: number;
+                                token?: number;
                                 other?: number;
                             };
                             /** @description Node type → count. */
@@ -4224,7 +4250,7 @@ export interface paths {
         };
         /**
          * List work items
-         * @description The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design's layer order, by each item's key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories. `group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last. Removed design (group=component and group=set): deleted nodes that were built are grouped under their removed root — the topmost deleted node — into one `kind: "removed"` item (after the component items, before `key: null`, in the roots' document order), unless that root sits inside a live component (then they are part of that component's item). For a removed item: remove the code that rendered the root; keep components in `uses` with `livePlacements > 0` (still used elsewhere), consider removing those with 0; heed `warnings`; then clear the root with `subtree: true` (`clear_nodes`) — one item clears the whole removed subtree. Deleted nodes that were never built are not work (they resolve at sync). `group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged. `group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item. `include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar. `expand=instances` answers "which components do I need to build for this screen, and how often does it use each?": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`. Each item's `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.
+         * @description The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design's layer order, by each item's key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories. `group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last. Removed design (group=component and group=set): deleted nodes that were built are grouped under their removed root — the topmost deleted node — into one `kind: "removed"` item (after the component items, before `key: null`, in the roots' document order), unless that root sits inside a live component (then they are part of that component's item). For a removed item: remove the code that rendered the root; keep components in `uses` with `livePlacements > 0` (still used elsewhere), consider removing those with 0; heed `warnings`; then clear the root with `subtree: true` (`clear_nodes`) — one item clears the whole removed subtree. Deleted nodes that were never built are not work (they resolve at sync). Design tokens (group=component and group=set): the dirty tokens of each collection form one `kind: "tokens"` item (key = the collection node id, after the component and removed items, before `key: null`). For each token, update the code variable named by its `codeSyntax` (WEB, else the token name) for every changed `value:<Mode>`, then clear it. `include=usage` adds how many layers use each token. `group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged. `group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item. `include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar. `expand=instances` answers "which components do I need to build for this screen, and how often does it use each?": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`. Each item's `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.
          */
         get: {
             parameters: {
@@ -4241,7 +4267,7 @@ export interface paths {
                     changeType?: string;
                     /** @description Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). */
                     changed?: string;
-                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other. */
+                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other. */
                     category?: string;
                     /** @description Comma-separated main component ids: the components and all their instances. */
                     component?: string;
@@ -4273,8 +4299,8 @@ export interface paths {
                     limit?: number;
                     /** @description The previous page's `nextCursor`, unchanged, with all other parameters the same (else `invalid_cursor`). With format=outline: the previous response's `X-RDS-Next-Cursor` header (a line position in the rendered outline). */
                     cursor?: string;
-                    /** @description progress: add total and clean node counts across all states for each work item. */
-                    include?: "progress";
+                    /** @description Comma-separated: progress, usage. progress: add total and clean node counts across all states for each work item; usage: add `usage: { nodeId: { layers } }` to token items. */
+                    include?: string;
                     /** @description json (default); ndjson — one JSON object per line, streamed; md — a markdown checklist, one line per row, streamed. ndjson and md return every match from `cursor` on (up to `limit` when given) instead of one page. outline — text/plain, an indented tree with one line per item: use this first to see a screen's structure (under=<the screen>, and expand=instances for the components inside). Each item is a line `Name (TYPE) · 3 nodes · changed (4: characters, fills, …) · 2 placements`, with its listed nodes as an indented tree below it (`Name (TYPE) · modified (…)`, indented under their nearest listed ancestor). Lines are the `fields`-independent summary. The whole result (up to 2000 lines of whole items, in order) is rendered once, then paged by rendered lines, so nesting and `(shown above)` read the same at any page size: `limit` is lines per page (default: every line), and when lines remain the response has an `X-RDS-Next-Cursor` header — pass it as `cursor`, with every other parameter unchanged, for the next lines. Past the 2000-line cap the outline's last line (counted like any other) is `… N more items (use cursor/limit) — cursor=<c>` (the same cursor is in the header), which continues after the rendered part. */
                     format?: "json" | "ndjson" | "md" | "outline";
                 };
@@ -4299,10 +4325,10 @@ export interface paths {
                             group?: "component" | "frame" | "set";
                             items?: {
                                 /**
-                                 * @description `removed`: design deleted in Figma that was built — one item per removed root (the topmost tombstoned node; key = its id), listing the components it used (`uses`). `library`: a reference item — a library (remote) main component the scope uses while the file does not track library components (`expand=instances`, group=component or set): `tracked: false`, `nodeCount: 0`, no `nodeIds`, no `progress`, with `placements` / `placementsInScope`. Use the library component as is; there is nothing to build or clear. Absent on other component, set and frame items.
+                                 * @description `removed`: design deleted in Figma that was built — one item per removed root (the topmost tombstoned node; key = its id), listing the components it used (`uses`). `library`: a reference item — a library (remote) main component the scope uses while the file does not track library components (`expand=instances`, group=component or set): `tracked: false`, `nodeCount: 0`, no `nodeIds`, no `progress`, with `placements` / `placementsInScope`. Use the library component as is; there is nothing to build or clear. `tokens`: design tokens of one collection (key = the collection node id `tokens:<collectionKey>`, name = the collection name; the `tokens` root's own changes have key `tokens`): for each changed `value:<Mode>` update the code variable named by the token's `codeSyntax` (WEB, else the token name) in that mode, then clear the tokens. Absent on other component, set and frame items.
                                  * @enum {string}
                                  */
-                                kind?: "removed" | "library";
+                                kind?: "removed" | "library" | "tokens";
                                 /** @description Reference (`kind: "library"`) items only: false — the library component is not tracked in this file. */
                                 tracked?: boolean;
                                 /** @description Items whose component is a library (remote) component: `{ key, fileKey?, resolved }` as on nodes. Absent on other items. */
@@ -4370,6 +4396,12 @@ export interface paths {
                                     componentId?: string;
                                     livePlacements?: number;
                                 }[];
+                                /** @description Token items with `include=usage`: `{ nodeId: { layers } }` for the listed tokens — how many live layers use each. */
+                                usage?: {
+                                    [key: string]: {
+                                        layers?: number;
+                                    };
+                                };
                                 /** @description The item's first 50 node ids, in document order (the design's layer order; a removed item's root first). */
                                 nodeIds?: string[];
                                 /** @description How many node ids `nodeIds` leaves out. */
@@ -4755,7 +4787,7 @@ export interface paths {
         };
         /**
          * Subtree hashes (plugin)
-         * @description The stored `contentHash` of every live node in `under`'s subtree (inclusive), keyed by node id, plus the file's `settings` (defaults filled in; read `trackLibraryComponents` when a sync starts). Only `settings` when the node — or the file — was never synced. Plugin tokens only.
+         * @description The stored `contentHash` of every live node in `under`'s subtree (inclusive), keyed by node id, plus the file's `settings` (defaults filled in; read `trackLibraryComponents` when a sync starts). Only `settings` when the node — or the file — was never synced. With `under=tokens` (the design-tokens scope) it also has `tokens: { "token:<variableKey>": { variableId, remote } }` for every stored live variable: tombstone (in `deletedNodeIds`) only those whose `variableId` no longer exists in Figma, never one a sync merely did not reference. That key takes the place of the root's own hash, so send the `tokens` root on every tokens sync. Plugin tokens only.
          */
         get: {
             parameters: {
@@ -4774,7 +4806,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description `{ [nodeId]: contentHash, settings }` — `settings` is never a node id. */
+                /** @description `{ [nodeId]: contentHash, settings, tokens? }` — `settings` is never a node id; `tokens` only with `under=tokens`. */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -4785,6 +4817,13 @@ export interface paths {
                             settings?: {
                                 /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
                                 trackLibraryComponents?: boolean;
+                            };
+                            /** @description `under=tokens` only: every stored live variable (`token:<variableKey>`) with its Figma `variableId` (null when not captured) and `remote` (a library variable). */
+                            tokens?: {
+                                [key: string]: {
+                                    variableId?: null | string;
+                                    remote?: boolean;
+                                };
                             };
                         } & {
                             [key: string]: null | string;
@@ -4922,7 +4961,7 @@ export interface paths {
         put?: never;
         /**
          * Sync a batch (plugin)
-         * @description Upserts scanned nodes and tombstones `deletedNodeIds`: `dirty` becomes `contentHash !== implementedHash`, a hash change unblocks a blocked node, and `markImplemented: true` inserts never-seen nodes as already implemented. A tombstoned node that was never implemented resolves itself (a clean tombstone, counted in `autoResolved`, not dirty). `fileName` / `rootNodeId` name the file and record the sync for `…/scopes`. Emits `sync.completed`. Plugin tokens only.
+         * @description Upserts scanned nodes and tombstones `deletedNodeIds`. Design tokens sync as their own scope: `rootNodeId: "tokens"` (type TOKENS), collections `tokens:<collectionKey>` (VARIABLE_COLLECTION), variables `token:<variableKey>` (VARIABLE, one `value:<Mode name>` attr per mode). For every node: `dirty` becomes `contentHash !== implementedHash`, a hash change unblocks a blocked node, and `markImplemented: true` inserts never-seen nodes as already implemented. A tombstoned node that was never implemented resolves itself (a clean tombstone, counted in `autoResolved`, not dirty). `fileName` / `rootNodeId` name the file and record the sync for `…/scopes`. Emits `sync.completed`. Plugin tokens only.
          */
         post: {
             parameters: {
