@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeEventSource } from '../../test/fake-event-source';
 import { NodeTable, type NodeTableProps } from './NodeTable';
-import { claimC1, FILE, mockApi, renderWithClient, treeRoutes, type Route } from './test-fixtures';
+import { claimC1, FILE, mockApi, node, renderWithClient, scope, treeRoutes, type Route } from './test-fixtures';
 
 const pagePath = `/v3/files/${FILE}/nodes`;
 
@@ -72,6 +72,14 @@ describe('NodeTable', () => {
     expect(header.getByText('3 properties')).toBeTruthy();
     expect(header.getByText('new since last clear')).toBeTruthy();
     expect(header.getByText('unclaimed')).toBeTruthy();
+  });
+
+  it('badges library nodes', async () => {
+    const lib = node('9:1', { name: 'Lib button', type: 'COMPONENT', library: { key: 'LIBKEY', resolved: false }, figmaUrl: null });
+    renderTable({}, treeRoutes(call => (call.path === pagePath && call.query.get('under') === '1:1' ? { fileKey: FILE, nodes: [scope, lib], nextCursor: null } : undefined)));
+    await waitFor(() => expect(row('9:1')).toBeDefined());
+    expect(within(row('9:1')).getByText('Library').className).toContain('bg-utility-gray-50');
+    expect(within(row('1:1')).queryByText('Library')).toBeNull();
   });
 
   it('loads a row’s children when it expands', async () => {

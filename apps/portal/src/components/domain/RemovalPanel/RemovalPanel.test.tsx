@@ -15,7 +15,7 @@ const uses = [
 describe('RemovalPanel', () => {
   it('lists the unused components first, with Keep / Likely unused badges and placements left', async () => {
     const { container } = render(<RemovalPanel name="Files" uses={uses} action={<button type="button">Copy removal prompt</button>} />);
-    const panel = screen.getByRole('region', { name: 'Removed from the design' });
+    const panel = screen.getByRole('group', { name: 'Removed from the design' });
     expect(within(panel).getByText('Remove the code that rendered “Files”. Keep components that are still used.')).toBeDefined();
     const items = within(within(panel).getByRole('list', { name: 'Components it used' })).getAllByRole('listitem');
     expect(items.map(li => li.textContent)).toEqual([
@@ -40,7 +40,7 @@ describe('RemovalPanel', () => {
   });
 
   it('says so when the design used no components, and forwards ref and className', () => {
-    const ref = createRef<HTMLElement>();
+    const ref = createRef<HTMLDivElement>();
     render(<RemovalPanel ref={ref} className="w-120" name="Draft" uses={[]} />);
     expect(screen.getByText('It used no components.')).toBeDefined();
     expect(ref.current?.className).toContain('w-120');

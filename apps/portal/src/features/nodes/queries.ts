@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { fileClaimsQueryKey } from '../../api/hooks/useFileClaims';
+import { useStatus } from '../../api/hooks/useStatus';
 import { getSession } from '../../api/session';
 import type { FileClaims, NodeDetail, NodeFilters, NodeItem, NodeLike, NodePage, SessionRole } from './types';
 
@@ -148,6 +149,11 @@ export function useNodeHistory(fileKey: string, nodeId: string | null | undefine
       api.get('/v3/files/{fileKey}/events', { path: { fileKey }, query: { nodeId: nodeId ?? '', limit: HISTORY_LIMIT, order: 'desc' }, signal }),
     enabled: !!fileKey && !!nodeId,
   });
+}
+
+/** `/v3/status` `libraryLinks`: library nodes can link to their library file (the server has RDS_FIGMA_TOKEN). */
+export function useLibraryLinks(): boolean | undefined {
+  return useStatus().data?.libraryLinks;
 }
 
 /** The signed-in session's role; `viewer` until it is known. */

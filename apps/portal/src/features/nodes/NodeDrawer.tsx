@@ -14,13 +14,16 @@ import {
   type NodeDetailsState,
   type NodeDetailsValue,
 } from '../../components/domain/NodeDetails';
+import { RemovalPanel, type RemovalUse, type RemovalWarning } from '../../components/domain/RemovalPanel';
 import { StateBadge } from '../../components/domain/StateBadge';
 import { Input } from '../../components/Input';
 import { Menu } from '../../components/Menu';
 import { Text } from '../../components/primitives';
+import { showToast } from '../../components/Toast';
+import { Tooltip, TooltipTrigger } from '../../components/Tooltip';
 import { categoriesOf, type Category } from './categories';
-import { changeEntries, formatValue, isTokenValue, nodePrompt, plural, sideLabel, timeAgo, timeUntil } from './format';
-import { useBlockNode, useNodeDetail, useNodeHistory, useReleaseClaim, useSessionRole, useUnblockNode } from './queries';
+import { changeEntries, formatValue, isTokenValue, nodePrompt, plural, removalPrompt, sideLabel, timeAgo, timeUntil } from './format';
+import { useBlockNode, useLibraryLinks, useNodeDetail, useNodeHistory, useReleaseClaim, useSessionRole, useUnblockNode } from './queries';
 import type { FileEvent, NodeDetail, SessionRole } from './types';
 
 /** A block reason's length bounds (the API's). */
@@ -214,7 +217,7 @@ function useHistory(fileKey: string, nodeId: string, now: number): { history: No
   return { history, historyEmpty };
 }
 
-function CopyPromptButton({ fileKey, node }: { fileKey: string; node: NodeDetail }) {
+function CopyTextButton({ text, label, hierarchy = 'tertiary' }: { text: () => string; label: string; hierarchy?: 'secondary' | 'tertiary' }) {
   const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle');
   useEffect(() => {
     if (copied === 'idle') return undefined;
@@ -222,18 +225,50 @@ function CopyPromptButton({ fileKey, node }: { fileKey: string; node: NodeDetail
     return () => clearTimeout(timer);
   }, [copied]);
   const copy = () => {
-    const text = nodePrompt({ fileKey, nodeId: node.nodeId ?? '', name: node.name });
-    const write = navigator.clipboard?.writeText(text) ?? Promise.reject(new Error('Clipboard unavailable'));
+    const write = navigator.clipboard?.writeText(text()) ?? Promise.reject(new Error('Clipboard unavailable'));
     write.then(
       () => setCopied('copied'),
       () => setCopied('failed'),
     );
   };
   return (
-    <Button hierarchy="tertiary" size="sm" onPress={copy}>
-      <span aria-live="polite">{copied === 'copied' ? 'Copied' : copied === 'failed' ? 'Couldn’t copy' : 'Copy node prompt'}</span>
+    <Button hierarchy={hierarchy} size="sm" onPress={copy}>
+      <span aria-live="polite">{copied === 'copied' ? 'Copied' : copied === 'failed' ? 'Couldn’t copy' : label}</span>
     </Button>
   );
+}
+
+/** The *Copy component key* tooltip while the server has no Figma token. */
+export const LIBRARY_LINKS_OFF = 'Library component. Set RDS_FIGMA_TOKEN on the server to open it in its library file.';
+
+/** Stands in for *Open in Figma* on an unresolved library node: copies its component key, with a toast. */
+function CopyKeyButton({ componentKey, libraryLinks }: { componentKey: string; libraryLinks: boolean | undefined }) {
+  const copy = () => {
+    const write = navigator.clipboard?.writeText(componentKey) ?? Promise.reject(new Error('Clipboard unavailable'));
+    write.then(
+      () => void showToast('Component key copied'),
+      () => void showToast('Couldn’t copy the component key', { tone: 'error' }),
+    );
+  };
+  const button = (
+    <Button hierarchy="secondary" size="sm" onPress={copy}>
+      Copy component key
+    </Button>
+  );
+  if (libraryLinks !== false) return button;
+  return (
+    <TooltipTrigger>
+      {button}
+      <Tooltip>{LIBRARY_LINKS_OFF}</Tooltip>
+    </TooltipTrigger>
+  );
+}
+
+/** A removed work item's root opened in the drawer: what its *Removal* panel lists. */
+export interface NodeRemoval {
+  name?: string | null;
+  uses?: readonly RemovalUse[];
+  warnings?: readonly RemovalWarning[];
 }
 
 interface TabProps {
@@ -241,7 +276,14 @@ interface TabProps {
   onTabChange: (tab: NodeDetailsState) => void;
 }
 
-function NodeDrawerContent({ fileKey, nodeId, role, ...tab }: { fileKey: string; nodeId: string; role: SessionRole } & TabProps) {
+interface ContentProps extends TabProps {
+  fileKey: string;
+  nodeId: string;
+  role: SessionRole;
+  removal?: NodeRemoval;
+}
+
+function NodeDrawerContent({ fileKey, nodeId, role, removal, ...tab }: ContentProps) {
   const detail = useNodeDetail(fileKey, nodeId);
   const node = detail.data;
   if (!node) {
@@ -254,7 +296,7 @@ function NodeDrawerContent({ fileKey, nodeId, role, ...tab }: { fileKey: string;
       </>
     );
   }
-  return <LoadedNode fileKey={fileKey} nodeId={nodeId} node={node} role={role} {...tab} />;
+  return <LoadedNode fileKey={fileKey} nodeId={nodeId} node={node} role={role} removal={removal} {...tab} />;
 }
 
 function LoadedNode({
@@ -262,10 +304,12 @@ function LoadedNode({
   nodeId,
   node,
   role,
+  removal,
   tab,
   onTabChange,
-}: { fileKey: string; nodeId: string; node: NodeDetail; role: SessionRole } & TabProps) {
+}: ContentProps & { node: NodeDetail }) {
   const unblock = useUnblockNode(fileKey);
+  const libraryLinks = useLibraryLinks();
   const now = useNow(30_000);
   const [blocking, setBlocking] = useState(false);
   const canAct = role === 'agent';
@@ -275,13 +319,26 @@ function LoadedNode({
   const main = node.isInstance && node.mainComponentId ? ` → main ${node.mainComponentId}` : '';
   const categories = categoriesOf(node.changedProps ?? []);
   const blocked = node.state === 'blocked' || !!node.blocked;
+  const name = node.name ?? nodeId;
+  const componentKey = node.library?.key;
   return (
     <>
       <NodeDetails
         className="min-h-0 flex-1 overflow-y-auto"
         state={tab}
         onStateChange={onTabChange}
-        title={node.name ?? nodeId}
+        title={
+          node.library ? (
+            <span className="flex flex-wrap items-center gap-md">
+              {name}
+              <Badge size="md" color="gray">
+                Library
+              </Badge>
+            </span>
+          ) : (
+            name
+          )
+        }
         description={`${node.type ?? 'NODE'} · ${node.nodeId ?? nodeId}${main}`}
         actions={<CloseButton slot="close" size="md" aria-label="Close" />}
         status={
@@ -315,6 +372,22 @@ function LoadedNode({
         history={history}
         historyEmpty={historyEmpty}
       >
+        {removal && (
+          <RemovalPanel
+            name={removal.name ?? name}
+            uses={removal.uses ?? []}
+            warnings={removal.warnings ?? []}
+            action={
+              <CopyTextButton
+                hierarchy="secondary"
+                label="Copy removal prompt"
+                text={() =>
+                  removalPrompt({ fileKey, nodeId: node.nodeId ?? nodeId, name: removal.name ?? node.name, uses: removal.uses, warnings: removal.warnings })
+                }
+              />
+            }
+          />
+        )}
         {node.blocked && (
           <Text as="p" color="tertiary">
             Blocked{node.blocked.by ? ` by ${node.blocked.by}` : ''}
@@ -326,7 +399,7 @@ function LoadedNode({
         {unblock.isError && <Text color="error-primary">{unblock.error.message}</Text>}
       </NodeDetails>
       <Drawer.Footer>
-        <CopyPromptButton fileKey={fileKey} node={node} />
+        <CopyTextButton label="Copy node prompt" text={() => nodePrompt({ fileKey, nodeId: node.nodeId ?? '', name: node.name })} />
         {canAct &&
           (blocked ? (
             <Button hierarchy="secondary" size="sm" loading={unblock.isPending} onPress={() => unblock.mutate(nodeId)}>
@@ -337,10 +410,12 @@ function LoadedNode({
               Block…
             </Button>
           ))}
-        {node.figmaUrl && (
+        {node.figmaUrl ? (
           <Button hierarchy="primary" size="sm" href={node.figmaUrl} target="_blank" rel="noreferrer">
             Open in Figma
           </Button>
+        ) : (
+          node.library && componentKey && <CopyKeyButton componentKey={componentKey} libraryLinks={libraryLinks} />
         )}
       </Drawer.Footer>
     </>
@@ -354,13 +429,15 @@ export interface NodeDrawerProps {
   onClose: () => void;
   /** Overrides the session's role (agents see claim and block actions; viewers don't). */
   role?: SessionRole;
+  /** The node is a removed work item's root: show its *Removal* panel above the change list. */
+  removal?: NodeRemoval;
 }
 
 /**
  * Figma *Node drawer*: `Node Details` (status, claim, change list / history) with agent actions in the footer.
  * Each node opens on Change History in the narrow drawer; the Change List tab widens it.
  */
-export function NodeDrawer({ fileKey, nodeId, onClose, role }: NodeDrawerProps) {
+export function NodeDrawer({ fileKey, nodeId, onClose, role, removal }: NodeDrawerProps) {
   const sessionRole = useSessionRole();
   const [view, setView] = useState<{ nodeId: string | null; tab: NodeDetailsState }>({ nodeId, tab: 'change-history' });
   const tab = view.nodeId === nodeId ? view.tab : 'change-history';
@@ -378,6 +455,7 @@ export function NodeDrawer({ fileKey, nodeId, onClose, role }: NodeDrawerProps) 
           fileKey={fileKey}
           nodeId={nodeId}
           role={role ?? sessionRole}
+          removal={removal}
           tab={tab}
           onTabChange={next => setView({ nodeId, tab: next })}
         />

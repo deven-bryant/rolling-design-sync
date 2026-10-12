@@ -226,6 +226,7 @@ function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeR
         <NodeCell
           name={name}
           meta={nodeMeta(node, via)}
+          badges={node.library ? <Badge color="gray">Library</Badge> : undefined}
           depth={depth}
           expandable={expandable}
           expanded={expanded}

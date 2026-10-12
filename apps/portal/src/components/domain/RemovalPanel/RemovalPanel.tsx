@@ -17,14 +17,14 @@ export interface RemovalWarning {
   livePlacements?: number;
 }
 
-export interface RemovalPanelProps extends HTMLAttributes<HTMLElement> {
+export interface RemovalPanelProps extends HTMLAttributes<HTMLDivElement> {
   /** The removed root's name. */
   name: string;
   uses: readonly RemovalUse[];
   warnings?: readonly RemovalWarning[];
   /** The panel's action (`Copy removal prompt`). */
   action?: ReactNode;
-  ref?: Ref<HTMLElement>;
+  ref?: Ref<HTMLDivElement>;
 }
 
 const placementsLeft = (n: number) => (n > 0 ? `${n.toLocaleString('en-US')} ${n === 1 ? 'placement' : 'placements'} left` : 'none left');
@@ -51,7 +51,7 @@ export function RemovalPanel({ name, uses, warnings = [], action, className, ref
   const usesId = useId();
   const sorted = sortUses(uses);
   return (
-    <section ref={ref} aria-labelledby={titleId} {...rest} className={cx('flex flex-col gap-xl rounded-xl bg-secondary p-xl ring-1 ring-secondary ring-inset', className)}>
+    <div ref={ref} role="group" aria-labelledby={titleId} {...rest} className={cx('flex flex-col gap-xl rounded-xl bg-secondary p-xl ring-1 ring-secondary ring-inset', className)}>
       <div className="flex flex-col gap-xs">
         <Text as="h3" id={titleId} size="lg" weight="semibold">
           Removed from the design
@@ -98,6 +98,6 @@ export function RemovalPanel({ name, uses, warnings = [], action, className, ref
         </ul>
       )}
       {action != null && <div className="flex">{action}</div>}
-    </section>
+    </div>
   );
 }

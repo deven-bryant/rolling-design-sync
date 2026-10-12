@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { FakeEventSource } from '../../test/fake-event-source';
-import { itemClaim, itemProgress, nodesSummary, WorkFiltersBar, WorkGroupSwitch, WorkTable, type FileClaim, type WorkGroup, type WorkItem } from '.';
+import { isLibraryItem, isReference, itemClaim, itemProgress, nodesSummary, WorkFiltersBar, WorkGroupSwitch, WorkTable, type FileClaim, type WorkGroup, type WorkItem } from '.';
 
 const NOW = Date.parse('2026-10-01T12:00:00.000Z');
 const FILE = 'AbCdEf123456GhIjKl7890';
@@ -261,6 +261,111 @@ describe('features/work', () => {
     db.byComponent = db.byComponent.map(item => (item.key === '1:24667' ? { ...item, progress: { total: 12, clean: 11 } } : item));
     act(() => stream().emit('sync.completed', { fileKey: FILE, type: 'sync.completed', data: {} }));
     await waitFor(() => expect(within(row('Pagination')).getByText('1 dirty')).toBeDefined());
+  });
+});
+
+describe('WorkTable removed and library items', () => {
+  const removed: WorkItem = {
+    kind: 'removed',
+    key: '12:345',
+    name: 'Files',
+    type: 'FRAME',
+    nodeCount: 41,
+    categories: ['structure', 'layout', 'color', 'content'],
+    changedProps: [],
+    placements: null,
+    placementsInScope: null,
+    nodeIds: ['12:345'],
+    uses: [{ componentId: '1:10', name: 'Button', livePlacements: 4 }],
+    warnings: [],
+    progress: { total: 41, clean: 0 },
+  };
+  const library = component('9:1', 'Lib button', { library: { key: 'LIBKEY', resolved: false }, figmaUrl: null, progress: { total: 2, clean: 1 } });
+  const reference: WorkItem = {
+    kind: 'library',
+    tracked: false,
+    key: '9:2',
+    name: 'Lib card',
+    type: 'COMPONENT',
+    nodeCount: 0,
+    categories: [],
+    changedProps: [],
+    placements: 7,
+    placementsInScope: 3,
+    library: { key: 'LIBKEY2', resolved: false },
+    figmaUrl: null,
+  };
+  const items = [library, reference, removed];
+  const fetchMock = vi.fn<typeof fetch>();
+
+  beforeEach(() => {
+    FakeEventSource.reset();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockImplementation(async input => {
+      const url = new URL(String(input), 'http://portal.test');
+      if (url.pathname === `/v3/files/${FILE}/claims`) return json({ fileKey: FILE, claims: [] });
+      if (url.pathname === `/v3/files/${FILE}/work`) return json({ fileKey: FILE, group: 'component', items, nextCursor: null, total: items.length });
+      return new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } });
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fetchMock.mockReset();
+  });
+
+  const renderTable = (props: { onOpenComponent?: (key: string) => void; onOpenRemoved?: (id: string) => void; onOpenPlacements?: (key: string) => void }) =>
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <WorkTable fileKey={FILE} under={SCOPE} group="component" page={1} onPageChange={() => {}} onOpenComponent={props.onOpenComponent ?? vi.fn()} {...props} />
+      </QueryClientProvider>,
+    );
+
+  it('summarises removed and reference items', () => {
+    expect(nodesSummary(removed)).toEqual({ text: '41 layers removed' });
+    expect(nodesSummary({ ...removed, progress: { total: 41, clean: 41 } })).toEqual({ text: 'Done', supporting: '41 nodes cleared' });
+    expect(nodesSummary(reference)).toEqual({ text: 'Library · not tracked' });
+    expect([isReference(reference), isReference(library), isLibraryItem(library), isLibraryItem(removed)]).toEqual([true, false, true, false]);
+  });
+
+  it('renders a removed row: Removed badge, no placements, layers removed, and opens its root', async () => {
+    const onOpenRemoved = vi.fn();
+    const onOpenComponent = vi.fn();
+    const { container } = renderTable({ onOpenRemoved, onOpenComponent });
+    const row = within(await screen.findByRole('row', { name: 'Files' }));
+    expect(row.getByText('Removed').className).toContain('bg-utility-error-50');
+    expect(row.queryByText('Library')).toBeNull();
+    expect(row.getByText('FRAME · 12:345')).toBeDefined();
+    expect(row.getAllByText('—')).toHaveLength(2);
+    expect(row.getByText('41 layers removed')).toBeDefined();
+    expect(row.getByText('structure')).toBeDefined();
+    expect(row.getByRole('progressbar', { name: 'Files progress' }).getAttribute('aria-valuenow')).toBe('0');
+    expect(row.getByText('unclaimed')).toBeDefined();
+    fireEvent.click(row.getByText('Files'));
+    expect(onOpenRemoved).toHaveBeenCalledWith('12:345');
+    expect(onOpenComponent).not.toHaveBeenCalled();
+    await expectNoAxeViolations(container);
+  });
+
+  it('badges library items and shows reference items as not tracked, still clickable', async () => {
+    const onOpenPlacements = vi.fn();
+    const onOpenComponent = vi.fn();
+    renderTable({ onOpenPlacements, onOpenComponent });
+    const lib = within(await screen.findByRole('row', { name: 'Lib button' }));
+    expect(lib.getByText('Library').className).toContain('bg-utility-gray-50');
+    expect(lib.getByText('1 dirty')).toBeDefined();
+    const ref = within(screen.getByRole('row', { name: 'Lib card' }));
+    expect(ref.getByText('Library')).toBeDefined();
+    expect(ref.queryByText('Removed')).toBeNull();
+    expect(ref.queryByText(/dirty/)).toBeNull();
+    expect(ref.getByText('Library · not tracked')).toBeDefined();
+    expect(ref.getByText('3 in this screen')).toBeDefined();
+    expect(ref.queryByRole('progressbar')).toBeNull();
+    expect(ref.getAllByText('—')).toHaveLength(2);
+    fireEvent.click(ref.getByText('Lib card'));
+    expect(onOpenPlacements).toHaveBeenCalledWith('9:2');
+    fireEvent.click(lib.getByText('Lib button'));
+    expect(onOpenComponent).toHaveBeenCalledWith('9:1');
   });
 });
 

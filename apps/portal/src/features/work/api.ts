@@ -95,6 +95,7 @@ export function useWorkLive(fileKey: string): StreamState {
       claims();
     },
     'node.blocked': work,
+    'file.settings_changed': work,
     'node.unblocked': work,
     'claim.created': claims,
     'claim.renewed': claims,
