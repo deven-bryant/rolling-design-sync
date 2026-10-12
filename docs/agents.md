@@ -273,7 +273,7 @@ library by `key`. A file can stop tracking them:
 
 ```text
 MCP: update_file_settings { "url": "<link>", "settings": { "trackLibraryComponents": false } }
-CLI: node scripts/rds-agent.js files settings --url "$LINK" --track-library-components false
+CLI: node scripts/rds-agent.js files settings --url "$LINK" --track-library-components=false
 ```
 
 Then library nodes leave listings, counts and progress (`library=include` or

@@ -456,6 +456,7 @@ test('every generated command sends its method and path to buildApp and succeeds
   const argv = {
     'files ls': ['files', 'ls'],
     'files show': ['files', 'show', '--file-key', FK],
+    'files settings': ['files', 'settings', '--file-key', FK, '--track-library-components=false'],
     'scopes ls': ['scopes', 'ls', FIGMA],
     'nodes ls': ['nodes', 'ls', '--file-key', FK],
     'nodes show': ['nodes', 'show', '2-2', '--file-key', FK],
@@ -534,7 +535,7 @@ test('--format ndjson and md print the API\'s streamed text; table works for eve
 
   const files = await cli(['files', 'ls', '--format', 'table']);
   assert.equal(files.code, 0, files.err);
-  assert.match(files.out, /^FILEKEY +NAME +LASTSYNCAT +CREATEDAT +COUNTS\n/);
+  assert.match(files.out, /^FILEKEY +NAME +LASTSYNCAT +CREATEDAT +SETTINGS +COUNTS\n/);
   assert.match(files.out, new RegExp(`^${FK} `, 'm'));
   assert.match(files.out, /^1 file$/m);
 
