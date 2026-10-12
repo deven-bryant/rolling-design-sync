@@ -31,7 +31,7 @@ for (const kind of ['memory', 'local']) {
   test(`[${kind}] status uses the newest sync and bus mode`, async t => {
     const { app, close } = await openApp(kind);
     t.after(close);
-    assert.deepEqual(ok(await get(app, '/v3/status')), { version, store: kind, events: 'listening', replayHours: 24, plugin: { lastSyncAt: null, client: null } });
+    assert.deepEqual(ok(await get(app, '/v3/status')), { version, store: kind, events: 'listening', replayHours: 24, libraryLinks: false, plugin: { lastSyncAt: null, client: null } });
     ok(await sync(app, 'PortalA'));
     ok(await sync(app, 'PortalB'));
     const events = await app.store.listEvents({ types: ['sync.completed'] });

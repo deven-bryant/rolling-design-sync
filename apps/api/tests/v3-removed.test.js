@@ -258,7 +258,7 @@ test('/v3/openapi.json documents removed items, subtree clear and autoResolved',
   const doc = ok(await app.inject({ method: 'GET', url: '/v3/openapi.json' }));
   const workOp = doc.paths['/v3/files/{fileKey}/work'].get;
   const item = workOp.responses['200'].content['application/json'].schema.properties.items.items;
-  assert.deepEqual(item.properties.kind.enum, ['removed']);
+  assert.deepEqual(item.properties.kind.enum, ['removed', 'library']);
   assert.ok(item.properties.uses && item.properties.warnings);
   assert.match(workOp.description, /subtree: true/);
   const clearOp = doc.paths['/v3/files/{fileKey}/clear'].post;
