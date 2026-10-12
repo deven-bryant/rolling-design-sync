@@ -170,6 +170,30 @@ how many nodes were **baselined** (summed across batches). The checkbox is
 unchecked by default, is never saved to clientStorage, and resets after each
 sync.
 
+**Already built? prompt.** If the box is unticked and, after comparing, the
+run would add many layers the server has never seen — at least 25, and at
+least half of the scope's tracked layers (library and main-component records
+don't count) — the plugin pauses before uploading and asks, e.g. *"1,234 of
+1,500 layers are new to Rolling Design Sync."* Copied screens that are already
+built would otherwise all show up as work. Choose **Mark as implemented**
+(continue as if the box were ticked), **Track as new work** (continue
+unchanged) or **Cancel** (stop; nothing is uploaded). Focus starts on the
+first choice; Tab moves between them, Escape or the panel's **Cancel** button
+cancels. The prompt clears on the next upload. No similarity matching against
+existing nodes is attempted.
+
+**Library components.** Each sync reads the file's
+`settings.trackLibraryComponents` from the stored-hashes response (missing →
+on, so older servers behave as before). On: main components from team
+libraries (remote mains) are imported and scanned like local ones, and every
+record under a remote main is sent with `library: true`. Off: remote mains are
+not checked, imported or scanned; instances of them still record their full
+component reference (`id`, `key`, `name`, `remote`, component set), and local
+mains outside the scope are still scanned. The result says how many were
+skipped, e.g. *"12 library components not tracked (file setting)"*, and the
+**library not tracked** stat shows the same count. The setting itself is
+changed on the server, not in the plugin.
+
 From there, coding agents pull the dirty nodes and clear them via the API / the
 `scripts/rds-agent.js` CLI — not through this plugin. Sync again after further
 design edits to refresh the delta.
