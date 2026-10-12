@@ -130,7 +130,7 @@ no `x-rds-mcp` / `x-rds-cli` annotations, so they are never agent tools.
 
 | Route | Query / body | Returns |
 |---|---|---|
-| `GET /v3/files/{fileKey}/hashes` | `under` (the scope root; defaults to the `?url=` link's node), `url?` | `{[nodeId]: contentHash, settings}` for the live subtree plus the file's settings; only `settings` if never synced. `under=tokens` adds `tokens: {[nodeId]: {variableId, remote}}` for every live variable (in place of the root's own hash) |
+| `GET /v3/files/{fileKey}/hashes` | `under` (the scope root; defaults to the `?url=` link's node), `url?` | `{[nodeId]: contentHash, settings}` for the live subtree plus the file's settings; only `settings` if never synced. `under=tokens` adds `tokens: {[nodeId]: {variableId, remote, collectionId}}` for every live variable (in place of the root's own hash) |
 | `POST /v3/files/{fileKey}/sync` | `{upserts: [{nodeId, parentId, path, nodeType, name, attrs, contentHash, isInstance?, mainComponentId?}], deletedNodeIds, markImplemented?, fileName?, rootNodeId?}`; `url?` | `{fileKey, upserted, dirty, tombstoned, autoResolved, skippedInstances, baselined?}` |
 | `POST /v3/files/{fileKey}/exists` | `{nodeIds}` (max 5000); `url?` | `{present, stale}` |
 
@@ -179,7 +179,8 @@ Shapes:
 - detail node — the full node plus `deleted`, `history: {createdAt, updatedAt,
   implementedAt, implementedCommit, implementedHash, deletedAt}` and
   `descendants`; a design token (`token:<variableKey>`) also has `usage:
-  {layers}` — the live layers whose `resolvedVariables` hold its `variableId`.
+  {layers}` — the live layers whose `resolvedVariables` hold an entry with its
+  variable key (under any imported id).
 - `claim` — `{claimId, worker, label, expiresAt, nodes: [node]}`.
 
 Listing filters (AND across parameters, comma-separated values OR'd within

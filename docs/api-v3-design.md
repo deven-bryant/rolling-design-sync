@@ -217,10 +217,21 @@ clear, block, history and events work for them unchanged.
   (also on the scope and on token work items).
 - **Sync.** The plugin uploads tokens through `POST …/sync` with
   `rootNodeId: "tokens"` and reads `GET …/hashes?under=tokens`, which also
-  carries `tokens: { "<nodeId>": { variableId, remote } }` for every live
-  variable (in place of the root's own hash: the plugin re-sends the root on
-  every tokens sync). A token is tombstoned only through `deletedNodeIds` —
-  when its variable no longer exists — never because a sync did not mention it.
+  carries `tokens: { "<nodeId>": { variableId, remote, collectionId } }` for
+  every live variable (in place of the root's own hash: the plugin re-sends the
+  root on every tokens sync). A token is tombstoned only through
+  `deletedNodeIds` — a local variable gone from the file's local variables;
+  never a library one, nor one a sync did not mention — and a collection only
+  once all its tokens are tombstoned.
+- **Identity.** A token is its variable key; `variableId` is the Figma id of
+  the imported copy the sync reached, which a library re-import can change.
+  When a token's attrs differ from its implemented attrs only in `variableId`,
+  the sync keeps it clean and moves its baseline (`implemented_hash` /
+  `implemented_attrs`) to the new attrs, counted as `rebaselined` in the sync
+  result and `sync.completed` counts (not dirty, not changed, no clear event);
+  a batch that upserts the `tokens` root does the same for every stored token
+  dirty only by its id. `variableId` is never listed in `changedProps` or
+  `changes`. The content hash is unchanged.
 - **Scope.** `GET …/scopes` lists it as "Design tokens" (`TOKENS`) with counts.
   Document order: collections by name, then each collection's variables by
   name, compared `/`-group by group so a group's tokens stay together.
@@ -239,11 +250,10 @@ clear, block, history and events work for them unchanged.
   For each token: update the code variable named by `codeSyntax` (WEB, else the
   token name) for each changed mode, then clear it.
 - **Usage.** `usage: { layers }` on a token — the number of live (not
-  tombstoned) nodes whose stored `attrs.resolvedVariables` has the token's
-  `variableId` — on `GET …/nodes/{nodeId}`, and with `include=usage` on token
+  tombstoned) nodes whose stored `attrs.resolvedVariables` has an entry whose
+  `key` is the token's variable key (whichever imported id it is under) — on `GET …/nodes/{nodeId}`, and with `include=usage` on token
   listings and token work items (`usage: { nodeId: { layers } }`). One store
-  query per request (a jsonb key-existence scan of the file's live rows; no
-  index).
+  query per request (a jsonb scan of the file's live rows; no index).
 
 ### Diff rules
 

@@ -774,22 +774,25 @@ class MemoryStore {
     return { items, total: all.length, next: rest.length > page.limit ? { k: last.k, id: last.keyId ?? '' } : null };
   }
 
-  /** Live layer nodes whose `attrs.resolvedVariables` has each variable id (mirrors PostgresStore.tokenUsage). */
   /**
+   * Live layer nodes whose `attrs.resolvedVariables` has an entry with each
+   * variable key (any imported id of it; mirrors PostgresStore.tokenUsage).
+   *
    * @param {string} fileKey
-   * @param {string[]} variableIds
+   * @param {string[]} variableKeys
    */
-  async tokenUsage(fileKey, variableIds) {
-    const ids = [...new Set(variableIds)];
+  async tokenUsage(fileKey, variableKeys) {
+    const keys = [...new Set(variableKeys)];
     /** @type {Map<string, number>} */
-    const counts = new Map(ids.map(id => [id, 0]));
-    if (!ids.length) return [];
+    const counts = new Map(keys.map(k => [k, 0]));
+    if (!keys.length) return [];
     for (const n of this._fileNodes(fileKey)) {
       const vars = n.attrs && n.attrs.resolvedVariables;
       if (n.deletedAt || !vars || typeof vars !== 'object' || Array.isArray(vars)) continue;
-      for (const id of ids) if (Object.prototype.hasOwnProperty.call(vars, id)) counts.set(id, (counts.get(id) ?? 0) + 1);
+      const used = new Set(Object.values(vars).map(v => (v && typeof v === 'object' ? v.key : null)));
+      for (const k of keys) if (used.has(k)) counts.set(k, (counts.get(k) ?? 0) + 1);
     }
-    return ids.map(variableId => ({ variableId, layers: counts.get(variableId) ?? 0 }));
+    return keys.map(variableKey => ({ variableKey, layers: counts.get(variableKey) ?? 0 }));
   }
 
   /** `{ uses, warnings }` of the removed item rooted at `rootPath` (mirrors PostgresStore.removedDetails). */

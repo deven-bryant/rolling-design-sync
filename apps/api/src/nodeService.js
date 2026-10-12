@@ -64,6 +64,20 @@ const sameChanges = (a, b) => (a.changeType ?? null) === (b.changeType ?? null)
   && core.stable(a.changedProps ?? []) === core.stable(b.changedProps ?? [])
   && core.stable(a.changeCategories ?? []) === core.stable(b.changeCategories ?? []);
 
+/** A design-token variable node (`token:<variableKey>`, type VARIABLE). */
+const isTokenVariable = n => n.nodeType === 'VARIABLE' && typeof n.nodeId === 'string' && n.nodeId.startsWith('token:');
+
+/** Attrs without `variableId`: a token's Figma id is not part of its design (re-imports change it, the key stays). */
+const withoutVariableId = attrs => { const { variableId: _id, ...rest } = attrs || {}; return rest; };
+
+/**
+ * Whether a live token is dirty only because its `variableId` differs from
+ * the implemented attrs (another imported copy of the same library variable).
+ */
+const idOnlyChange = n => isTokenVariable(n) && n.dirty && !n.deletedAt
+  && n.implementedHash !== null && n.implementedHash !== undefined && isObject(n.implementedAttrs)
+  && core.stable(withoutVariableId(n.implementedAttrs)) === core.stable(withoutVariableId(n.attrs));
+
 /** Optional batch metadata: absent / `null` / blank -> `null`; any other non-string is a 400. */
 const optionalString = (v, name) => {
   if (v === undefined || v === null) return null;
@@ -114,7 +128,7 @@ class NodeSyncService {
   /**
    * `{ [nodeId]: contentHash }` for the node's subtree; `{}` when never scanned.
    * For the tokens scope (`nodeId` = core.TOKENS_ROOT_ID) it also has
-   * `tokens: { [nodeId]: { variableId, remote } }` for every live variable, so
+   * `tokens: { [nodeId]: { variableId, remote, collectionId } }` for every live variable, so
    * the plugin can check which stored tokens still exist; that key replaces
    * the root's own hash (the plugin re-sends the root on every tokens sync).
    */
@@ -130,7 +144,7 @@ class NodeSyncService {
       for (const row of rows) {
         if (!row.nodeId.startsWith('token:')) continue;
         const attrs = row.attrs || {};
-        tokens[row.nodeId] = { variableId: typeof attrs.variableId === 'string' ? attrs.variableId : null, remote: attrs.remote === true };
+        tokens[row.nodeId] = { variableId: typeof attrs.variableId === 'string' ? attrs.variableId : null, remote: attrs.remote === true, collectionId: row.parentId ?? null };
       }
       out.tokens = tokens;
     }
@@ -176,6 +190,12 @@ class NodeSyncService {
    *
    * A tombstoned node that was never implemented (`implementedHash` null)
    * resolves itself: it becomes a clean tombstone, counted as `autoResolved`.
+   *
+   * A token (`token:<variableKey>`) whose attrs differ from its implemented
+   * attrs only in `variableId` stays clean: its baseline is carried forward
+   * (`implementedHash` / `implementedAttrs` = the new ones), counted as
+   * `rebaselined` — not dirty, not changed, not a clear. A batch that upserts
+   * the tokens root also does this for the scope's stored tokens.
    *
    * Events: one `sync.completed` per batch (its `counts.dirty`: nodes the
    * batch made dirty — new, or clean before; `counts.autoResolved`: the
@@ -228,6 +248,7 @@ class NodeSyncService {
       const upserted = [];
       const unblocked = [];
       const dirtiedIds = new Set();
+      const changedIds = new Set();
       const reorderParents = new Set();
       for (const row of rows) {
         const ancestors = await ancestorsOf(row);
@@ -269,8 +290,27 @@ class NodeSyncService {
         if (node.dirty && !(existing && existing.dirty)) dirtiedIds.add(node.nodeId);
 
         if (!existing) counts[node.baselined ? 'baselined' : 'added'] += 1;
-        else if (existing.deletedAt || existing.contentHash !== row.contentHash) counts.changed += 1;
+        else if (existing.deletedAt || existing.contentHash !== row.contentHash) { counts.changed += 1; changedIds.add(node.nodeId); }
       }
+      // Tokens dirty only by their Figma id: carry the baseline forward (the tokens root batch covers the stored ones too).
+      const tokenRows = new Map(upserted.filter(isTokenVariable).map(n => [n.nodeId, n]));
+      if (upserted.some(n => n.nodeId === core.TOKENS_ROOT_ID)) {
+        for (const n of await tx.listNodeSubtree(fileKey, core.TOKENS_ROOT_ID, { dirty: true, includeDeleted: false })) {
+          if (!tokenRows.has(n.nodeId)) tokenRows.set(n.nodeId, n);
+        }
+      }
+      let rebaselined = 0;
+      for (const n of tokenRows.values()) {
+        if (!idOnlyChange(n)) continue;
+        const node = await tx.updateNode(fileKey, n.nodeId, { implementedHash: n.contentHash, implementedAttrs: n.attrs ?? {}, dirty: false, ...CLEAN_CHANGES });
+        rebaselined += 1;
+        dirtiedIds.delete(n.nodeId);
+        if (changedIds.delete(n.nodeId)) counts.changed -= 1;
+        prior.set(n.nodeId, node);
+        const i = upserted.findIndex(u => u.nodeId === n.nodeId);
+        if (i >= 0) upserted[i] = { ...node, baselined: upserted[i].baselined };
+      }
+      if (rebaselined) counts.rebaselined = rebaselined;
       const wasDirty = new Set((deletedNodeIds.length ? await tx.getNodes(fileKey, [...new Set(deletedNodeIds)]) : []).filter(n => n.dirty).map(n => n.nodeId));
       const tombstoned = await tx.tombstoneNodes(fileKey, deletedNodeIds, nowIso);
       for (const n of tombstoned) if (n.dirty && !wasDirty.has(n.nodeId)) dirtiedIds.add(n.nodeId);
@@ -316,6 +356,7 @@ class NodeSyncService {
         skippedInstances: 0, // kept for plugin/CLI compatibility; instances are stored now
       };
       if (markImplemented) summary.baselined = upserted.filter(n => n.baselined).length;
+      if (rebaselined) summary.rebaselined = rebaselined;
 
       await emit(fileKey, 'sync.completed', { actor: 'plugin', data: { rootNodeId, counts: { ...counts, dirty: dirtiedIds.size } } });
       for (const n of unblocked) {

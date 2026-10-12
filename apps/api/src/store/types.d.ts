@@ -149,7 +149,7 @@ export interface Store {
   getLibraryComponents(keys: string[]): Promise<LibraryComponent[]>;
   upsertLibraryComponent(row: { componentKey: string; fileKey?: string | null; nodeId?: string | null; name?: string | null; resolvedAt: string; error?: string | null }): Promise<LibraryComponent>;
   /** Per variable id: the live nodes whose `attrs.resolvedVariables` has it (design-token usage). */
-  tokenUsage(fileKey: string, variableIds: string[]): Promise<{ variableId: string; layers: number }[]>;
+  tokenUsage(fileKey: string, variableKeys: string[]): Promise<{ variableKey: string; layers: number }[]>;
   placementCounts(fileKey: string, mainIds: string[], regions?: (string | null)[] | null): Promise<{ mainComponentId: string; placements: number; placementsInScope: number | null }[]>;
 
   // --- v3 reads

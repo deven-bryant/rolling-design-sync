@@ -153,6 +153,7 @@ const ChecklistCore = (() => {
       Object.keys(bindingsOf(attrs)).forEach(k => keys.add(k));
     }
     LOOKUP_KEYS.forEach(k => keys.delete(k));
+    keys.delete('variableId'); // a token's Figma id, not its design
     const changes = {}, changedProps = [], categories = new Set();
     const at = (attrs, k) => own(attrs, k) ? attrs[k] : undefined;
     for (const k of Array.from(keys).sort()) {

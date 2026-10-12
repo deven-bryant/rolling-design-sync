@@ -785,20 +785,23 @@ class PostgresStore {
   }
 
   /**
-   * Live layer nodes whose `attrs.resolvedVariables` has each variable id —
-   * one scan of the file's live rows (jsonb key existence), no index needed.
+   * Live layer nodes whose `attrs.resolvedVariables` has an entry with each
+   * variable key (any imported id of it) — one scan of the file's live rows,
+   * no index needed.
    */
-  async tokenUsage(fileKey, variableIds) {
-    const ids = [...new Set(variableIds)];
-    if (!ids.length) return [];
+  async tokenUsage(fileKey, variableKeys) {
+    const keys = [...new Set(variableKeys)];
+    if (!keys.length) return [];
     const { rows } = await this.query(
-      `select v.id as variable_id, count(n.node_id)::int as layers
-       from unnest($2::text[]) v(id)
+      `select v.key as variable_key, count(n.node_id)::int as layers
+       from unnest($2::text[]) v(key)
          left join node n on n.file_key = $1 and n.deleted_at is null
-           and jsonb_typeof(n.attrs -> 'resolvedVariables') = 'object' and n.attrs -> 'resolvedVariables' ? v.id
-       group by v.id`, [fileKey, ids]);
-    const counts = new Map(rows.map(r => [r.variable_id, r.layers]));
-    return ids.map(variableId => ({ variableId, layers: counts.get(variableId) ?? 0 }));
+           and jsonb_typeof(n.attrs -> 'resolvedVariables') = 'object'
+           and exists (select 1 from jsonb_each(n.attrs -> 'resolvedVariables') e
+                       where jsonb_typeof(e.value) = 'object' and e.value ->> 'key' = v.key)
+       group by v.key`, [fileKey, keys]);
+    const counts = new Map(rows.map(r => [r.variable_key, r.layers]));
+    return keys.map(variableKey => ({ variableKey, layers: counts.get(variableKey) ?? 0 }));
   }
 
   /**

@@ -181,17 +181,17 @@ const isVariableToken = n => !!n && typeof n.nodeId === 'string' && n.nodeId.sta
 
 /**
  * Sets `usage: { layers }` on the variable token rows of `rows` — the live
- * layers whose `attrs.resolvedVariables` has the token's `variableId` — from
- * one store query; returns `rows`.
+ * layers whose `attrs.resolvedVariables` has an entry with the token's
+ * variable key (`token:<variableKey>`), whichever imported id they bound —
+ * from one store query; returns `rows`.
  * @param {import('../store/types').Store} store
  */
 async function withUsage(store, fileKey, rows) {
   const tokens = rows.filter(isVariableToken);
   if (!tokens.length) return rows;
-  const idOf = n => (n.attrs && typeof n.attrs.variableId === 'string' ? n.attrs.variableId : null);
-  const ids = [...new Set(tokens.map(idOf).filter(Boolean))];
-  const counts = new Map((await store.tokenUsage(fileKey, ids)).map(u => [u.variableId, u.layers]));
-  for (const n of tokens) n.usage = { layers: counts.get(idOf(n)) ?? 0 };
+  const keyOf = n => n.nodeId.slice('token:'.length);
+  const counts = new Map((await store.tokenUsage(fileKey, [...new Set(tokens.map(keyOf))])).map(u => [u.variableKey, u.layers]));
+  for (const n of tokens) n.usage = { layers: counts.get(keyOf(n)) ?? 0 };
   return rows;
 }
 
