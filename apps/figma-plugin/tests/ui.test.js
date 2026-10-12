@@ -214,3 +214,14 @@ test('the result says how many library components were not tracked because of th
   u.receive(SYNCED);
   assert.doesNotMatch(u.$('result-note').textContent, /library/);
 });
+test('the result reports the design tokens pass with a tokens stat', () => {
+  const u = ui();
+  u.receive({ ...SYNCED, tokens: { tracked: 48, changed: 1, added: 2, unchanged: 45, deleted: 0 } });
+  assert.match(u.$('result-note').textContent, / Tokens: 48 tracked, 1 changed, 2 new\.$/);
+  const tile = u.$('stats').children.find(s => s.children[1].textContent === 'tokens');
+  assert.equal(tile.children[0].textContent, '48');
+  u.receive({ ...SYNCED, tokens: { tracked: 3, changed: 0, added: 0, deleted: 1 } });
+  assert.match(u.$('result-note').textContent, / Tokens: 3 tracked, 0 changed, 0 new, 1 deleted\.$/);
+  u.receive(SYNCED);
+  assert.doesNotMatch(u.$('result-note').textContent, /Tokens/);
+});
