@@ -317,7 +317,7 @@ test('clear: bulk <nodeId>=<hash> arguments, per-item statuses and stale notes',
     items: [{ nodeId: '2:1', contentHash: hashOf('2:1') }, { nodeId: '2:2', contentHash: 'stale-hash' }, { nodeId: '9:9', contentHash: 'x' }],
   });
   assert.deepEqual(res.json.results.map(r => [r.nodeId, r.status]), [['2:1', 'cleared'], ['2:2', 'stale'], ['9:9', 'not_found']]);
-  assert.deepEqual(res.json.totals, { cleared: 1, stale: 1, notFound: 1 });
+  assert.deepEqual(res.json.totals, { cleared: 1, stale: 1, notFound: 1, notRemoved: 0 });
   assert.match(res.err, new RegExp(`^stale: 2:2 changed since it was read; current hash ${hashOf('2:2')}\\.`, 'm'));
   assert.match(res.err, /^not found: 9:9 is not in this file\.$/m);
 

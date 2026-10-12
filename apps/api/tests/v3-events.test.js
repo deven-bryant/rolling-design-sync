@@ -309,11 +309,11 @@ for (const kind of Object.keys(STORES)) {
       assert.equal(events.length, 2);
       const [baseline, sync] = events;
       assert.equal(baseline.type, 'sync.completed');
-      assert.deepEqual(baseline.data.counts, { uploaded: 4, changed: 0, added: 0, deleted: 0, baselined: 4, dirty: 0 });
+      assert.deepEqual(baseline.data.counts, { uploaded: 4, changed: 0, added: 0, deleted: 0, baselined: 4, autoResolved: 0, dirty: 0 });
       assert.ok(sync.id > baseline.id);
       assert.equal(sync.fileKey, FK);
       assert.equal(sync.actor, 'plugin');
-      assert.deepEqual(sync.data, { rootNodeId: '1:1', counts: { uploaded: 4, changed: 3, added: 0, deleted: 0, baselined: 0, dirty: 3 } });
+      assert.deepEqual(sync.data, { rootNodeId: '1:1', counts: { uploaded: 4, changed: 3, added: 0, deleted: 0, baselined: 0, autoResolved: 0, dirty: 3 } });
       assert.equal(typeof sync.createdAt, 'string');
     });
 

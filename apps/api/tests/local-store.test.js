@@ -106,7 +106,7 @@ test('local store: sync -> list -> clear, with the hash guard', async t => {
   const { app } = await openApp(t, tempDir(t));
   const up = await batch(app, { upserts: [upsert(ROOT, { width: 800 }, { nodeType: 'SECTION' }), upsert(CHILD, { paddingLeft: 16 }, { parentId: ROOT, path: [ROOT] })] });
   assert.equal(up.status, 200, JSON.stringify(up.body));
-  assert.deepEqual(up.body, { fileKey: FILE_KEY, upserted: 2, dirty: 2, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(up.body, { fileKey: FILE_KEY, upserted: 2, dirty: 2, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
 
   const d = await dirty(app, ROOT);
   assert.equal(d.status, 200, JSON.stringify(d.body));

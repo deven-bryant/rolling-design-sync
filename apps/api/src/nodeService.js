@@ -136,8 +136,12 @@ class NodeSyncService {
    * bumped on every batch; optional `fileName` / `rootNodeId` also name the
    * file and record a `sync_event` with this batch's counts.
    *
+   * A tombstoned node that was never implemented (`implementedHash` null)
+   * resolves itself: it becomes a clean tombstone, counted as `autoResolved`.
+   *
    * Events: one `sync.completed` per batch (its `counts.dirty`: nodes the
-   * batch made dirty — new, or clean before), and a `node.unblocked` (`auto`)
+   * batch made dirty — new, or clean before; `counts.autoResolved`: the
+   * never-built nodes it tombstoned clean), and a `node.unblocked` (`auto`)
    * for each blocked node whose content hash changed.
    */
   async batchUpsert(body) {
@@ -178,7 +182,7 @@ class NodeSyncService {
       };
 
       const prior = new Map((await tx.getNodes(fileKey, [...new Set(rows.map(r => r.nodeId))])).map(n => [n.nodeId, n]));
-      const counts = { uploaded: rows.length, changed: 0, added: 0, deleted: 0, baselined: 0 };
+      const counts = { uploaded: rows.length, changed: 0, added: 0, deleted: 0, baselined: 0, autoResolved: 0 };
       const upserted = [];
       const unblocked = [];
       let dirtied = 0;
@@ -226,9 +230,10 @@ class NodeSyncService {
       }
       const wasDirty = new Set((deletedNodeIds.length ? await tx.getNodes(fileKey, [...new Set(deletedNodeIds)]) : []).filter(n => n.dirty).map(n => n.nodeId));
       const tombstoned = await tx.tombstoneNodes(fileKey, deletedNodeIds, nowIso);
-      dirtied += tombstoned.filter(n => !wasDirty.has(n.nodeId)).length;
+      dirtied += tombstoned.filter(n => n.dirty && !wasDirty.has(n.nodeId)).length;
       for (const node of tombstoned) await tx.updateNode(fileKey, node.nodeId, changeColumns(node));
       counts.deleted = tombstoned.length;
+      counts.autoResolved = tombstoned.filter(n => !n.dirty).length;
       for (const node of tombstoned) if (node.parentId) reorderParents.add(node.parentId);
 
       const storedParents = new Set((await tx.getNodes(fileKey, [...new Set(upserted.map(n => n.parentId).filter(Boolean))])).map(n => n.nodeId));
@@ -243,6 +248,7 @@ class NodeSyncService {
         upserted: upserted.length,
         dirty: upserted.filter(n => n.dirty).length,
         tombstoned: tombstoned.length,
+        autoResolved: counts.autoResolved,
         skippedInstances: 0, // kept for plugin/CLI compatibility; instances are stored now
       };
       if (markImplemented) summary.baselined = upserted.filter(n => n.baselined).length;

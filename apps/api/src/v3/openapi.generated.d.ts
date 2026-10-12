@@ -2088,7 +2088,7 @@ export interface paths {
         put?: never;
         /**
          * Clear implemented nodes
-         * @description Records nodes as implemented (up to 500 per call) once your code matches the design: they become clean, their current design becomes the new baseline, and their leases are released. Send each node with the `contentHash` you implemented (from `list_nodes` / `get_node`). Each item is checked on its own and the call is 200 even when some fail: `cleared`; `stale` — the design changed since you read it, so re-read that node with `get_node`, implement the new changes and clear it with the returned `contentHash`; `not_found` — a wrong id. Clear only what you actually built; never clear to hide changes (use `block_node` for nodes you cannot implement). The `nodes.cleared` event's actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
+         * @description Records nodes as implemented (up to 500 per call) once your code matches the design: they become clean, their current design becomes the new baseline, and their leases are released. Send each node with the `contentHash` you implemented (from `list_nodes` / `get_node`). Each item is checked on its own and the call is 200 even when some fail: `cleared`; `stale` — the design changed since you read it, so re-read that node with `get_node`, implement the new changes and clear it with the returned `contentHash`; `not_found` — a wrong id; `not_removed` — `subtree: true` on a node that is not deleted (nothing cleared). Removed design (a `kind: "removed"` work item): once its code is gone, clear just its root with `subtree: true` — that also clears every dirty deleted node below it (`subtreeCleared`); live nodes below are untouched. Clear only what you actually built; never clear to hide changes (use `block_node` for nodes you cannot implement). The `nodes.cleared` event's actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
          */
         post: {
             parameters: {
@@ -2116,6 +2116,11 @@ export interface paths {
                             nodeId: string;
                             /** @description The node's `contentHash` as you read it before implementing. */
                             contentHash: string;
+                            /**
+                             * @description For a deleted (removed) root: also clear every dirty deleted node below it. On a live node the item fails with `not_removed`.
+                             * @default false
+                             */
+                            subtree?: boolean;
                         }[];
                     };
                 };
@@ -2133,14 +2138,17 @@ export interface paths {
                             results?: {
                                 nodeId?: string;
                                 /** @enum {string} */
-                                status?: "cleared" | "stale" | "not_found";
-                                /** @description cleared: the hash cleared; stale: the current hash; not_found: null. */
+                                status?: "cleared" | "stale" | "not_found" | "not_removed";
+                                /** @description cleared: the hash cleared; stale and not_removed: the current hash; not_found: null. */
                                 contentHash?: null | string;
+                                /** @description subtree: true and cleared: how many deleted nodes below the root were cleared with it. */
+                                subtreeCleared?: number;
                             }[];
                             totals?: {
                                 cleared?: number;
                                 stale?: number;
                                 notFound?: number;
+                                notRemoved?: number;
                             };
                         };
                     };
@@ -3988,7 +3996,7 @@ export interface paths {
         };
         /**
          * List work items
-         * @description The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design's layer order, by each item's key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories. `group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last. `group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged. `group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item. `include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar. `expand=instances` answers "which components do I need to build for this screen, and how often does it use each?": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`. Each item's `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.
+         * @description The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design's layer order, by each item's key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories. `group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last. Removed design (group=component and group=set): deleted nodes that were built are grouped under their removed root — the topmost deleted node — into one `kind: "removed"` item (after the component items, before `key: null`, in the roots' document order), unless that root sits inside a live component (then they are part of that component's item). For a removed item: remove the code that rendered the root; keep components in `uses` with `livePlacements > 0` (still used elsewhere), consider removing those with 0; heed `warnings`; then clear the root with `subtree: true` (`clear_nodes`) — one item clears the whole removed subtree. Deleted nodes that were never built are not work (they resolve at sync). `group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged. `group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item. `include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar. `expand=instances` answers "which components do I need to build for this screen, and how often does it use each?": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`. Each item's `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.
          */
         get: {
             parameters: {
@@ -4060,7 +4068,12 @@ export interface paths {
                             /** @enum {string} */
                             group?: "component" | "frame" | "set";
                             items?: {
-                                /** @description The component or frame node id; with group=set, the Figma set key (id when no key is available). Standalone components retain their node id; null for nodes with none. */
+                                /**
+                                 * @description `removed`: design deleted in Figma that was built — one item per removed root (the topmost tombstoned node; key = its id), listing the components it used (`uses`). Absent on component, set and frame items.
+                                 * @enum {string}
+                                 */
+                                kind?: "removed";
+                                /** @description The component or frame node id; with group=set, the Figma set key (id when no key is available). Standalone components retain their node id; removed items: the removed root's id; null for nodes with none. */
                                 key?: null | string;
                                 name?: null | string;
                                 type?: null | string;
@@ -4088,7 +4101,36 @@ export interface paths {
                                 placements?: null | number;
                                 /** @description group=component with expand=instances: the instances of the key reached from the scope (inside `under` or inside the expanded components) — how often this screen uses it. */
                                 placementsInScope?: null | number;
-                                /** @description The item's first 50 node ids, in document order (the design's layer order). */
+                                /** @description Removed items only: the main components referenced by instances inside the removed subtree, those with `livePlacements: 0` first (then by name). Keep the code of components with livePlacements > 0; consider removing those with 0. */
+                                uses?: {
+                                    /** @description The main component's node id. */
+                                    componentId?: string;
+                                    /** @description The main component's name; null when it was never synced. */
+                                    name?: null | string;
+                                    /** @description The variant's Figma component set. Omitted when unavailable (including inaccessible library parents). */
+                                    set?: {
+                                        id?: string;
+                                        key?: string;
+                                        name?: string;
+                                    };
+                                    /** @description True for a library (remote) main component, when captured. */
+                                    remote?: boolean;
+                                    /** @description Instance rows of it inside the removed subtree. */
+                                    placementsRemoved?: number;
+                                    /** @description Live (not tombstoned) instance rows of it anywhere in the file. 0: nothing in the design uses it any more. */
+                                    livePlacements?: number;
+                                }[];
+                                /** @description Removed items only (empty when none): main components removed with the design while other instances of them are still live. */
+                                warnings?: {
+                                    /**
+                                     * @description main_removed_with_live_placements: a main component inside the removed subtree still has live instances elsewhere — keep its code.
+                                     * @enum {string}
+                                     */
+                                    code?: "main_removed_with_live_placements";
+                                    componentId?: string;
+                                    livePlacements?: number;
+                                }[];
+                                /** @description The item's first 50 node ids, in document order (the design's layer order; a removed item's root first). */
                                 nodeIds?: string[];
                                 /** @description How many node ids `nodeIds` leaves out. */
                                 more?: number;
@@ -4632,7 +4674,7 @@ export interface paths {
         put?: never;
         /**
          * Sync a batch (plugin)
-         * @description Upserts scanned nodes and tombstones `deletedNodeIds`: `dirty` becomes `contentHash !== implementedHash`, a hash change unblocks a blocked node, and `markImplemented: true` inserts never-seen nodes as already implemented. `fileName` / `rootNodeId` name the file and record the sync for `…/scopes`. Emits `sync.completed`. Plugin tokens only.
+         * @description Upserts scanned nodes and tombstones `deletedNodeIds`: `dirty` becomes `contentHash !== implementedHash`, a hash change unblocks a blocked node, and `markImplemented: true` inserts never-seen nodes as already implemented. A tombstoned node that was never implemented resolves itself (a clean tombstone, counted in `autoResolved`, not dirty). `fileName` / `rootNodeId` name the file and record the sync for `…/scopes`. Emits `sync.completed`. Plugin tokens only.
          */
         post: {
             parameters: {
@@ -4701,7 +4743,10 @@ export interface paths {
                             upserted?: number;
                             /** @description How many of the upserted nodes are dirty. */
                             dirty?: number;
+                            /** @description Nodes this sync tombstoned (deletedNodeIds that were stored and live). */
                             tombstoned?: number;
+                            /** @description Of `tombstoned`, the nodes that were never implemented: stored as clean tombstones at once, so they are not work. */
+                            autoResolved?: number;
                             /** @description Always 0; kept for older plugins. */
                             skippedInstances?: number;
                             /** @description With markImplemented: nodes inserted as implemented. */

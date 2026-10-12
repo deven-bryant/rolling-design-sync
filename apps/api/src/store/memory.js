@@ -7,6 +7,7 @@
 const { randomUUID } = require('node:crypto');
 const { isDescendant, pathNodeIds } = require('../ltree');
 const { documentSortKey } = require('../documentOrder');
+const { removedUses, removedWarnings, REMOVED_K } = require('./removed');
 
 const now = () => new Date().toISOString();
 const clone = v => (v === undefined ? undefined : structuredClone(v));
@@ -201,13 +202,16 @@ class MemoryStore {
     return out;
   }
 
-  /** Tombstones existing rows (last-known attrs kept); unknown ids are ignored. */
+  /**
+   * Tombstones existing rows (last-known attrs kept); unknown ids are ignored.
+   * A row never implemented (`implementedHash` null) becomes a clean tombstone.
+   */
   async tombstoneNodes(fileKey, nodeIds, deletedAt) {
     const out = [];
     for (const nodeId of nodeIds) {
       const node = this.nodes.get(this._nodeKey(fileKey, nodeId));
       if (!node || node.deletedAt) continue;
-      Object.assign(node, { deletedAt, dirty: true, updatedAt: now() });
+      Object.assign(node, { deletedAt, dirty: node.implementedHash !== null && node.implementedHash !== undefined, updatedAt: now() });
       out.push(clone(node));
     }
     return out;
@@ -610,7 +614,30 @@ class MemoryStore {
       const ownRef = owner.attrs?.componentReference;
       return { id: owner.nodeId, key: ownRef?.key ?? owner.nodeId, name: owner.name };
     };
+    /** The removed root of a tombstone (topmost tombstone on its path) unless it sits inside a live component; else null. */
+    const removedRootOf = n => {
+      if (page.group === 'frame' || !n.deletedAt || !n.path) return null;
+      const parts = n.path.split('.');
+      let end = parts.length;
+      while (end > 1) {
+        const parent = byPath.get(parts.slice(0, end - 1).join('.'));
+        if (!parent || !parent.deletedAt) break;
+        end -= 1;
+      }
+      for (let i = end - 1; i > 0; i -= 1) {
+        const a = byPath.get(parts.slice(0, i).join('.'));
+        if (a && !a.deletedAt && COMPONENT_TYPES.includes(a.nodeType)) return null;
+      }
+      return parts.slice(0, end).join('.');
+    };
     const groupOf = n => {
+      const removedPath = removedRootOf(n);
+      if (removedPath !== null) {
+        const keyNode = byPath.get(removedPath) || null;
+        const identity = `removed:${removedPath}`;
+        const k = `${REMOVED_K}${keyNode ? documentSortKey(keyNode) : ''} ${page.group === 'set' ? identity : removedPath}`;
+        return { identity, k, keyPath: removedPath, keyNode, set: null, removed: true };
+      }
       const keyPath = keyOf(n);
       const keyNode = keyPath === null ? null : byPath.get(keyPath);
       const set = setOf(keyNode);
@@ -639,7 +666,7 @@ class MemoryStore {
     }
     const rest = page.after ? all.filter(g => g.k > page.after.k) : all;
     const pageRows = rest.slice(0, page.limit);
-    const items = pageRows.map(({ k, keyPath, nodes, identity, set }) => {
+    const items = pageRows.map(({ k, keyPath, nodes, identity, set, removed }) => {
       const keyNode = keyPath === null ? null : byPath.get(keyPath) || null;
       const keyId = keyPath === null ? null : pathNodeIds(keyPath).pop();
       const sorted = nodes.slice().sort((a, b) => cmp(documentSortKey(a), documentSortKey(b)) || cmp(a.nodeId, b.nodeId));
@@ -665,6 +692,10 @@ class MemoryStore {
         }
         item.variants = [...variants.values()];
       }
+      if (removed) {
+        Object.assign(item, { kind: 'removed' }, this._removedDetails(fileKey, keyPath));
+        return item;
+      }
       if (page.group === 'component') {
         item.placements = keyNode
           ? this._fileNodes(fileKey).filter(x => x.mainComponentId === keyNode.nodeId && !x.deletedAt).length
@@ -679,6 +710,22 @@ class MemoryStore {
     });
     const last = items[items.length - 1];
     return { items, total: all.length, next: rest.length > page.limit ? { k: last.k, id: last.keyId ?? '' } : null };
+  }
+
+  /** `{ uses, warnings }` of the removed item rooted at `rootPath` (mirrors PostgresStore.removedDetails). */
+  _removedDetails(fileKey, rootPath) {
+    const all = this._fileNodes(fileKey);
+    const live = id => all.filter(x => x.mainComponentId === id && !x.deletedAt).length;
+    const inside = all.filter(x => x.deletedAt && x.path && isDescendant(x.path, rootPath));
+    const removedCounts = new Map();
+    for (const x of inside) if (x.mainComponentId) removedCounts.set(x.mainComponentId, (removedCounts.get(x.mainComponentId) || 0) + 1);
+    const uses = removedUses([...removedCounts].map(([componentId, placementsRemoved]) => {
+      const main = this.nodes.get(this._nodeKey(fileKey, componentId));
+      return { componentId, name: main ? main.name : null, ref: main ? main.attrs?.componentReference : null, placementsRemoved, livePlacements: live(componentId) };
+    }));
+    const warnings = removedWarnings(inside.filter(x => COMPONENT_TYPES.includes(x.nodeType))
+      .map(x => ({ componentId: x.nodeId, docKey: documentSortKey(x), livePlacements: live(x.nodeId) })));
+    return { uses, warnings };
   }
 
   /** `expand=instances`, step 1 (mirrors PostgresStore.expansionReach): reachable mains, breadth-first, with hop count and path. */

@@ -155,7 +155,7 @@ test('hashes: fileKey is required', async t => {
 
 test('batch: upserts are dirty against the empty auto-baseline', async t => {
   const { summary } = await seeded(t);
-  assert.deepEqual(summary, { fileKey: FILE_KEY, upserted: 3, dirty: 3, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(summary, { fileKey: FILE_KEY, upserted: 3, dirty: 3, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
 });
 
 test('batch: every upsert stamps capture_version = CAPTURE_VERSION', async t => {
@@ -175,7 +175,7 @@ test('batch: instance nodes are stored as placement rows and show up as dirty ro
     ],
   });
   assert.equal(res.status, 200, JSON.stringify(res.body));
-  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 2, dirty: 2, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 2, dirty: 2, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
   assert.deepEqual(Object.keys((await hashes(ctx, ROOT)).body).sort(), [ROOT, CHILD, GRANDCHILD, '4:1', '4:2'].sort());
 
   const stored = await store.getNode(FILE_KEY, '4:1');
@@ -211,7 +211,7 @@ test('batch: dirty follows content_hash vs implemented_hash, both ways', async t
   assert.equal((await clear(ctx, CHILD, hash, 'abc123')).status, 'cleared');
 
   const again = await batch(ctx, { upserts: [upsert(CHILD, { paddingLeft: 16 }, { parentId: ROOT, path: [ROOT] })] });
-  assert.deepEqual(again.body, { fileKey: FILE_KEY, upserted: 1, dirty: 0, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(again.body, { fileKey: FILE_KEY, upserted: 1, dirty: 0, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
 
   const edited = await batch(ctx, { upserts: [upsert(CHILD, { paddingLeft: 24 }, { parentId: ROOT, path: [ROOT] })] });
   assert.equal(edited.body.dirty, 1);
@@ -221,10 +221,11 @@ test('batch: dirty follows content_hash vs implemented_hash, both ways', async t
   assert.equal(reverted.body.dirty, 0);
 });
 
-test('batch: deleted ids are tombstoned with last-known attrs and stay dirty', async t => {
-  const ctx = await seeded(t);
+test('batch: deleted ids that were built are tombstoned with last-known attrs and stay dirty', async t => {
+  const ctx = fresh(t);
+  assert.equal((await batch(ctx, { upserts: TREE(), markImplemented: true })).status, 200);
   const res = await batch(ctx, { deletedNodeIds: [GRANDCHILD, 'never-seen'] });
-  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 0, dirty: 0, tombstoned: 1, skippedInstances: 0 });
+  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 0, dirty: 0, tombstoned: 1, autoResolved: 0, skippedInstances: 0 });
 
   // Tombstoned nodes drop out of the hash map (nothing left to compare) ...
   assert.deepEqual(Object.keys((await hashes(ctx, ROOT)).body).sort(), [ROOT, CHILD].sort());
@@ -232,6 +233,23 @@ test('batch: deleted ids are tombstoned with last-known attrs and stay dirty', a
   const gone = (await dirtyUnder(ctx, ROOT)).find(n => n.nodeId === GRANDCHILD);
   assert.ok(gone.deletedAt, 'tombstoned');
   assert.deepEqual(gone.attrs, { characters: 'Hello' });
+});
+
+test('batch: deleted ids that were never built resolve themselves as clean tombstones', async t => {
+  const ctx = await seeded(t);
+  const res = await batch(ctx, { deletedNodeIds: [GRANDCHILD] });
+  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 0, dirty: 0, tombstoned: 1, autoResolved: 1, skippedInstances: 0 });
+  assert.equal((await dirtyUnder(ctx, ROOT)).some(n => n.nodeId === GRANDCHILD), false);
+  const gone = await ctx.store.getNode(FILE_KEY, GRANDCHILD);
+  assert.ok(gone.deletedAt, 'tombstoned');
+  assert.equal(gone.dirty, false);
+  assert.equal(gone.changeType, null);
+  // Reappearing later, it is added work again (never implemented).
+  await batch(ctx, { upserts: [upsert(GRANDCHILD, { characters: 'Hello' }, { parentId: CHILD, path: [ROOT, CHILD], nodeType: 'TEXT' })] });
+  const back = await ctx.store.getNode(FILE_KEY, GRANDCHILD);
+  assert.equal(back.deletedAt, null);
+  assert.equal(back.dirty, true);
+  assert.equal(back.changeType, 'added');
 });
 
 test('batch: validates the payload', async t => {
@@ -265,7 +283,7 @@ test('batch markImplemented: never-seen nodes are inserted clean with implemente
   const { store } = ctx;
   const res = await batch(ctx, { upserts: TREE(), markImplemented: true });
   assert.equal(res.status, 200, JSON.stringify(res.body));
-  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 3, dirty: 0, tombstoned: 0, skippedInstances: 0, baselined: 3 });
+  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 3, dirty: 0, tombstoned: 0, autoResolved: 0, skippedInstances: 0, baselined: 3 });
 
   for (const u of TREE()) {
     const node = await store.getNode(FILE_KEY, u.nodeId);
@@ -281,7 +299,7 @@ test('batch markImplemented: never-seen nodes are inserted clean with implemente
 
   // A later edit of a baselined node dirties it against the baseline as usual.
   const edited = await batch(ctx, { upserts: [upsert(CHILD, { paddingLeft: 24 }, { parentId: ROOT, path: [ROOT] })] });
-  assert.deepEqual(edited.body, { fileKey: FILE_KEY, upserted: 1, dirty: 1, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(edited.body, { fileKey: FILE_KEY, upserted: 1, dirty: 1, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
   const [child] = (await dirtyUnder(ctx, ROOT));
   assert.equal(child.nodeId, CHILD);
   assert.equal(child.implementedHash, core.contentHash({ paddingLeft: 16 }));
@@ -309,7 +327,7 @@ test('batch markImplemented: an existing dirty node stays dirty; only new nodes 
     ],
   });
   assert.equal(res.status, 200, JSON.stringify(res.body));
-  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 5, dirty: 4, tombstoned: 0, skippedInstances: 0, baselined: 1 });
+  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 5, dirty: 4, tombstoned: 0, autoResolved: 0, skippedInstances: 0, baselined: 1 });
 
   for (const id of [ROOT, CHILD, GRANDCHILD]) {
     const node = await store.getNode(FILE_KEY, id);
@@ -332,7 +350,7 @@ test('batch markImplemented: an existing clean node keeps its implemented commit
   const before = await store.getNode(FILE_KEY, CHILD);
 
   const res = await batch(ctx, { markImplemented: true, upserts: [upsert(CHILD, { paddingLeft: 24 }, { parentId: ROOT, path: [ROOT] })] });
-  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 1, dirty: 1, tombstoned: 0, skippedInstances: 0, baselined: 0 });
+  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 1, dirty: 1, tombstoned: 0, autoResolved: 0, skippedInstances: 0, baselined: 0 });
   const after = await store.getNode(FILE_KEY, CHILD);
   assert.equal(after.dirty, true);
   assert.equal(after.implementedHash, hash);
@@ -365,16 +383,16 @@ test('batch markImplemented: a tombstoned node is revived exactly as without the
 test('batch markImplemented: deletedNodeIds are tombstoned as usual', async t => {
   const ctx = await seeded(t);
   const res = await batch(ctx, { markImplemented: true, upserts: [upsert('4:1', { x: 1 }, { parentId: ROOT, path: [ROOT] })], deletedNodeIds: [GRANDCHILD] });
-  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 1, dirty: 0, tombstoned: 1, skippedInstances: 0, baselined: 1 });
-  const gone = (await dirtyUnder(ctx, ROOT)).find(n => n.nodeId === GRANDCHILD);
+  assert.deepEqual(res.body, { fileKey: FILE_KEY, upserted: 1, dirty: 0, tombstoned: 1, autoResolved: 1, skippedInstances: 0, baselined: 1 });
+  const gone = await ctx.store.getNode(FILE_KEY, GRANDCHILD);
   assert.ok(gone.deletedAt, 'tombstoned');
-  assert.equal(gone.dirty, true);
+  assert.equal(gone.dirty, false, 'never built: a clean tombstone');
 });
 
 test('batch markImplemented: false or omitted keeps today\'s behavior and response shape', async t => {
   const ctx = fresh(t);
   const off = await batch(ctx, { upserts: TREE(), markImplemented: false });
-  assert.deepEqual(off.body, { fileKey: FILE_KEY, upserted: 3, dirty: 3, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(off.body, { fileKey: FILE_KEY, upserted: 3, dirty: 3, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
   for (const n of (await dirtyUnder(ctx, ROOT))) {
     assert.equal(n.dirty, true);
     assert.equal(n.implementedHash, null);

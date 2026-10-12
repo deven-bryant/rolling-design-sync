@@ -64,7 +64,8 @@ const clear = {
   description: [
     `Records nodes as implemented (up to ${MAX_CLEAR_ITEMS} per call) once your code matches the design: they become clean, their current design becomes the new baseline, and their leases are released.`,
     'Send each node with the `contentHash` you implemented (from `list_nodes` / `get_node`). Each item is checked on its own and the call is 200 even when some fail:',
-    '`cleared`; `stale` — the design changed since you read it, so re-read that node with `get_node`, implement the new changes and clear it with the returned `contentHash`; `not_found` — a wrong id.',
+    '`cleared`; `stale` — the design changed since you read it, so re-read that node with `get_node`, implement the new changes and clear it with the returned `contentHash`; `not_found` — a wrong id; `not_removed` — `subtree: true` on a node that is not deleted (nothing cleared).',
+    'Removed design (a `kind: "removed"` work item): once its code is gone, clear just its root with `subtree: true` — that also clears every dirty deleted node below it (`subtreeCleared`); live nodes below are untouched.',
     'Clear only what you actually built; never clear to hide changes (use `block_node` for nodes you cannot implement).',
     'The `nodes.cleared` event\'s actor is the body\'s `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.',
   ].join(' '),
@@ -88,6 +89,7 @@ const clear = {
           properties: {
             nodeId: { type: 'string', minLength: 1, description: 'Node id (1:2 or 1-2).' },
             contentHash: { type: 'string', minLength: 1, description: 'The node\'s `contentHash` as you read it before implementing.' },
+            subtree: { type: 'boolean', default: false, description: 'For a deleted (removed) root: also clear every dirty deleted node below it. On a live node the item fails with `not_removed`.' },
           },
         },
       },
@@ -105,14 +107,15 @@ const clear = {
             type: 'object',
             properties: {
               nodeId: { type: 'string' },
-              status: { type: 'string', enum: ['cleared', 'stale', 'not_found'] },
-              contentHash: nullable('string', { description: 'cleared: the hash cleared; stale: the current hash; not_found: null.' }),
+              status: { type: 'string', enum: ['cleared', 'stale', 'not_found', 'not_removed'] },
+              contentHash: nullable('string', { description: 'cleared: the hash cleared; stale and not_removed: the current hash; not_found: null.' }),
+              subtreeCleared: { type: 'integer', description: 'subtree: true and cleared: how many deleted nodes below the root were cleared with it.' },
             },
           },
         },
         totals: {
           type: 'object',
-          properties: { cleared: { type: 'integer' }, stale: { type: 'integer' }, notFound: { type: 'integer' } },
+          properties: { cleared: { type: 'integer' }, stale: { type: 'integer' }, notFound: { type: 'integer' }, notRemoved: { type: 'integer' } },
         },
       },
     },
@@ -239,12 +242,27 @@ function registerActionRoutes(app, { store, now, config, bus = null }) {
     };
     const results = await withEvents(store, bus, async (tx, emit) => {
       const nodes = await resolveIds(tx, fileKey, items.map(i => i.nodeId));
-      const found = items.map((item, i) => nodes[i] && { nodeId: nodes[i].nodeId, contentHash: item.contentHash }).filter(Boolean);
+      const notRemoved = items.map((item, i) => !!(item.subtree && nodes[i] && !nodes[i].deletedAt));
+      const found = items.map((item, i) => nodes[i] && !notRemoved[i] && { nodeId: nodes[i].nodeId, contentHash: item.contentHash }).filter(Boolean);
       const cleared = await tx.clearNodes(fileKey, found, patch);
       const done = new Set(cleared.map(c => `${c.nodeId}\u0000${c.contentHash}`));
+      /** Rows by id, for the cleared nodes' lease holders. */
+      const rows = new Map(nodes.filter(Boolean).map(n => [n.nodeId, n]));
+      /** Removed root id → how many deleted descendants it cleared. */
+      const subtreeCleared = new Map();
+      for (const [i, item] of items.entries()) {
+        const root = nodes[i];
+        if (!item.subtree || !root || notRemoved[i] || !done.has(`${root.nodeId}\u0000${item.contentHash}`) || subtreeCleared.has(root.nodeId)) continue;
+        const below = (await tx.listNodeSubtree(fileKey, root.nodeId, { dirty: true }))
+          .filter(n => n.deletedAt && n.nodeId !== root.nodeId && n.contentHash);
+        for (const n of below) if (!rows.has(n.nodeId)) rows.set(n.nodeId, n);
+        const more = below.length ? await tx.clearNodes(fileKey, below.map(n => ({ nodeId: n.nodeId, contentHash: /** @type {string} */ (n.contentHash) })), patch) : [];
+        subtreeCleared.set(root.nodeId, more.length);
+        cleared.push(...more);
+      }
       if (cleared.length) {
         const clearedIds = [...new Set(cleared.map(c => c.nodeId))];
-        const holders = new Set(clearedIds.map(id => nodes.find(n => n && n.nodeId === id)).map(n => (n && n.claimedBy) || null));
+        const holders = new Set(clearedIds.map(id => rows.get(id)).map(n => (n && n.claimedBy) || null));
         const worker = holders.size === 1 ? [...holders][0] : null;
         await emit(fileKey, 'nodes.cleared', {
           actor,
@@ -254,12 +272,15 @@ function registerActionRoutes(app, { store, now, config, bus = null }) {
       return items.map((item, i) => {
         const node = nodes[i];
         if (!node) return { nodeId: item.nodeId, status: 'not_found', contentHash: null };
-        if (done.has(`${node.nodeId}\u0000${item.contentHash}`)) return { nodeId: node.nodeId, status: 'cleared', contentHash: item.contentHash };
+        if (notRemoved[i]) return { nodeId: node.nodeId, status: 'not_removed', contentHash: node.contentHash ?? null };
+        if (done.has(`${node.nodeId}\u0000${item.contentHash}`)) {
+          return { nodeId: node.nodeId, status: 'cleared', contentHash: item.contentHash, ...(item.subtree ? { subtreeCleared: subtreeCleared.get(node.nodeId) ?? 0 } : {}) };
+        }
         return { nodeId: node.nodeId, status: 'stale', contentHash: node.contentHash ?? null };
       });
     });
     const count = status => results.filter(r => r.status === status).length;
-    return { fileKey, commitRef: commitRef || null, results, totals: { cleared: count('cleared'), stale: count('stale'), notFound: count('not_found') } };
+    return { fileKey, commitRef: commitRef || null, results, totals: { cleared: count('cleared'), stale: count('stale'), notFound: count('not_found'), notRemoved: count('not_removed') } };
   });
 
   app.post('/files/:fileKey/claims', { schema: createClaim }, async (/** @type {import('./types').V3Request<'/v3/files/{fileKey}/claims', 'post'>} */ request) => {
