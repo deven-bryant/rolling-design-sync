@@ -74,8 +74,32 @@ test('categoryOf: exact names, prefix and suffix patterns, other', () => {
   assert.equal(C.categoryOf('padding'), 'layout');
 });
 
+test('categoryOf: design-token properties', () => {
+  assert.equal(C.categoryOf('value:Dark'), 'token');
+  assert.equal(C.categoryOf('value:Mode 1'), 'token');
+  assert.equal(C.categoryOf('description'), 'content');
+  assert.equal(C.categoryOf('name'), 'structure');
+  assert.equal(C.categoryOf('codeSyntax'), 'other');
+  assert.equal(C.categoryOf('scopes'), 'other');
+  assert.equal(C.categoryOf('resolvedType'), 'other');
+  const alias = name => ({ alias: 'token:' + 'b'.repeat(40), name });
+  const d = C.diffAttrs({ name: 'bg-active', 'value:Light': '#ffffff', 'value:Dark': '#202527' },
+    { name: 'bg-active', 'value:Light': '#ffffff', 'value:Dark': alias('gray/900') });
+  assert.deepEqual(d.changedProps, ['value:Dark']);
+  assert.deepEqual(d.categories, ['token']);
+  assert.deepEqual(d.changes['value:Dark'], { built: '#202527', now: alias('gray/900'), category: 'token' });
+});
+
+test('isTokenNodeId: the tokens root, collections and variables; layer ids are not tokens', () => {
+  const key = 'a'.repeat(40);
+  assert.equal(C.TOKENS_ROOT_ID, 'tokens');
+  for (const id of ['tokens', `tokens:${key}`, `token:${key}`]) assert.equal(C.isTokenNodeId(id), true, id);
+  for (const id of ['1:2', 'I1:2;3:4', 'tokensX', null, undefined, 42]) assert.equal(C.isTokenNodeId(id), false, String(id));
+  assert.equal(C.normalizeNodeId(`token:${key}`), `token:${key}`);
+});
+
 test('CATEGORY_RULES is data covering every spec category', () => {
-  assert.deepEqual(Object.keys(C.CATEGORY_RULES), ['layout', 'color', 'typography', 'effects', 'component', 'content', 'structure', 'prototype']);
+  assert.deepEqual(Object.keys(C.CATEGORY_RULES), ['layout', 'color', 'typography', 'effects', 'component', 'content', 'structure', 'prototype', 'token']);
   assert.ok(C.CATEGORY_RULES.layout.includes('padding*'));
   assert.ok(C.CATEGORY_RULES.effects.includes('*Radius'));
   assert.ok(Object.isFrozen(C.CATEGORY_RULES) && Object.isFrozen(C.CATEGORY_RULES.color));
