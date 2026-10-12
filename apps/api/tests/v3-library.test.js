@@ -151,6 +151,8 @@ for (const kind of Object.keys(STORES)) {
 
   });
 
+  const settle = () => new Promise(resolve => setTimeout(resolve, 2));
+
   test(`[${kind}] tracking off: library nodes leave listings, counts, summaries, progress and trends; back on restores them`, async t => {
     const { app, store, close } = await openApp(kind);
     t.after(close);
@@ -177,12 +179,14 @@ for (const kind of Object.keys(STORES)) {
     assert.equal(cleared.totals.cleared, 2);
     const [clearEvent] = await store.listEvents({ fileKey: FK, types: ['nodes.cleared'] });
     assert.equal(clearEvent.data.libraryCount, 1);
+    await settle(); // the trends window ends at now (exclusive): let a clear made this millisecond fall inside it
     assert.equal(ok(await get(app, `/v3/insights/trends?fileKey=${FK}`)).total.cleared, 1);
     const claim = ok(await app.inject({ method: 'POST', url: `/v3/files/${FK}/claims`, headers: agent, payload: { worker: 'w-1', nodeIds: ['9:1'] } }));
     assert.deepEqual(claim.nodes.map(n => n.nodeId), ['9:1']);
 
     ok(await patch(app, { settings: { trackLibraryComponents: true } }));
     assert.deepEqual(await ids(app), ['1:1', '2:1', '3:1', '3:2', '9:1']);
+    await settle(); // the trends window ends at now (exclusive): let a clear made this millisecond fall inside it
     assert.equal(ok(await get(app, `/v3/insights/trends?fileKey=${FK}`)).total.cleared, 2);
   });
 
