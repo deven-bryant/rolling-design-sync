@@ -201,6 +201,50 @@ those with `0`, and then clears the root with `subtree: true`.
   main's node id when resolved, else `null`. `GET /v3/status` reports
   `libraryLinks: true|false`.
 
+### Design tokens
+
+Figma variables are tracked as nodes in the `node` table, so dirty, claim,
+clear, block, history and events work for them unchanged.
+
+- **Ids.** One scope per file, root **`tokens`** (type `TOKENS`, name "Design
+  tokens"); one node per collection, **`tokens:<collectionKey>`**
+  (`VARIABLE_COLLECTION`; attrs `name`, `modes`, `remote`); one node per
+  variable, **`token:<variableKey>`** (`VARIABLE`; attrs `name`,
+  `resolvedType`, `description`, `scopes`, `codeSyntax`, `variableId`,
+  `remote` and one **`value:<Mode name>`** per mode — a normalized value or an
+  alias `{ alias: "token:<key>", name }`). They are never rewritten like
+  `1-2` → `1:2`, are URL-safe as path segments, and have `figmaUrl: null`
+  (also on the scope and on token work items).
+- **Sync.** The plugin uploads tokens through `POST …/sync` with
+  `rootNodeId: "tokens"` and reads `GET …/hashes?under=tokens`, which also
+  carries `tokens: { "<nodeId>": { variableId, remote } }` for every live
+  variable (in place of the root's own hash: the plugin re-sends the root on
+  every tokens sync). A token is tombstoned only through `deletedNodeIds` —
+  when its variable no longer exists — never because a sync did not mention it.
+- **Scope.** `GET …/scopes` lists it as "Design tokens" (`TOKENS`) with counts.
+  Document order: collections by name, then each collection's variables by
+  name, compared `/`-group by group so a group's tokens stay together.
+- **Diffs.** A `value:<Mode>` change is category **`token`** (an alias diffs as
+  its `{ alias, name }` target); `description` is `content`, `name` is
+  `structure`, `codeSyntax` / `scopes` / `resolvedType` are `other`. Markdown
+  lines read `bg-active (VARIABLE) — value:Dark #202527 → #2b3033`, an alias
+  as `{gray/900}`.
+- **Work items.** With `group=component` and `group=set`, token nodes form one
+  item per collection: `kind: "tokens"`, `key` = the collection node id,
+  `name` = the collection name, `nodeIds` = its dirty tokens, `changedProps`
+  (e.g. `value:Dark`), `progress`; a changed root forms its own item (`key:
+  "tokens"`). Token items come after the component and removed items, before
+  `key: null`; deleted tokens stay in their collection's item (never a removed
+  item). `group=frame` with `under=tokens` groups by collection the same way.
+  For each token: update the code variable named by `codeSyntax` (WEB, else the
+  token name) for each changed mode, then clear it.
+- **Usage.** `usage: { layers }` on a token — the number of live (not
+  tombstoned) nodes whose stored `attrs.resolvedVariables` has the token's
+  `variableId` — on `GET …/nodes/{nodeId}`, and with `include=usage` on token
+  listings and token work items (`usage: { nodeId: { layers } }`). One store
+  query per request (a jsonb key-existence scan of the file's live rows; no
+  index).
+
 ### Diff rules
 
 - Compare **top-level attribute keys** of `implemented_attrs` and `attrs` with
@@ -224,9 +268,10 @@ listed is `other`.
 | `typography` | `fontName` `fontSize` `fontWeight` `textCase` `textDecoration*` `letterSpacing` `lineHeight` `textAlign*` `textAutoResize` `paragraph*` `list*` `hanging*` `textTruncation` `maxLines` `textStyleId` `openTypeFeatures` `leadingTrim` `textWrapStyle` `indentation` `textSegments` |
 | `effects` | `effects` `effectStyleId` `cornerRadius` `*Radius` `cornerSmoothing` `isMask` `visible` |
 | `component` | `componentProperties` `componentPropertyReferences` `componentPropertyDefinitions` `variantProperties` `mainComponentId` `isInstance` `overrides` |
-| `content` | `characters` `hyperlink` `vectorPaths` `vectorNetwork` `booleanOperation` `arcData` `pointCount` `innerRadius` |
+| `content` | `characters` `hyperlink` `vectorPaths` `vectorNetwork` `booleanOperation` `arcData` `pointCount` `innerRadius` `description` |
 | `structure` | `parentId` `childIds` `children` `name` |
 | `prototype` | `reactions` `overflowDirection` `numberOfFixedChildren` `overlay*` |
+| `token` | `value:*` (a design token's value in one mode) |
 | — (token lookups; not diffed) | `boundVariables` `explicitVariableModes` |
 
 Patterns ending in `*` are prefix matches; `*Radius` is a suffix match. The map

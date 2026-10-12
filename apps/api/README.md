@@ -93,7 +93,7 @@ than the path is `400 url_mismatch`; a URL pasted as the key is
 | `GET /v3/files/{fileKey}/events` | `after?`, `order?` (`asc` \| `desc`), `before?`, `types?`, `nodeId?`, `since?`, `limit?`, `format?` (JSON); `Last-Event-ID` (SSE), `url?` | `{fileKey, events: [event], nextAfter}` (`order=desc`: newest first, `{fileKey, events, nextBefore}`; page older with `before`), or a `text/event-stream` with `Accept: text/event-stream` |
 | `GET /v3/events` | Same event parameters plus `fileKey?` | `{events: [event], nextAfter}` (or `nextBefore` with `order=desc`) or SSE across files; every event includes `fileKey`, and on JSON pages `fileName` |
 | `GET /v3/files/{fileKey}/summary` | listing filters, `url?` | `{fileKey, total, byState, byChangeType, byCategory, byType, byFrame?}` |
-| `GET /v3/files/{fileKey}/work` | listing filters, `group?` (`component` \| `set` \| `frame`), `changes?`, `include=progress?`, `limit`, `cursor`, `format?`, `url?` | `{fileKey, group, items: [item], nextCursor, total, truncated?}` |
+| `GET /v3/files/{fileKey}/work` | listing filters, `group?` (`component` \| `set` \| `frame`), `changes?`, `include?` (`progress`, `usage`; comma-separated), `limit`, `cursor`, `format?`, `url?` | `{fileKey, group, items: [item], nextCursor, total, truncated?}` |
 | `GET /v3/insights/trends` | `windowDays?` (1–14, default 7), `fileKey?` | `{windowDays, from, to, complete, retentionDays, total: trend, files: [{fileKey, fileName, …trend}]}`; trend is `{cleared, clearedPrevious, clearedChangePct, dirtied, netDirty}` |
 | `GET /v3/resolve` | `url` | `{fileKey, nodeId}` (`nodeId` null without `node-id`) |
 | `GET /v3/openapi.json` | — | OpenAPI 3.1 document (no token) |
@@ -130,7 +130,7 @@ no `x-rds-mcp` / `x-rds-cli` annotations, so they are never agent tools.
 
 | Route | Query / body | Returns |
 |---|---|---|
-| `GET /v3/files/{fileKey}/hashes` | `under` (the scope root; defaults to the `?url=` link's node), `url?` | `{[nodeId]: contentHash, settings}` for the live subtree plus the file's settings; only `settings` if never synced |
+| `GET /v3/files/{fileKey}/hashes` | `under` (the scope root; defaults to the `?url=` link's node), `url?` | `{[nodeId]: contentHash, settings}` for the live subtree plus the file's settings; only `settings` if never synced. `under=tokens` adds `tokens: {[nodeId]: {variableId, remote}}` for every live variable (in place of the root's own hash) |
 | `POST /v3/files/{fileKey}/sync` | `{upserts: [{nodeId, parentId, path, nodeType, name, attrs, contentHash, isInstance?, mainComponentId?}], deletedNodeIds, markImplemented?, fileName?, rootNodeId?}`; `url?` | `{fileKey, upserted, dirty, tombstoned, autoResolved, skippedInstances, baselined?}` |
 | `POST /v3/files/{fileKey}/exists` | `{nodeIds}` (max 5000); `url?` | `{present, stale}` |
 
@@ -174,10 +174,12 @@ Shapes:
 - `view=full` adds `attrs`, `implementedAttrs` and `path` (ancestor ids, root
   first, plus the node). `fields=a,b` returns exactly those fields.
   `include=counts` adds `descendants: {total, dirty, blocked}` (subtree,
-  excluding the node).
+  excluding the node); `include=usage` adds `usage: {layers}` to design
+  tokens. Both combine: `include=counts,usage`.
 - detail node — the full node plus `deleted`, `history: {createdAt, updatedAt,
   implementedAt, implementedCommit, implementedHash, deletedAt}` and
-  `descendants`.
+  `descendants`; a design token (`token:<variableKey>`) also has `usage:
+  {layers}` — the live layers whose `resolvedVariables` hold its `variableId`.
 - `claim` — `{claimId, worker, label, expiresAt, nodes: [node]}`.
 
 Listing filters (AND across parameters, comma-separated values OR'd within
@@ -266,6 +268,13 @@ every listing filter (default `state=dirty`) and aggregate in the store (SQL
   "main_removed_with_live_placements", componentId, livePlacements}]`; no
   `placements`. Other items have no `kind`. See `docs/api-v3-design.md`,
   "Removed design".
+- Design tokens (`group=component` and `group=set`): token nodes form one
+  `kind: "tokens"` item per collection (`key` = `tokens:<collectionKey>`,
+  `name` = the collection name; a changed `tokens` root is its own item),
+  after the removed items and before `key: null`; no `placements`.
+  `include=usage` adds `usage: {nodeId: {layers}}` for the listed tokens.
+  `group=frame` with `under=tokens` gives the same per-collection items. See
+  `docs/api-v3-design.md`, "Design tokens".
 
 Formats (`docs/api-v3-phase2.md`, section 4): the listing, work items and the
 events JSON page take `format` (`outline`: the listing and work items only):
