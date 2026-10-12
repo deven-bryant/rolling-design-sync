@@ -66,6 +66,26 @@ describe('Tabs', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('renders the button-brand md full-width variant: equal 44px tabs, current on bg-brand-primary_alt', async () => {
+    const { container } = render(<Example type="button-brand" size="md" fullWidth />);
+    expect(screen.getByRole('tablist').className.split(' ')).toEqual(expect.arrayContaining(['flex', 'gap-xs', 'w-full']));
+    const current = screen.getByRole('tab', { name: 'My details' });
+    const other = screen.getByRole('tab', { name: 'Team' });
+    for (const tab of [current, other]) {
+      const classes = tab.className.split(' ');
+      expect(classes).toEqual(expect.arrayContaining(['flex-1', 'h-11', 'text-md', 'rounded-sm', 'px-lg', 'py-md', 'text-quaternary']));
+      expect(classes).toEqual(expect.arrayContaining(['data-selected:bg-brand-primary_alt', 'data-selected:text-brand-secondary']));
+    }
+    expect(current.hasAttribute('data-selected')).toBe(true);
+    await expectNoAxeViolations(container);
+  });
+
+  it('hugs the tabs unless fullWidth', () => {
+    render(<Example type="button-brand" size="md" />);
+    expect(screen.getByRole('tablist').className.split(' ')).not.toContain('w-full');
+    expect(screen.getByRole('tab', { name: 'Team' }).className.split(' ')).not.toContain('flex-1');
+  });
+
   it('keeps sm button-gray and underline tabs 36px', () => {
     const { unmount } = render(<Example type="button-gray" size="sm" />);
     expect(screen.getByRole('tab', { name: 'My details' }).className).toContain('h-9');

@@ -26,6 +26,25 @@ export default {
       ),
     },
     {
+      figma: 'Type=Button brand, Size=md, Full width=True, Breakpoint=Desktop',
+      render: () => (
+        <Tabs type="button-brand" size="md" fullWidth>
+          <Tabs.List aria-label="Button brand full-width tabs">
+            {labels.map(label => (
+              <Tabs.Tab key={label} id={label}>
+                {label}
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+          {labels.map(label => (
+            <Tabs.Panel key={label} id={label} className="pt-lg">
+              {label}
+            </Tabs.Panel>
+          ))}
+        </Tabs>
+      ),
+    },
+    {
       figma: 'Type=Button gray, Size=md, Full width=False, Breakpoint=Desktop',
       render: () => (
         <Tabs type="button-gray" size="md">
