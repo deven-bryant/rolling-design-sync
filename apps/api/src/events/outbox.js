@@ -13,6 +13,7 @@ const MAX_EVENT_NODE_IDS = 500;
 
 const EVENT_TYPES = Object.freeze([
   'sync.completed', 'nodes.cleared', 'claim.created', 'claim.renewed', 'claim.released', 'node.blocked', 'node.unblocked',
+  'file.settings_changed',
 ]);
 
 const capIds = ids => ids.slice(0, MAX_EVENT_NODE_IDS);

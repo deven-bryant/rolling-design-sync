@@ -163,6 +163,8 @@ function loadConfig(env = process.env, envOptions = {}) {
     uiOrigins: parseUiOrigins(rds('UI_ORIGINS')),
     trustProxy: parseTrustProxy(rds('TRUST_PROXY')),
     rateLimit: rateLimits(rds, embedded),
+    // Optional Figma REST token for library links (library.js); never logged or returned.
+    figmaToken: rds('FIGMA_TOKEN') || '',
   };
 }
 
