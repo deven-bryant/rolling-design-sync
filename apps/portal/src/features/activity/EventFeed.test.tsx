@@ -82,6 +82,27 @@ describe('EventFeed', () => {
     expect(screen.queryByRole('link', { name: 'FILE1' })).toBeNull();
   });
 
+  it('shows a note.added event’s note text, read from the node’s notes', async () => {
+    fetchMock.mockImplementation(async input => {
+      const url = new URL(String(input), 'http://localhost');
+      if (url.pathname === '/v3/files/FILE1/nodes/120%3A34609/notes') {
+        expect(url.searchParams.get('status')).toBe('all');
+        return json({ notes: [{ noteId: 'n1', body: 'Page number should be the number alone.', author: 'portal:viewer', status: 'resolved' }] });
+      }
+      return json({
+        events: [
+          ev(2, { type: 'note.added', actor: 'portal:viewer', data: { nodeId: '120:34609', noteId: 'n1', author: 'portal:viewer' } }),
+          ev(1, { type: 'note.added', actor: 'portal:viewer', data: { nodeId: '120:34609', noteId: 'gone', author: 'portal:viewer' } }),
+        ],
+        nextBefore: 1,
+      });
+    });
+    render(wrap(<EventFeed onOpenNode={() => {}} />));
+    expect(await screen.findByText('Page number should be the number alone.')).toBeTruthy();
+    expect(screen.getAllByText('Page number should be the number alone.')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/notes'))).toHaveLength(1);
+  });
+
   it('asks for 500 events a page by default', async () => {
     fetchMock.mockResolvedValue(json({ events: [ev(1)], nextBefore: 1 }));
     render(wrap(<EventFeed />));

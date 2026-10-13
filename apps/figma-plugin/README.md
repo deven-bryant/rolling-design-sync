@@ -1,6 +1,6 @@
 # Rolling Design Sync — Figma plugin
 
-Version 0.13.1. A runnable JavaScript development plugin with editable source and
+Version 0.14.0. A runnable JavaScript development plugin with editable source and
 no build step required for installation.
 
 Setting it up for the first time? The
@@ -146,13 +146,31 @@ while typing.
 4. Click **Upload snapshot**. This clears any previous message and result.
    Pause design edits while it scans — the plugin captures the scope (with a
    verification pass), fetches the stored hashes, compares, and uploads only
-   the delta in batches. A progress bar under the status line follows each
-   phase: phases with a known size (verifying the scan, checking main
-   components, uploading) fill a determinate bar with counts such as
-   `Uploading: 1,200 / 3,400 nodes`; scanning shows a moving bar (static
-   with reduced motion) and the running node count. A successful sync ends
-   with a green **Sync complete** message that stays until the next upload or
-   an error.
+   the delta in batches. The status line follows each phase: phases with a
+   known size (verifying the scan, checking main components, uploading) fill
+   a progress bar with counts such as `Uploading: 1,200 / 3,400 nodes`;
+   phases without one (fetching stored hashes, scanning, comparing, scanning
+   main components) show a small spinner next to the running node count
+   (a static ring with reduced motion). A successful sync ends with a green
+   **Sync complete** message that stays until the next upload or an error.
+
+   *Upload batches.* Each `POST …/sync` carries at most 200 records and
+   250,000 JSON characters (`BATCH_RECORDS`, `BATCH_CHARS` in
+   `src/plugin.js`), so the upload bar advances after every acknowledged
+   batch; deletions travel in the first batch. A 1,000-node first sync is 5
+   batches. On very large syncs both caps grow so one upload takes at most 50
+   requests (`MAX_UPLOAD_BATCHES`, keeping well inside the API's per-token
+   sync rate limit), and no batch exceeds 2,000,000 characters.
+
+   *Verification retries.* The scan is verified by a second pass. If the two
+   differ — typically a value Figma loads lazily on first access, such as a
+   library style or variable, a remote main component, or text metrics once
+   fonts load — the plugin scans again (`Verifying scan (retry 1)`) and
+   compares with the previous pass, up to 2 retries (`VERIFY_RETRIES`); the
+   first matching pair is uploaded. Only if it never settles does the sync
+   fail, naming the layer and up to three changed properties, e.g.
+   *Design kept changing while scanning: "Button" (12:34) fills,
+   styleDefinitions.* A layer deleted mid-scan still fails at once.
 5. Read the **3 · Sync result** panel: counts of **changed**, **new** and
    **deleted** nodes uploaded, plus **unchanged** (skipped because the hash
    matched), **instances recorded**, **inside instances skipped** (layers
@@ -170,6 +188,57 @@ how many nodes were **baselined** (summed across batches). The checkbox is
 unchecked by default, is never saved to clientStorage, and resets after each
 sync.
 
+**Already built? prompt.** If the box is unticked and, after comparing, the
+run would add many layers the server has never seen — at least 25, and at
+least half of the scope's tracked layers (library and main-component records
+don't count) — the plugin pauses before uploading and asks, e.g. *"1,234 of
+1,500 layers are new to Rolling Design Sync."* Copied screens that are already
+built would otherwise all show up as work. Choose **Mark as implemented**
+(continue as if the box were ticked), **Track as new work** (continue
+unchanged) or **Cancel** (stop; nothing is uploaded). Focus starts on the
+first choice; Tab moves between them, Escape or the panel's **Cancel** button
+cancels. The prompt clears on the next upload. No similarity matching against
+existing nodes is attempted.
+
+**Library components.** Each sync reads the file's
+`settings.trackLibraryComponents` from the stored-hashes response (missing →
+on, so older servers behave as before). On: main components from team
+libraries (remote mains) are imported and scanned like local ones, and every
+record under a remote main is sent with `library: true`. Off: remote mains are
+not checked, imported or scanned; instances of them still record their full
+component reference (`id`, `key`, `name`, `remote`, component set), and local
+mains outside the scope are still scanned. The result says how many were
+skipped, e.g. *"12 library components not tracked (file setting)"*, and the
+**library not tracked** stat shows the same count. The setting itself is
+changed on the server, not in the plugin.
+
+**Design tokens.** After the scope (and its mains) is uploaded, every sync
+runs a second pass for the file's variables, stored as their own `tokens`
+scope: the root `tokens`, one `tokens:<collectionKey>` node per collection
+(`name`, `modes`, `remote`) and one `token:<variableKey>` node per variable
+(`name`, `resolvedType`, `description`, `scopes`, `codeSyntax`, `variableId`,
+`remote`, and one `value:<Mode name>` per collection mode). Collected: every
+variable bound by a captured layer (scanned mains included), every local
+variable of the file, and every variable those alias, transitively. Values are
+normalized — colors `#rrggbb` / `#rrggbbaa`, numbers to 4 decimals, strings
+and booleans as-is, aliases `{ alias: "token:<key>", name }`; a value that
+cannot be read is stored as `{ $unreadable: true }` with a non-blocking
+`[token]` warning. The pass plans against `GET …/hashes?under=tokens`, re-sends
+the `tokens` root every time, and uploads changed tokens with
+`rootNodeId: "tokens"` in the same batches (**Uploading tokens** progress,
+same `markImplemented`). Editing a value in any mode — e.g. a library
+variable's Dark value — dirties only that token, not the layers using it.
+A token is its variable key, not its Figma id: a library re-import can change
+the id (another imported copy of the same variable), and the API keeps a token
+whose only change is its id clean. Deletion is conservative: a token collected
+in this sync is never deleted; a local token is deleted only when it is absent
+from the file's local variables (never when they could not be listed) and its
+stored id no longer resolves; a library token is never deleted automatically
+(nothing referencing it, or a stale imported id that no longer resolves, is not
+a deleted variable). A collection goes only once every stored token in it is
+deleted, and an older server without the token map gets no token deletions. The result shows a **tokens** stat and *"Tokens: 48 tracked,
+1 changed, 0 new."*; the already-built prompt still counts layers only.
+
 From there, coding agents pull the dirty nodes and clear them via the API / the
 `scripts/rds-agent.js` CLI — not through this plugin. Sync again after further
 design edits to refresh the delta.
@@ -183,8 +252,9 @@ paths/networks, component/variant properties, hierarchy & child order, current
 variable modes and resolved bindings, referenced style definitions, and exposed
 prototype reactions. Numeric precision 0.0001; root-canvas translation ignored.
 
-Limits: it resolves styles/variables the plugin can access (current
-consumer-mode values only — test other themes/modes separately); it does not
+Limits: it resolves styles/variables the plugin can access (layers store
+current consumer-mode values; every mode's value is tracked on the token
+nodes, see **Design tokens**); it does not
 diff entire remote libraries, extract image binaries (only paint hashes), map
 Figma IDs to repo files, or verify motion/accessibility/app logic. Review those
 and shared-component impact in the running app.

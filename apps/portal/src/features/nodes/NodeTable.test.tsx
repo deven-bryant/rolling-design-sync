@@ -1,9 +1,10 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeEventSource } from '../../test/fake-event-source';
 import { NodeTable, type NodeTableProps } from './NodeTable';
-import { claimC1, FILE, mockApi, renderWithClient, treeRoutes, type Route } from './test-fixtures';
+import { claimC1, FILE, logo, mockApi, node, pageHeader, renderWithClient, scope, treeRoutes, type Route } from './test-fixtures';
 
 const pagePath = `/v3/files/${FILE}/nodes`;
 
@@ -74,6 +75,14 @@ describe('NodeTable', () => {
     expect(header.getByText('unclaimed')).toBeTruthy();
   });
 
+  it('badges library nodes', async () => {
+    const lib = node('9:1', { name: 'Lib button', type: 'COMPONENT', library: { key: 'LIBKEY', resolved: false }, figmaUrl: null });
+    renderTable({}, treeRoutes(call => (call.path === pagePath && call.query.get('under') === '1:1' ? { fileKey: FILE, nodes: [scope, lib], nextCursor: null } : undefined)));
+    await waitFor(() => expect(row('9:1')).toBeDefined());
+    expect(within(row('9:1')).getByText('Library').className).toContain('bg-utility-gray-50');
+    expect(within(row('1:1')).queryByText('Library')).toBeNull();
+  });
+
   it('loads a row’s children when it expands', async () => {
     const user = userEvent.setup();
     const { api, onOpenNode } = renderTable();
@@ -101,6 +110,90 @@ describe('NodeTable', () => {
     expect(unders).toContain('1:50');
     expect(unders).not.toContain('1:2');
     expect(api.find('GET', pagePath).every(c => !c.query.has('expand'))).toBe(true);
+  });
+
+  describe('keeps rows open across filter changes', () => {
+    const deepRoutes = () =>
+      treeRoutes(({ path, query }) => {
+        if (path !== pagePath) return undefined;
+        const under = query.get('under');
+        if (under === '1:2') return { fileKey: FILE, nodes: [pageHeader, { ...logo, descendants: { total: 1, dirty: 0, blocked: 0 } }], nextCursor: null };
+        if (under === '1:20') return { fileKey: FILE, nodes: [logo, logoMark], nextCursor: null };
+        return undefined;
+      });
+    const logoMark = node('1:21', { name: 'Logo mark', type: 'VECTOR' });
+    const table = (props: Partial<NodeTableProps>) => (
+      <NodeTable fileKey={FILE} scopeId="1:1" filters={{}} onFiltersChange={vi.fn()} {...props} />
+    );
+    const expanded = (name: string) => screen.getByRole('button', { name: new RegExp(`^(Expand|Collapse) ${name}$`) }).getAttribute('aria-expanded');
+
+    async function openTwoLevels() {
+      const user = userEvent.setup();
+      mockApi(deepRoutes());
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
+      const utils = render(<QueryClientProvider client={client}>{table({})}</QueryClientProvider>);
+      const rerender = (props: Partial<NodeTableProps>) => utils.rerender(<QueryClientProvider client={client}>{table(props)}</QueryClientProvider>);
+      await user.click(await screen.findByRole('button', { name: 'Expand Page header' }));
+      await user.click(await screen.findByRole('button', { name: 'Expand Logo' }));
+      await screen.findByText('Logo mark');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:20', '1:21', '1:3']);
+      return { user, rerender };
+    }
+
+    it('across Expand instances on and off', async () => {
+      const { rerender } = await openTwoLevels();
+      rerender({ filters: { expandInstances: true } });
+      await screen.findByText('Style=Simple');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:50', '1:51', '1:3']);
+      expect(expanded('Page header')).toBe('true');
+      rerender({ filters: {} });
+      await screen.findByText('Logo mark');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:20', '1:21', '1:3']);
+      expect([expanded('Page header'), expanded('Logo')]).toEqual(['true', 'true']);
+    });
+
+    it('across the state, change, category, type and search filters', async () => {
+      const { rerender } = await openTwoLevels();
+      rerender({ filters: { state: 'dirty', changeType: 'modified', category: 'color', type: 'FRAME', q: 'Logo' } });
+      await screen.findByText('Logo mark');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:20', '1:21', '1:3']);
+    });
+
+    it('across pages', async () => {
+      const { user } = await openTwoLevels();
+      await user.click(screen.getByRole('button', { name: /Next/ }));
+      await screen.findByText('Divider');
+      await user.click(screen.getByRole('button', { name: /Previous/ }));
+      await screen.findByText('Logo mark');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:20', '1:21', '1:3']);
+    });
+
+    it('until the scope changes', async () => {
+      const { rerender } = await openTwoLevels();
+      rerender({ scopeId: '1:9' });
+      await screen.findByText('No nodes match the filters.');
+      rerender({ scopeId: '1:1' });
+      await screen.findByText('Breadcrumbs');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:3']);
+      expect(expanded('Page header')).toBe('false');
+    });
+
+    it('keeps an auto-expanded row the user collapsed collapsed', async () => {
+      const { user, rerender } = await openTwoLevels();
+      await user.click(screen.getByRole('button', { name: 'Collapse Team View' }));
+      expect(rowIds()).toEqual(['1:1']);
+      rerender({ filters: { expandInstances: true } });
+      await waitFor(() => expect(expanded('Team View')).toBe('false'));
+      expect(rowIds()).toEqual(['1:1']);
+      await user.click(screen.getByRole('button', { name: 'Expand Team View' }));
+      await screen.findByText('Style=Simple');
+      await user.click(screen.getByRole('button', { name: 'Collapse Style=Simple' }));
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:50', '1:3']);
+      rerender({ filters: { expandInstances: true, state: 'dirty' } });
+      await screen.findByText('Style=Simple');
+      expect(expanded('Style=Simple')).toBe('false');
+      expect(rowIds()).toEqual(['1:1', '1:2', '1:50', '1:3']);
+    });
   });
 
   it('sends the filters with every page request', async () => {
@@ -141,6 +234,27 @@ describe('NodeTable', () => {
     await user.click(screen.getByRole('button', { name: /Previous/ }));
     await screen.findByText('Breadcrumbs');
     expect(rowIds()).toEqual(['1:1', '1:2', '1:3']);
+  });
+
+  it('numbers the pages from the total and jumps to a later page by walking the cursors', async () => {
+    const user = userEvent.setup();
+    const pageOf = (cursor: string | null) => {
+      if (cursor === 'cur3') return { fileKey: FILE, nodes: [node('1:7', { name: 'Footer', parentId: '1:1' })], nextCursor: null, total: 51 };
+      if (cursor === 'cur2') return { fileKey: FILE, nodes: [node('1:6', { name: 'Body', parentId: '1:1' })], nextCursor: 'cur3', total: 51 };
+      return { fileKey: FILE, nodes: [scope, pageHeader], nextCursor: 'cur2', total: 51 };
+    };
+    const { api } = renderTable({}, treeRoutes(call => (call.path === pagePath && call.query.get('under') === '1:1' ? pageOf(call.query.get('cursor')) : undefined)));
+    const nav = within(await screen.findByRole('navigation', { name: 'Node pages' }));
+    expect((await nav.findByRole('button', { name: 'Page 1' })).getAttribute('aria-current')).toBe('page');
+    expect(nav.getByRole('button', { name: 'Page 3' })).toBeTruthy();
+    await user.click(nav.getByRole('button', { name: 'Page 3' }));
+    await screen.findByText('Footer');
+    expect(rowIds()).toEqual(['1:7']);
+    expect(api.find('GET', pagePath).filter(c => c.query.get('under') === '1:1').map(c => c.query.get('cursor'))).toEqual([null, 'cur2', 'cur3']);
+    expect(nav.getByRole('button', { name: 'Page 3' }).getAttribute('aria-current')).toBe('page');
+    await user.click(nav.getByRole('button', { name: 'Page 1' }));
+    await screen.findByText('Page header');
+    expect(nav.getByRole('button', { name: 'Page 1' }).getAttribute('aria-current')).toBe('page');
   });
 
   it('opens a node when its row is activated', async () => {
@@ -199,5 +313,36 @@ describe('NodeTable', () => {
     await waitFor(() => expect(pages()).toBe(2));
     act(() => stream().emit('reset', { fileKey: FILE, lastEventId: 9 }));
     await waitFor(() => expect(pages()).toBe(3));
+  });
+});
+
+describe('NodeTable notes', () => {
+  beforeEach(() => {
+    FakeEventSource.reset();
+    vi.stubGlobal('EventSource', FakeEventSource);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('filters to Requested nodes', async () => {
+    const user = userEvent.setup();
+    const { onFiltersChange } = renderTable({ filters: { state: 'all' } });
+    await user.click(screen.getByRole('button', { name: /Change/ }));
+    await user.click(await screen.findByRole('option', { name: /Requested/ }));
+    expect(onFiltersChange).toHaveBeenLastCalledWith({ state: 'all', changeType: 'requested' });
+  });
+
+  it('shows a file icon in the Notes column for nodes with open notes', async () => {
+    const base = treeRoutes();
+    const routes: Route = call => {
+      const r = base(call) as { nodes?: { nodeId: string }[] } | undefined;
+      if (call.method === 'GET' && call.path === pagePath && r?.nodes)
+        return { ...r, nodes: r.nodes.map(n => (n.nodeId === '1:3' ? { ...n, notes: [{ noteId: 'n1', body: 'x', status: 'open' }] } : n)) };
+      return r;
+    };
+    renderTable({}, routes);
+    await screen.findByText('Breadcrumbs');
+    expect(screen.getByRole('columnheader', { name: 'Notes' })).toBeTruthy();
+    expect(within(row('1:3')).getByRole('img', { name: '1 open note' })).toBeTruthy();
+    expect(within(row('1:2')).queryByRole('img', { name: /open note/ })).toBeNull();
   });
 });

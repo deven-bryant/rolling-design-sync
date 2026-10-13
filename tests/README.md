@@ -42,7 +42,8 @@ RDS_PLUGIN_TOKEN=e2e-plugin-token RDS_AGENT_TOKEN=e2e-agent-token RDS_VIEWER_TOK
 finds the seeded file, expands a frame and an instance (*Expand instances*),
 opens a node drawer with no actions and signs out; an agent blocks and unblocks
 a node and releases a claim; and a claim, then a clear, made through the API
-add and poof the row's agent sprite without a reload; and the sidebar
+add and poof the row's agent sprite without a reload; a viewer adds a note
+on a clean node, which turns it Requested, and an agent clear resolves it; and the sidebar
 navigation, the old file-tab links redirecting, the scope panel (selection,
 *View Nodes*, its remembered visibility) and the theme toggle. Each test seeds its own
 file through `…/sync` with the plugin token (the instance tree from

@@ -266,11 +266,12 @@ Plugin (plugin tokens):
   deletedNodeIds: [...]}`. Upserts by `(file_key, node_id)`, sets
   `dirty = content_hash <> implemented_hash` (so a node edited back to its
   implemented state goes clean again), tombstones the deleted ids keeping their
-  last-known `attrs`, and **stores instance placements** (`is_instance` is set
+  last-known `attrs` (a node never implemented becomes a clean tombstone,
+  counted as `autoResolved` — never-built design isn't work), and **stores instance placements** (`is_instance` is set
   for `nodeType: 'INSTANCE'` or `isInstance: true`; `main_component_id` from
   `mainComponentId`, a soft reference to the main's node row). Returns counts
-  `{fileKey, upserted, dirty, tombstoned, skippedInstances}` (`skippedInstances`
-  is always `0`, kept for client compatibility).
+  `{fileKey, upserted, dirty, tombstoned, autoResolved, skippedInstances}`
+  (`skippedInstances` is always `0`, kept for client compatibility).
 - `POST /v3/files/{fileKey}/exists` — `{present, stale}` for up to 5000 ids;
   `stale` are rows written by an older `capture_version` (re-scan them).
 
@@ -325,6 +326,11 @@ dirties it against the baseline hash.
 `docs/errors.md`. v3 is the whole API: the plugin routes write the `node`
 rows and the agent routes read and act on them. Migration
 `20260929180000_api_v3_change_model.sql` only adds columns and tables.
+
+**Library components.** `node.library` flags library (remote) mains and their
+subtrees, `file.settings.trackLibraryComponents` hides them from counts and
+listings when off, and `library_component` caches their library-file links
+(`RDS_FIGMA_TOKEN`); see `docs/api-v3-design.md`, "Library components".
 
 **Change columns on `node`.** Every sync upsert and every clear maintains:
 

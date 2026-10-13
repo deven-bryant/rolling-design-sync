@@ -36,6 +36,10 @@ export interface StoredNode {
   blockedBy: string | null;
   blockedReason: string | null;
   orderKey: string | null;
+  /** A library node: a remote main component / component set, or inside one. */
+  library: boolean;
+  /** Set by v3/read.js `withLibraryRefs` on library rows: their component key and library-file location. */
+  libraryRef?: { key: string | null; type: string | null; resolved: boolean; fileKey: string | null; nodeId: string | null };
 }
 
 /** A node as the v3 reads see it: the row plus its claim label, expansion region and subtree counts. */
@@ -47,7 +51,7 @@ export interface V3Node extends StoredNode {
 
 export interface NodeCounts { total: number; dirty: number; blocked: number; clean?: number }
 
-export interface FileRow { fileKey: string; name: string | null; lastSyncAt: string | null; createdAt: string | null }
+export interface FileRow { fileKey: string; name: string | null; lastSyncAt: string | null; createdAt: string | null; settings: Record<string, any> }
 export interface FileWithCounts extends FileRow { counts: NodeCounts }
 
 export interface SyncEvent { id: any; fileKey: string; rootNodeId: string | null; counts: Record<string, any>; createdAt: string | null }
@@ -65,6 +69,12 @@ export interface Scope {
 export interface Claim { claimId: string; fileKey: string; worker: string; label: string | null; createdAt: string | null; expiresAt: string | null }
 export interface ClaimListing extends Claim { fileName: string | null; nodeCount: number; nodeIds: string[]; nodes: any }
 export interface ClaimResult { claim: Claim; nodes: V3Node[] }
+
+export interface NodeNote {
+  noteId: string; fileKey: string; nodeId: string; body: string; author: string; worker: string | null;
+  status: 'open' | 'resolved' | 'dismissed'; createdAt: string; updatedAt: string;
+  resolvedAt: string | null; resolvedBy: string | null; commitRef: string | null;
+}
 
 export interface StoredEvent { id: number; fileKey: string; type: string; actor: string | null; data: Record<string, any>; createdAt: string }
 
@@ -86,6 +96,10 @@ export interface V3Filter {
   claimed: string[];
   worker: string | null;
   now: string;
+  /** Library nodes: `include` them, `exclude` them or list `only` them; null = the file's default (v3/read.js `applyLibraryDefault`). */
+  library: 'include' | 'exclude' | 'only' | null;
+  /** Only nodes with (true) or without (false) open notes; null/absent = either. */
+  hasNotes?: boolean | null;
   /** Ltree paths of the scope (null = the whole file) and each expanded component, in order. */
   regions?: (string | null)[];
 }
@@ -105,6 +119,9 @@ export interface NodeSummary {
   byFrame: { nodeId: string; name: string | null; count: number }[] | null;
 }
 
+/** A cached resolution of a library component key (library.js). */
+export interface LibraryComponent { componentKey: string; fileKey: string | null; nodeId: string | null; name: string | null; resolvedAt: string | null; error: string | null }
+
 export interface Store {
   /** Runs `fn` with a store bound to one transaction; all-or-nothing. */
   transaction<T>(fn: (tx: Store) => Promise<T>): Promise<T>;
@@ -121,6 +138,7 @@ export interface Store {
   listChildren(fileKey: string, parentIds: string[]): Promise<StoredNode[]>;
   rekeySubtrees(fileKey: string, moves: { nodeId: string; path: string; from: string; to: string }[]): Promise<number>;
   updateNode(fileKey: string, nodeId: string, patch: Record<string, any>): Promise<StoredNode | null>;
+  markLibrarySubtrees(fileKey: string, rootIds: string[]): Promise<string[]>;
 
   // --- maintenance
   listChangeRepairCandidates(options: { after?: { fileKey: string; nodeId: string } | null; limit: number }): Promise<StoredNode[]>;
@@ -133,6 +151,14 @@ export interface Store {
   recordSync(sync: { fileKey: string; rootNodeId?: string | null; counts?: Record<string, any>; createdAt?: string | null }): Promise<SyncEvent>;
   listFiles(options?: { fileKey?: string | null }): Promise<FileWithCounts[]>;
   listScopes(fileKey: string): Promise<Scope[]>;
+  updateFileSettings(fileKey: string, settings: Record<string, any>): Promise<FileRow | null>;
+
+  // --- library components
+  getLibraryComponents(keys: string[]): Promise<LibraryComponent[]>;
+  upsertLibraryComponent(row: { componentKey: string; fileKey?: string | null; nodeId?: string | null; name?: string | null; resolvedAt: string; error?: string | null }): Promise<LibraryComponent>;
+  /** Per variable id: the live nodes whose `attrs.resolvedVariables` has it (design-token usage). */
+  tokenUsage(fileKey: string, variableKeys: string[]): Promise<{ variableKey: string; layers: number }[]>;
+  placementCounts(fileKey: string, mainIds: string[], regions?: (string | null)[] | null): Promise<{ mainComponentId: string; placements: number; placementsInScope: number | null }[]>;
 
   // --- v3 reads
   listNodes(fileKey: string, filter: V3Filter, page: ListNodesPage): Promise<{ nodes: V3Node[]; total: number; next: PageAfter | null }>;
@@ -153,6 +179,18 @@ export interface Store {
   blockNode(fileKey: string, nodeId: string, block: { reason: string | null; by: string | null; at: string }):
     Promise<{ node: V3Node; released: { claimId: string; worker: string } | null } | null>;
   unblockNode(fileKey: string, nodeId: string): Promise<{ node: V3Node; prior: { at: string | null; by: string | null; reason: string | null } } | null>;
+
+  // --- notes (newest first; edit / close / delete touch open notes only and return null otherwise)
+  insertNote(note: { fileKey: string; nodeId: string; body: string; author: string; worker?: string | null; at: string }): Promise<NodeNote>;
+  getNote(fileKey: string, noteId: string): Promise<NodeNote | null>;
+  listNotes(fileKey: string, nodeIds: string[], options?: { status?: 'open' | 'all' }): Promise<NodeNote[]>;
+  /** Open and resolved note counts of the nodes that have any (dismissed notes are not counted). */
+  noteCounts(fileKey: string, nodeIds: string[]): Promise<{ nodeId: string; open: number; resolved: number }[]>;
+  editNote(fileKey: string, noteId: string, edit: { body: string; at: string }): Promise<NodeNote | null>;
+  closeNote(fileKey: string, noteId: string, close: { status: 'resolved' | 'dismissed'; by: string; at: string; commitRef?: string | null }): Promise<NodeNote | null>;
+  deleteNote(fileKey: string, noteId: string): Promise<NodeNote | null>;
+  /** Resolves the open notes of `nodeIds`; returns them, oldest first. */
+  resolveNotes(fileKey: string, nodeIds: string[], resolve: { by: string; at: string; commitRef?: string | null }): Promise<NodeNote[]>;
 
   // --- events
   insertEvent(event: { fileKey: string; type: string; actor?: string | null; data?: Record<string, any>; createdAt?: string | null }): Promise<StoredEvent>;

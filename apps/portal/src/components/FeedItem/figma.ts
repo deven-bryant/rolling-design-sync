@@ -41,7 +41,13 @@ export const figma = {
   },
   'File type icon': {
     setId: '111:8439',
-    axes: { 'File type': { 'Document / PDF': '<FileTypeIcon type="pdf">' }, Type: { Default: '' } },
-    variants: [{ nodeId: '111:8497', key: '5256e9391c4654591a33656768ceece851012cff', name: 'File type=Document / PDF, Type=Default' }],
+    axes: {
+      'File type': { 'Document / PDF': '<FileTypeIcon type="pdf">', 'Simple / Empty': '<FileTypeIcon type="empty">' },
+      Type: { Default: '' },
+    },
+    variants: [
+      { nodeId: '111:8497', key: '5256e9391c4654591a33656768ceece851012cff', name: 'File type=Document / PDF, Type=Default' },
+      { nodeId: '111:8469', key: '2a5e66ba5fb1fb802f06b4f30723b51b51c34297', name: 'File type=Simple / Empty, Type=Default' },
+    ],
   },
 } as const;

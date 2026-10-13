@@ -7,6 +7,8 @@
  */
 const { Pool } = require('pg');
 const { pathNodeIds } = require('../ltree');
+const { removedUses, removedWarnings, REMOVED_K } = require('./removed');
+const { TOKENS_K, TOKENS_LABEL, isTokensItemPath } = require('./tokens');
 
 const iso = v => (v instanceof Date ? v.toISOString() : v ?? null);
 
@@ -18,9 +20,17 @@ const mapNode = r => r && ({
   claimExpiresAt: iso(r.claim_expires_at), deletedAt: iso(r.deleted_at), createdAt: iso(r.created_at), updatedAt: iso(r.updated_at),
   implementedAttrs: r.implemented_attrs ?? null, changeType: r.change_type ?? null, changedProps: r.changed_props ?? [],
   changeCategories: r.change_categories ?? [], claimId: r.claim_id ?? null, blockedAt: iso(r.blocked_at),
-  blockedBy: r.blocked_by ?? null, blockedReason: r.blocked_reason ?? null, orderKey: r.order_key ?? null,
+  blockedBy: r.blocked_by ?? null, blockedReason: r.blocked_reason ?? null, orderKey: r.order_key ?? null, library: !!r.library,
 });
-const mapFile = r => r && ({ fileKey: r.file_key, name: r.name, lastSyncAt: iso(r.last_sync_at), createdAt: iso(r.created_at) });
+const mapFile = r => r && ({ fileKey: r.file_key, name: r.name, lastSyncAt: iso(r.last_sync_at), createdAt: iso(r.created_at), settings: r.settings ?? {} });
+const mapLibraryComponent = r => r && ({
+  componentKey: r.component_key, fileKey: r.file_key ?? null, nodeId: r.node_id ?? null, name: r.name ?? null, resolvedAt: iso(r.resolved_at), error: r.error ?? null,
+});
+const mapNote = r => r && ({
+  noteId: r.note_id, fileKey: r.file_key, nodeId: r.node_id, body: r.body, author: r.author, worker: r.worker ?? null, status: r.status,
+  createdAt: iso(r.created_at), updatedAt: iso(r.updated_at), resolvedAt: iso(r.resolved_at), resolvedBy: r.resolved_by ?? null, commitRef: r.commit_ref ?? null,
+});
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const mapEvent = r => r && ({
   id: Number(r.id), fileKey: r.file_key, type: r.type, actor: r.actor ?? null, data: r.data ?? {}, createdAt: iso(r.created_at),
 });
@@ -37,7 +47,7 @@ const NODE_COLUMNS = {
   implementedHash: 'implemented_hash', dirty: 'dirty', implementedCommit: 'implemented_commit', implementedAt: 'implemented_at',
   claimedBy: 'claimed_by', claimExpiresAt: 'claim_expires_at', deletedAt: 'deleted_at',
   implementedAttrs: 'implemented_attrs', changeType: 'change_type', changedProps: 'changed_props', changeCategories: 'change_categories',
-  claimId: 'claim_id', blockedAt: 'blocked_at', blockedBy: 'blocked_by', blockedReason: 'blocked_reason',
+  claimId: 'claim_id', blockedAt: 'blocked_at', blockedBy: 'blocked_by', blockedReason: 'blocked_reason', library: 'library',
 };
 const LTREE_COLUMNS = new Set(['path']);
 
@@ -66,12 +76,17 @@ const v3StateSql = a => ({
   dirty: `(${a}.dirty and ${a}.blocked_at is null)`,
   clean: `(not ${a}.dirty and ${a}.blocked_at is null and ${a}.deleted_at is null)`,
   blocked: `(${a}.blocked_at is not null)`,
+  requested: `(${a}.dirty and ${a}.blocked_at is null and ${a}.change_type = 'requested')`,
 });
+/** Node `a` has open notes. */
+const openNotesSql = a => `exists (select 1 from node_note nn where nn.file_key = ${a}.file_key and nn.node_id = ${a}.node_id and nn.status = 'open')`;
 const v3VisibleSql = a => `(${a}.dirty or ${a}.blocked_at is not null or ${a}.deleted_at is null)`;
 const v3CountsSql = a => {
   const s = v3StateSql(a);
   return `json_build_object('total', count(*) filter (where ${v3VisibleSql(a)}), 'dirty', count(*) filter (where ${s.dirty}), 'blocked', count(*) filter (where ${s.blocked}))`;
 };
+/** The file's trackLibraryComponents setting (alias `f` of `file`) as SQL; true when absent. */
+const trackingSql = f => `coalesce((${f}.settings ->> 'trackLibraryComponents')::boolean, true)`;
 /** Mirrors documentSortKey (src/documentOrder.js) over alias `a`: root path, ' ', order key (no key: path, ' '). */
 const documentSortSql = a => `coalesce(case when ${a}.order_key is null then ${a}.path::text || ' '
   else coalesce(subpath(${a}.path, 0, greatest(1, nlevel(${a}.path) - nlevel(${a}.order_key::ltree) + 1))::text, '') || ' ' || ${a}.order_key end, '')`;
@@ -106,6 +121,10 @@ function v3Where(fileKey, f, params) {
       where.push(`exists (select 1 from node u where u.file_key = ${fk} and u.node_id = any(${ids}::text[]) and n.path <@ u.path and nlevel(n.path) <= nlevel(u.path) + ${p(f.depth)}::int)`);
     }
   }
+  if (f.hasNotes === true) where.push(openNotesSql('n'));
+  else if (f.hasNotes === false) where.push(`not ${openNotesSql('n')}`);
+  if (f.library === 'exclude') where.push('not n.library');
+  else if (f.library === 'only') where.push('n.library');
   if (f.types.length) where.push(`n.node_type = any(${p(f.types)}::text[])`);
   if (f.changeTypes.length) where.push(`n.change_type = any(${p(f.changeTypes)}::text[])`);
   if (f.categories.length) where.push(`n.change_categories && ${p(f.categories)}::text[]`);
@@ -159,6 +178,18 @@ const v3RootOrdSql = (f, params) => {
   return `(select u.o::int - 1 from unnest(${ids}::text[]) with ordinality u(id, o) join node r on r.file_key = $1 and r.node_id = u.id
     where n.path <@ r.path${depth} order by u.o limit 1)`;
 };
+/**
+ * The removed root of a tombstone (alias `a`) as SQL: the topmost tombstone on
+ * its path (its parent live or not stored), or null when `a` is live or that
+ * root sits inside a live COMPONENT / COMPONENT_SET. Mirrors MemoryStore's removedRootOf.
+ */
+const removedRootSql = a => `(case when ${a}.deleted_at is null then null else (select r.root from (
+    select subpath(${a}.path, 0, coalesce(max(l), 0) + 1) as root from generate_series(1, nlevel(${a}.path) - 1) l
+    where not exists (select 1 from node t where t.file_key = ${a}.file_key and t.path = subpath(${a}.path, 0, l) and t.deleted_at is not null)) r
+  where not exists (select 1 from node c where c.file_key = ${a}.file_key and c.path @> r.root and c.path <> r.root
+    and c.deleted_at is null and c.node_type in ('COMPONENT', 'COMPONENT_SET'))) end)`;
+/** The work-item key path of a token node (alias `a`): its collection, or the root itself; null outside the tokens scope. Mirrors store/tokens.js tokensKeyPath. */
+const tokensKeySql = a => `(case when subpath(${a}.path, 0, 1) = '${TOKENS_LABEL}'::ltree then subpath(${a}.path, 0, least(nlevel(${a}.path), 2)) end)`;
 /** Nodes inside the `under` subtree (alias `n`), as SQL; pushes its parameter. */
 const v3InUnderSql = (under, params) => { params.push(under); return `n.path <@ (select u.path from node u where u.file_key = $1 and u.node_id = $${params.length})`; };
 
@@ -245,20 +276,21 @@ class PostgresStore {
     const { rows } = await this.query(
       `insert into node (file_key, node_id, node_type, name, parent_id, path, attrs, is_instance, main_component_id, content_hash, capture_version,
                          dirty, implemented_hash, implemented_commit, implemented_at, implemented_attrs,
-                         change_type, changed_props, change_categories)
+                         change_type, changed_props, change_categories, library)
        values ($1, $2, $3, $4, $5, $6::ltree, $7::jsonb, $8, $9, $10, $11,
                not $12::boolean,
                case when $12::boolean then $10 end,
                case when $12::boolean then 'baseline' end,
                case when $12::boolean then $13::timestamptz end,
                case when $12::boolean then $7::jsonb end,
-               $14, $15::text[], $16::text[])
+               $14, $15::text[], $16::text[], $17::boolean)
        on conflict (file_key, node_id) do update set
          node_type = excluded.node_type, name = excluded.name, parent_id = excluded.parent_id, path = excluded.path,
          attrs = excluded.attrs, is_instance = excluded.is_instance, main_component_id = excluded.main_component_id,
          content_hash = excluded.content_hash, capture_version = excluded.capture_version, deleted_at = null,
          dirty = excluded.content_hash is distinct from node.implemented_hash,
          change_type = excluded.change_type, changed_props = excluded.changed_props, change_categories = excluded.change_categories,
+         library = node.library or excluded.library,
          blocked_at = case when node.content_hash is distinct from excluded.content_hash then null else node.blocked_at end,
          blocked_by = case when node.content_hash is distinct from excluded.content_hash then null else node.blocked_by end,
          blocked_reason = case when node.content_hash is distinct from excluded.content_hash then null else node.blocked_reason end
@@ -266,7 +298,7 @@ class PostgresStore {
       [fileKey, row.nodeId, row.nodeType ?? null, row.name ?? null, row.parentId ?? null, row.path, json(row.attrs || {}),
         !!row.isInstance, row.mainComponentId ?? null, row.contentHash, row.captureVersion ?? 1,
         !!baseline, baseline ? baseline.implementedAt : null,
-        row.changeType ?? null, row.changedProps || [], row.changeCategories || []]);
+        row.changeType ?? null, row.changedProps || [], row.changeCategories || [], !!row.library]);
     return { ...mapNode(rows[0]), baselined: !!rows[0].baselined };
   }
 
@@ -288,11 +320,14 @@ class PostgresStore {
     return rows.map(r => r.node_id);
   }
 
-  /** Tombstones existing rows (last-known attrs kept); unknown ids are ignored. */
+  /**
+   * Tombstones existing rows (last-known attrs kept); unknown ids are ignored.
+   * A row never implemented (`implemented_hash` null) becomes a clean tombstone.
+   */
   async tombstoneNodes(fileKey, nodeIds, deletedAt) {
     if (!nodeIds.length) return [];
     const { rows } = await this.query(
-      `update node set deleted_at = $3, dirty = true
+      `update node set deleted_at = $3, dirty = implemented_hash is not null
        where file_key = $1 and node_id = any($2::text[]) and deleted_at is null returning *`,
       [fileKey, nodeIds, deletedAt]);
     return rows.map(mapNode);
@@ -433,6 +468,66 @@ class PostgresStore {
     return mapSyncEvent(rows[0]);
   }
 
+  /**
+   * Library nodes: marks every row in the subtree of each stored node in
+   * `rootIds` (the root included) `library = true`. Returns the ids newly marked.
+   */
+  async markLibrarySubtrees(fileKey, rootIds) {
+    if (!rootIds.length) return [];
+    const { rows } = await this.query(
+      `update node n set library = true
+       where n.file_key = $1 and not n.library
+         and n.path <@ any(array(select r.path from node r where r.file_key = $1 and r.node_id = any($2::text[])))
+       returning n.node_id`, [fileKey, rootIds]);
+    return rows.map(r => r.node_id);
+  }
+
+  /** Merges `settings` into the file's settings; null for an unknown file. */
+  async updateFileSettings(fileKey, settings) {
+    const { rows } = await this.query(
+      'update file set settings = settings || $2::jsonb where file_key = $1 returning *', [fileKey, json(settings)]);
+    return mapFile(rows[0]) || null;
+  }
+
+  /** Cached library component resolutions for `keys`; unknown keys are skipped. */
+  async getLibraryComponents(keys) {
+    if (!keys.length) return [];
+    const { rows } = await this.query('select * from library_component where component_key = any($1::text[]) order by component_key', [keys]);
+    return rows.map(mapLibraryComponent);
+  }
+
+  /** Inserts or replaces the cached resolution of one library component key. */
+  async upsertLibraryComponent({ componentKey, fileKey = null, nodeId = null, name = null, resolvedAt, error = null }) {
+    const { rows } = await this.query(
+      `insert into library_component (component_key, file_key, node_id, name, resolved_at, error) values ($1, $2, $3, $4, $5, $6)
+       on conflict (component_key) do update set file_key = excluded.file_key, node_id = excluded.node_id, name = excluded.name,
+         resolved_at = excluded.resolved_at, error = excluded.error
+       returning *`, [componentKey, fileKey, nodeId, name, resolvedAt, error]);
+    return mapLibraryComponent(rows[0]);
+  }
+
+  /**
+   * Per main component id: its live instance rows file-wide (`placements`)
+   * and, with `regions` (ltree paths; a null entry is the whole file), those
+   * inside any region (`placementsInScope`, else null).
+   */
+  /**
+   * @param {string} fileKey
+   * @param {string[]} mainIds
+   * @param {(string | null)[] | null} [regions]
+   */
+  async placementCounts(fileKey, mainIds, regions = null) {
+    if (!mainIds.length) return [];
+    const scoped = regions === null ? 'null::int' : regions.includes(null)
+      ? 'count(i.node_id)::int' : 'count(i.node_id) filter (where i.path <@ any($3::text[]::ltree[]))::int';
+    const { rows } = await this.query(
+      `select m.id, count(i.node_id)::int as placements, ${scoped} as in_scope
+       from unnest($2::text[]) m(id)
+         left join node i on i.file_key = $1 and i.main_component_id = m.id and i.deleted_at is null
+       group by m.id order by m.id`, regions === null || regions.includes(null) ? [fileKey, mainIds] : [fileKey, mainIds, regions]);
+    return rows.map(r => ({ mainComponentId: r.id, placements: r.placements, placementsInScope: r.in_scope ?? null }));
+  }
+
   // --- v3 reads -------------------------------------------------------------
   /**
    * One page of a file's nodes matching a v3 filter (`filter.states` already
@@ -492,7 +587,7 @@ class PostgresStore {
          count(*) filter (where ${s.dirty})::int as dirty, count(*) filter (where ${s.clean})::int as clean,
          count(*) filter (where ${s.blocked})::int as blocked,
          count(*) filter (where ${ct} = 'added')::int as added, count(*) filter (where ${ct} = 'modified')::int as modified,
-         count(*) filter (where ${ct} = 'deleted')::int as deleted
+         count(*) filter (where ${ct} = 'deleted')::int as deleted, count(*) filter (where ${ct} = 'requested')::int as requested
        from node n where ${where}`, params);
     const { rows: categories } = await this.query(
       `select c as key, count(*)::int as count from node n cross join unnest(n.change_categories) c where ${where} group by c`, params);
@@ -514,7 +609,7 @@ class PostgresStore {
     return {
       total: t.total,
       byState: { dirty: t.dirty, clean: t.clean, blocked: t.blocked },
-      byChangeType: { added: t.added, modified: t.modified, deleted: t.deleted },
+      byChangeType: { added: t.added, modified: t.modified, deleted: t.deleted, requested: t.requested },
       byCategory: Object.fromEntries(categories.map(r => [r.key, r.count])),
       byType: Object.fromEntries(types.map(r => [r.key, r.count])),
       byFrame,
@@ -534,72 +629,85 @@ class PostgresStore {
     const where = v3Where(fileKey, filter, params);
     const keySql = page.group === 'frame'
       ? (level => `(case when nlevel(n.path) > ${level}${filter.regions ? ` and ${v3InUnderSql(filter.under[0], params)}` : ''} then subpath(n.path, 0, ${level} + 1) end)`)(v3UnderLevelSql(filter.under[0], params))
-      : `(select a.path from node a where a.file_key = n.file_key and a.path @> n.path
-          and a.node_type in ('COMPONENT', 'COMPONENT_SET') order by nlevel(a.path) desc limit 1)`;
+      : `coalesce(${tokensKeySql('n')}, (select a.path from node a where a.file_key = n.file_key and a.path @> n.path
+          and a.node_type in ('COMPONENT', 'COMPONENT_SET') order by nlevel(a.path) desc limit 1))`;
+    const removedSql = page.group === 'frame' ? 'null::ltree' : `(case when ${tokensKeySql('n')} is null then ${removedRootSql('n')} end)`;
+    const tokensK = page.group === 'frame' ? '' : `when subpath(g.key_path, 0, 1) = '${TOKENS_LABEL}'::ltree then '${TOKENS_K}' || coalesce(kn.doc_key, '') || ' ' || g.key_path::text`;
     const maxIds = Number(page.maxIds);
     const progressWhere = page.progress ? v3Where(fileKey, { ...filter, states: ['dirty', 'clean', 'blocked'] }, params) : null;
     const progress = page.progress ? `,
-      progress_nodes as (select ${keySql} as key_path, ${v3StateSql('n').clean} as clean from node n where ${progressWhere}),
-      progress as (select key_path, count(*)::int as total, count(*) filter (where clean)::int as clean from progress_nodes group by key_path)` : '';
-    const items = `with m as (
-        select n.node_id, n.path, ${documentSortSql('n')} as doc_key, n.changed_props, n.change_categories, ${keySql} as key_path
+      progress_nodes as (select coalesce(x.removed_path, x.key_path) as key_path, x.removed_path is not null as removed, x.clean
+        from (select ${keySql} as key_path, ${removedSql} as removed_path, ${v3StateSql('n').clean} as clean from node n where ${progressWhere}) x),
+      progress as (select key_path, removed, count(*)::int as total, count(*) filter (where clean)::int as clean from progress_nodes group by key_path, removed)` : '';
+    const items = `with m0 as (
+        select n.node_id, n.path, ${documentSortSql('n')} as doc_key, n.changed_props, n.change_categories, ${keySql} as key_path, ${removedSql} as removed_path
         from node n where ${where}),
+      m as (select m0.node_id, m0.doc_key, m0.changed_props, m0.change_categories,
+          coalesce(m0.removed_path, m0.key_path) as key_path, m0.removed_path is not null as removed from m0),
       g as (
-        select key_path, count(*)::int as node_count,
+        select key_path, removed, count(*)::int as node_count,
           (array_agg(node_id order by doc_key collate "C", node_id collate "C"))[1:${maxIds}] as node_ids
-        from m group by key_path),
-      pr as (select key_path, array_agg(distinct x) as props from m cross join unnest(m.changed_props) x group by key_path),
-      ca as (select key_path, array_agg(distinct x) as cats from m cross join unnest(m.change_categories) x group by key_path),
+        from m group by key_path, removed),
+      pr as (select key_path, removed, array_agg(distinct x) as props from m cross join unnest(m.changed_props) x group by key_path, removed),
+      ca as (select key_path, removed, array_agg(distinct x) as cats from m cross join unnest(m.change_categories) x group by key_path, removed),
       items as (
-        select coalesce(kn.doc_key || ' ' || g.key_path::text, g.key_path::text, '~') collate "C" as k, g.key_path, g.node_count, g.node_ids,
+        select (case when g.removed then '${REMOVED_K}' || coalesce(kn.doc_key, '') || ' ' || g.key_path::text ${tokensK}
+            else coalesce(kn.doc_key || ' ' || g.key_path::text, g.key_path::text, '~') end) collate "C" as k,
+          g.key_path, g.removed, g.node_count, g.node_ids,
           coalesce(pr.props, '{}') as props, coalesce(ca.cats, '{}') as cats
         from g left join lateral (
             select ${documentSortSql('f')} as doc_key from node f where f.file_key = $1 and f.path = g.key_path limit 1) kn on true
-          left join pr on pr.key_path is not distinct from g.key_path
-          left join ca on ca.key_path is not distinct from g.key_path)${progress}`;
+          left join pr on pr.key_path is not distinct from g.key_path and pr.removed = g.removed
+          left join ca on ca.key_path is not distinct from g.key_path and ca.removed = g.removed)${progress}`;
     const { rows: [{ total }] } = await this.query(`${items} select count(*)::int as total from items`, params);
     const pageParams = params.slice();
     const p = v => { pageParams.push(v); return `$${pageParams.length}`; };
     const after = page.after ? `where i.k > ${p(page.after.k)}` : '';
     const placements = page.group === 'component'
-      ? `, case when f.node_id is null then null else
+      ? `, case when f.node_id is null or i.removed then null else
            (select count(*)::int from node pl where pl.file_key = $1 and pl.main_component_id = f.node_id and pl.deleted_at is null) end as placements${
-        filter.regions ? `, case when f.node_id is null then null else
+        filter.regions ? `, case when f.node_id is null or i.removed then null else
            (select count(*)::int from node pl where pl.file_key = $1 and pl.main_component_id = f.node_id and pl.deleted_at is null${
              filter.regions[0] === null ? '' : ` and pl.path <@ any(${p(filter.regions)}::text[]::ltree[])`}) end as placements_in_scope` : ''}`
       : '';
     const { rows } = await this.query(
       `${items}
-       select i.k, i.key_path::text as key_path, i.node_count, i.node_ids, i.props, i.cats, f.name, f.node_type,
-         coalesce(f.attrs #> '{componentReference,set}',
+       select i.k, i.key_path::text as key_path, i.removed, i.node_count, i.node_ids, i.props, i.cats, f.name, f.node_type,
+         case when i.removed then null else coalesce(f.attrs #> '{componentReference,set}',
            (select coalesce(
               (select x.attrs #> '{componentReference,set}' from node x
                where x.file_key = s.file_key and x.attrs #>> '{componentReference,set,id}' = s.node_id limit 1),
               jsonb_build_object('id', s.node_id, 'key', coalesce(s.attrs #>> '{componentReference,key}', s.node_id), 'name', s.name))
             from node s where s.file_key = $1 and s.node_type = 'COMPONENT_SET'
-              and (s.path = i.key_path or s.path = subpath(i.key_path, 0, nlevel(i.key_path) - 1)) limit 1)) as component_set${placements}${page.progress ? ', p.total as progress_total, p.clean as progress_clean' : ''}
+              and (s.path = i.key_path or s.path = subpath(i.key_path, 0, nlevel(i.key_path) - 1)) limit 1)) end as component_set${placements}${page.progress ? ', p.total as progress_total, p.clean as progress_clean' : ''}
        from items i left join lateral (
          select f.node_id, f.name, f.node_type, f.attrs from node f where f.file_key = $1 and f.path = i.key_path limit 1) f on true
-       ${page.progress ? 'left join progress p on p.key_path is not distinct from i.key_path' : ''}
+       ${page.progress ? 'left join progress p on p.key_path is not distinct from i.key_path and p.removed = i.removed' : ''}
        ${after}
        order by i.k
        limit ${p(page.limit + 1)}`, pageParams);
     const more = rows.length > page.limit;
     const pageRows = more ? rows.slice(0, page.limit) : rows;
-    const out = pageRows.map(r => ({
-      k: r.k,
-      keyId: r.key_path === null ? null : lastNodeId(r.key_path),
-      name: r.key_path === null ? null : r.name ?? null,
-      type: r.key_path === null ? null : r.node_type ?? null,
-      ...(r.component_set ? { set: r.component_set } : {}),
-      nodeCount: r.node_count,
-      categories: [...r.cats].sort(),
-      changedProps: [...r.props].sort(),
-      ...(page.group === 'component' ? { placements: r.placements ?? null } : {}),
-      ...(page.group === 'component' && filter.regions ? { placementsInScope: r.placements_in_scope ?? null } : {}),
-      nodeIds: r.node_ids || [],
-      ...(page.progress ? { progress: { total: r.progress_total, clean: r.progress_clean } } : {}),
-    }));
+    const details = await this.removedDetails(fileKey, pageRows.filter(r => r.removed).map(r => r.key_path));
+    const out = pageRows.map(r => {
+      const tokens = !r.removed && r.key_path !== null && isTokensItemPath(r.key_path);
+      return {
+        k: r.k,
+        keyId: r.key_path === null ? null : lastNodeId(r.key_path),
+        name: r.key_path === null ? null : r.name ?? null,
+        type: r.key_path === null ? null : r.node_type ?? null,
+        ...(r.component_set && !tokens ? { set: r.component_set } : {}),
+        nodeCount: r.node_count,
+        categories: [...r.cats].sort(),
+        changedProps: [...r.props].sort(),
+        ...(page.group === 'component' && !r.removed && !tokens ? { placements: r.placements ?? null } : {}),
+        ...(page.group === 'component' && !r.removed && !tokens && filter.regions ? { placementsInScope: r.placements_in_scope ?? null } : {}),
+        nodeIds: r.node_ids || [],
+        ...(page.progress ? { progress: { total: r.progress_total, clean: r.progress_clean } } : {}),
+        ...(r.removed ? { kind: 'removed', ...details.get(r.key_path) } : {}),
+        ...(tokens ? { kind: 'tokens' } : {}),
+      };
+    });
     const last = out[out.length - 1];
     return { items: out, total, next: more ? { k: last.k, id: last.keyId ?? '' } : null };
   }
@@ -614,12 +722,22 @@ class PostgresStore {
         select n.*, ${documentSortSql('n')} as doc_key, ${v3StateSql('n').clean} as clean, (${matches}) as matches
         from node n where ${where}),
       assigned as (
-        select n.*, c.node_id as component_id, c.name as component_name, c.node_type as component_type,
+        select n.*, case when tk.key is not null then tn.node_id when rr.root is not null then rn.node_id else c.node_id end as component_id,
+          case when tk.key is not null then tn.name when rr.root is not null then rn.name else c.name end as component_name,
+          case when tk.key is not null then tn.node_type when rr.root is not null then rn.node_type else c.node_type end as component_type,
           coalesce(c.attrs #>> '{componentReference,key}', c.node_id) as variant_key,
-          c.path::text as key_path, cs.ref as component_set,
-          case when cs.ref is not null then 'set:' || coalesce(cs.ref->>'key', cs.ref->>'id') else c.path::text end as identity,
-          coalesce(${documentSortSql('s')}, ${documentSortSql('c')}) as owner_key
-        from source n left join lateral (
+          coalesce(tk.key, rr.root, c.path)::text as key_path, case when tk.key is not null or rr.root is not null then null else cs.ref end as component_set,
+          case when tk.key is not null then tk.key::text when rr.root is not null then 'removed:' || rr.root::text
+            when cs.ref is not null then 'set:' || coalesce(cs.ref->>'key', cs.ref->>'id') else c.path::text end as identity,
+          case when tk.key is not null then '${TOKENS_K}' || coalesce(${documentSortSql('tn')}, '')
+            when rr.root is not null then '${REMOVED_K}' || coalesce(${documentSortSql('rn')}, '')
+            else coalesce(${documentSortSql('s')}, ${documentSortSql('c')}) end as owner_key,
+          rr.root is not null as removed, tk.key is not null as tokens
+        from source n left join lateral (select ${tokensKeySql('n')} as key) tk on true
+        left join lateral (select x.* from node x where x.file_key = n.file_key and x.path = tk.key limit 1) tn on true
+        left join lateral (select case when tk.key is null then ${removedRootSql('n')} end as root) rr on true
+        left join lateral (select x.* from node x where x.file_key = n.file_key and x.path = rr.root limit 1) rn on true
+        left join lateral (
           select a.* from node a where a.file_key = n.file_key and a.path @> n.path
             and a.node_type in ('COMPONENT', 'COMPONENT_SET') order by nlevel(a.path) desc limit 1) c on true
         left join lateral (
@@ -633,7 +751,7 @@ class PostgresStore {
         left join node s on s.file_key = n.file_key and s.node_id = cs.ref->>'id'),
       m as (select * from assigned where matches),
       g as (
-        select identity, coalesce(min(owner_key || ' ' || identity) collate "C", '~') as k,
+        select identity, bool_or(removed) as removed, bool_or(tokens) as tokens, min(key_path) as key_path, coalesce(min(owner_key || ' ' || identity) collate "C", '~') as k,
           (array_agg(component_set order by doc_key collate "C", node_id collate "C"))[1] as component_set,
           (array_agg(component_id order by doc_key collate "C", node_id collate "C"))[1] as component_id,
           (array_agg(component_name order by doc_key collate "C", node_id collate "C"))[1] as component_name,
@@ -661,6 +779,7 @@ class PostgresStore {
         left join progress on progress.identity is not distinct from g.identity
       ${after} order by g.k collate "C" limit ${p(page.limit + 1)}`, params);
     const more = rows.length > page.limit;
+    const details = await this.removedDetails(fileKey, rows.slice(0, page.limit).filter(r => r.removed).map(r => r.key_path));
     const items = rows.slice(0, page.limit).map(r => ({
       k: r.k, keyId: r.component_set ? r.component_set.key ?? r.component_set.id : r.component_id,
       name: r.component_set ? r.component_set.name : r.component_name,
@@ -668,9 +787,67 @@ class PostgresStore {
       ...(r.component_set ? { set: r.component_set, variants: r.variants } : {}),
       nodeCount: r.node_count, nodeIds: r.node_ids, categories: [...r.cats].sort(), changedProps: [...r.props].sort(),
       ...(page.progress ? { progress: { total: r.progress_total, clean: r.progress_clean } } : {}),
+      ...(r.removed ? { kind: 'removed', ...details.get(r.key_path) } : {}),
+      ...(r.tokens ? { kind: 'tokens' } : {}),
     }));
     const last = items[items.length - 1];
     return { items, total, next: more ? { k: last.k, id: last.keyId ?? '' } : null };
+  }
+
+  /**
+   * Live layer nodes whose `attrs.resolvedVariables` has an entry with each
+   * variable key (any imported id of it) — one scan of the file's live rows,
+   * no index needed.
+   */
+  async tokenUsage(fileKey, variableKeys) {
+    const keys = [...new Set(variableKeys)];
+    if (!keys.length) return [];
+    const { rows } = await this.query(
+      `select v.key as variable_key, count(n.node_id)::int as layers
+       from unnest($2::text[]) v(key)
+         left join node n on n.file_key = $1 and n.deleted_at is null
+           and jsonb_typeof(n.attrs -> 'resolvedVariables') = 'object'
+           and exists (select 1 from jsonb_each(n.attrs -> 'resolvedVariables') e
+                       where jsonb_typeof(e.value) = 'object' and e.value ->> 'key' = v.key)
+       group by v.key`, [fileKey, keys]);
+    const counts = new Map(rows.map(r => [r.variable_key, r.layers]));
+    return keys.map(variableKey => ({ variableKey, layers: counts.get(variableKey) ?? 0 }));
+  }
+
+  /**
+   * `{ uses, warnings }` per removed root path (see store/removed.js): the
+   * main components its tombstoned instance rows reference, with their live
+   * placements file-wide, and its removed components that still have live
+   * placements.
+   *
+   * @param {string} fileKey
+   * @param {string[]} roots ltree paths
+   */
+  async removedDetails(fileKey, roots) {
+    const out = new Map();
+    if (!roots.length) return out;
+    const live = id => `(select count(*)::int from node l where l.file_key = $1 and l.main_component_id = ${id} and l.deleted_at is null)`;
+    const { rows: uses } = await this.query(
+      `select r.root, i.main_component_id, count(*)::int as placements_removed, min(m.name) as name,
+         (array_agg(m.attrs -> 'componentReference'))[1] as ref, ${live('i.main_component_id')} as live
+       from unnest($2::text[]) r(root)
+         join node i on i.file_key = $1 and i.path <@ r.root::ltree and i.main_component_id is not null and i.deleted_at is not null
+         left join node m on m.file_key = $1 and m.node_id = i.main_component_id
+       group by r.root, i.main_component_id`, [fileKey, roots]);
+    const { rows: mains } = await this.query(
+      `select r.root, c.node_id, ${documentSortSql('c')} as doc_key, ${live('c.node_id')} as live
+       from unnest($2::text[]) r(root)
+         join node c on c.file_key = $1 and c.path <@ r.root::ltree and c.deleted_at is not null and c.node_type in ('COMPONENT', 'COMPONENT_SET')`,
+      [fileKey, roots]);
+    for (const root of roots) {
+      out.set(root, {
+        uses: removedUses(uses.filter(u => u.root === root).map(u => ({
+          componentId: u.main_component_id, name: u.name, ref: u.ref, placementsRemoved: u.placements_removed, livePlacements: u.live,
+        }))),
+        warnings: removedWarnings(mains.filter(c => c.root === root).map(c => ({ componentId: c.node_id, docKey: c.doc_key, livePlacements: c.live }))),
+      });
+    }
+    return out;
   }
 
   /**
@@ -721,7 +898,7 @@ class PostgresStore {
   /** Tracked files with node counts, most recently synced first; `fileKey` narrows to one. */
   async listFiles({ fileKey = null } = {}) {
     const { rows } = await this.query(
-      `select f.*, (select ${v3CountsSql('n')} from node n where n.file_key = f.file_key) as counts
+      `select f.*, (select ${v3CountsSql('n')} from node n where n.file_key = f.file_key and (not n.library or ${trackingSql('f')})) as counts
        from file f
        where $1::text is null or f.file_key = $1
        order by f.last_sync_at desc nulls last, f.file_key collate "C"`, [fileKey]);
@@ -732,7 +909,8 @@ class PostgresStore {
   async listScopes(fileKey) {
     const { rows } = await this.query(
       `select e.root_node_id, e.counts as last_counts, e.created_at, r.name, r.node_type, r.deleted_at,
-              (select ${v3CountsSql('d')} from node d where d.file_key = e.file_key and d.path <@ r.path) as counts
+              (select ${v3CountsSql('d')} from node d where d.file_key = e.file_key and d.path <@ r.path
+                 and (not d.library or (select ${trackingSql('f')} from file f where f.file_key = e.file_key))) as counts
        from (select distinct on (root_node_id) * from sync_event
              where file_key = $1 and root_node_id is not null
              order by root_node_id, created_at desc, id desc) e
@@ -861,6 +1039,69 @@ class PostgresStore {
     return { node: mapNodeV3(row), prior: { at: iso(row.prior_blocked_at), by: row.prior_blocked_by ?? null, reason: row.prior_blocked_reason ?? null } };
   }
 
+  // --- v3 notes ---------------------------------------------------------------
+  async insertNote({ fileKey, nodeId, body, author, worker = null, at }) {
+    const { rows: [row] } = await this.query(
+      `insert into node_note (file_key, node_id, body, author, worker, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $6) returning *`,
+      [fileKey, nodeId, body, author, worker, at]);
+    return mapNote(row);
+  }
+
+  async getNote(fileKey, noteId) {
+    if (!UUID_RE.test(noteId)) return null;
+    const { rows: [row] } = await this.query('select * from node_note where file_key = $1 and note_id = $2::uuid', [fileKey, noteId]);
+    return mapNote(row) || null;
+  }
+
+  async listNotes(fileKey, nodeIds, { status = 'open' } = {}) {
+    if (!nodeIds.length) return [];
+    const { rows } = await this.query(
+      `select * from node_note where file_key = $1 and node_id = any($2::text[]) and ($3::text is null or status = $3)
+       order by created_at desc, note_id desc`, [fileKey, nodeIds, status === 'all' ? null : status]);
+    return rows.map(mapNote);
+  }
+
+  async noteCounts(fileKey, nodeIds) {
+    if (!nodeIds.length) return [];
+    const { rows } = await this.query(
+      `select node_id, count(*) filter (where status = 'open')::int as open, count(*) filter (where status = 'resolved')::int as resolved
+       from node_note where file_key = $1 and node_id = any($2::text[]) and status <> 'dismissed' group by node_id`, [fileKey, nodeIds]);
+    return rows.map(r => ({ nodeId: r.node_id, open: r.open, resolved: r.resolved }));
+  }
+
+  async editNote(fileKey, noteId, { body, at }) {
+    if (!UUID_RE.test(noteId)) return null;
+    const { rows: [row] } = await this.query(
+      `update node_note set body = $3, updated_at = $4 where file_key = $1 and note_id = $2::uuid and status = 'open' returning *`,
+      [fileKey, noteId, body, at]);
+    return mapNote(row) || null;
+  }
+
+  async closeNote(fileKey, noteId, { status, by, at, commitRef = null }) {
+    if (!UUID_RE.test(noteId)) return null;
+    const { rows: [row] } = await this.query(
+      `update node_note set status = $3, updated_at = $5, resolved_at = $5, resolved_by = $4, commit_ref = $6
+       where file_key = $1 and note_id = $2::uuid and status = 'open' returning *`,
+      [fileKey, noteId, status, by, at, commitRef]);
+    return mapNote(row) || null;
+  }
+
+  async deleteNote(fileKey, noteId) {
+    if (!UUID_RE.test(noteId)) return null;
+    const { rows: [row] } = await this.query(
+      `delete from node_note where file_key = $1 and note_id = $2::uuid and status = 'open' returning *`, [fileKey, noteId]);
+    return mapNote(row) || null;
+  }
+
+  async resolveNotes(fileKey, nodeIds, { by, at, commitRef = null }) {
+    if (!nodeIds.length) return [];
+    const { rows } = await this.query(
+      `update node_note set status = 'resolved', updated_at = $3, resolved_at = $3, resolved_by = $4, commit_ref = $5
+       where file_key = $1 and node_id = any($2::text[]) and status = 'open' returning *`,
+      [fileKey, nodeIds, at, by, commitRef]);
+    return rows.map(mapNote).sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+  }
+
   // --- v3 events --------------------------------------------------------------
   /**
    * Appends an event. A transaction-scoped advisory lock per file makes a
@@ -922,18 +1163,23 @@ class PostgresStore {
       `select f.file_key, f.name,
          coalesce(sum(e.n) filter (where e.type = 'nodes.cleared' and e.created_at >= $2), 0) as cleared,
          coalesce(sum(e.n) filter (where e.type = 'nodes.cleared' and e.created_at < $2), 0) as cleared_previous,
-         coalesce(sum(e.n) filter (where e.type = 'sync.completed' and e.created_at >= $2), 0) as dirtied
+         coalesce(sum(e.n) filter (where e.type in ('sync.completed', 'note.added') and e.created_at >= $2), 0) as dirtied
        from file f
        left join lateral (
          select ev.type, ev.created_at,
-           case when ev.type = 'nodes.cleared' then
+           case when ev.type = 'note.added' then case when ev.data->>'dirtied' = 'true' then 1 else 0 end
+           when ev.type = 'nodes.cleared' then
              case when jsonb_typeof(ev.data->'count') = 'number' then (ev.data->>'count')::numeric
                   when jsonb_typeof(ev.data->'nodeIds') = 'array' then jsonb_array_length(ev.data->'nodeIds') else 0 end
            else
              case when jsonb_typeof(ev.data->'counts'->'dirty') = 'number' then (ev.data->'counts'->>'dirty')::numeric else 0 end
-           end as n
+           end - case when ${trackingSql('f')} then 0
+             when ev.type = 'note.added' then 0
+             when ev.type = 'nodes.cleared' and jsonb_typeof(ev.data->'libraryCount') = 'number' then (ev.data->>'libraryCount')::numeric
+             when ev.type = 'sync.completed' and jsonb_typeof(ev.data->'counts'->'libraryDirty') = 'number' then (ev.data->'counts'->>'libraryDirty')::numeric
+             else 0 end as n
          from event ev
-         where ev.file_key = f.file_key and ev.type in ('nodes.cleared', 'sync.completed')
+         where ev.file_key = f.file_key and ev.type in ('nodes.cleared', 'sync.completed', 'note.added')
            and ev.created_at >= $1 and ev.created_at < $3
        ) e on true
        where ($4::text is null or f.file_key = $4)

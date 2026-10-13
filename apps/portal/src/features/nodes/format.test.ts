@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { categoriesOf, categoryOf } from './categories';
 import { formatValue, nodeMeta, nodePrompt, sideLabel, timeAgo, timeUntil, whatChanged } from './format';
 import { blockReasonError, describeEvent } from './NodeDrawer';
-import { searchParams } from './queries';
+import { nodePageParams, searchParams } from './queries';
 import { breadcrumbs, divider, node, pageHeader } from './test-fixtures';
 
 describe('format', () => {
@@ -68,6 +68,12 @@ describe('format', () => {
     expect(searchParams('Button')).toEqual({ name: '*Button*' });
     expect(searchParams('1-23')).toEqual({ under: '1:23' });
     expect(searchParams('state:dirty changed:fills')).toEqual({ q: 'state:dirty changed:fills' });
+    expect(searchParams('Button, Pagination ,')).toEqual({ name: '*Button*,*Pagination*' });
+    expect(searchParams('1-23, 4:56')).toEqual({ under: '1:23,4:56' });
+    expect(searchParams('Page header, 4:56')).toEqual({ name: '*Page header*,*4:56*' });
+    expect(nodePageParams('1:1', { q: 'Pagination' })).toMatchObject({ under: '1:1', name: '*Pagination*', depth: undefined });
+    expect(nodePageParams('1:1', { q: '1:2' })).toMatchObject({ under: '1:2', depth: 1 });
+    expect(nodePageParams('1:1', {})).toMatchObject({ under: '1:1', depth: 1 });
   });
 
   it('validates block reasons (1–500 characters)', () => {
@@ -83,5 +89,14 @@ describe('format', () => {
     );
     expect(describeEvent({ type: 'nodes.cleared', data: { commitRef: '3f2a9c1e5d7b' } })).toBe('Cleared it as implemented at 3f2a9c1.');
     expect(describeEvent({ type: 'node.blocked', data: { reason: 'No token' } })).toBe('Blocked it: No token');
+  });
+});
+
+describe('nodePrompt notes', () => {
+  it('tells the agent to read open notes, fix the code to match and clear to resolve them', () => {
+    const prompt = nodePrompt({ fileKey: 'KEY', nodeId: '1:3', name: 'Breadcrumbs' });
+    expect(prompt).toContain('its open notes');
+    expect(prompt).toContain('fix the code to match the design as they describe');
+    expect(prompt).toContain('Clearing resolves them.');
   });
 });

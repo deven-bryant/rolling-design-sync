@@ -5,7 +5,7 @@ const { version } = require('../../package.json');
 
 const status = {
   summary: 'Server and plugin status',
-  description: 'Connection diagnostics: server version, storage mode, live event bus mode and replay window. `plugin` describes the newest retained sync.completed across all files; its fields are null before the first sync.',
+  description: 'Connection diagnostics: server version, storage mode, live event bus mode and replay window, and whether library links are on (`libraryLinks`). `plugin` describes the newest retained sync.completed across all files; its fields are null before the first sync.',
   tags: schemas.listNodes.tags, security: schemas.listNodes.security,
   response: {
     200: {
@@ -15,6 +15,7 @@ const status = {
         store: { type: 'string', enum: ['postgres', 'local', 'memory'] },
         events: { type: 'string', enum: ['listening', 'polling'] },
         replayHours: { type: 'integer' },
+        libraryLinks: { type: 'boolean', description: 'True when RDS_FIGMA_TOKEN is set: library nodes link to their library file once resolved. False: their `figmaUrl` is null.' },
         plugin: {
           type: 'object',
           properties: { lastSyncAt: { type: ['string', 'null'] }, client: { type: ['string', 'null'] } },
@@ -29,12 +30,13 @@ const status = {
  * @param {any} app
  * @param {{ store: import('../store/types').Store } & Record<string, any>} deps
  */
-function registerStatusRoutes(app, { store, config, bus }) {
+function registerStatusRoutes(app, { store, config, bus, libraryLinks = null }) {
   app.get('/status', { schema: status }, async () => {
     const sync = await store.latestEvent('sync.completed');
     return {
       version, store: config.store || 'postgres', events: bus.mode === 'polling' ? 'polling' : 'listening',
       replayHours: config.eventReplayHours ?? 24,
+      libraryLinks: !!(libraryLinks && libraryLinks.enabled),
       plugin: { lastSyncAt: sync?.createdAt ?? null, client: sync?.data.client ?? null },
     };
   });

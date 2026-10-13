@@ -1,4 +1,5 @@
 export { Input, type InputProps } from './Input';
+export { Textarea, type TextareaProps } from './Textarea';
 export { HelpIcon, type HelpIconProps } from './HelpIcon';
 export {
   InputHint,
@@ -9,4 +10,4 @@ export {
   type InputLabelProps,
   type InputSize,
 } from './InputParts';
-export { figmaHelpIcon, figmaInput } from './figma';
+export { figmaHelpIcon, figmaInput, figmaTextarea } from './figma';

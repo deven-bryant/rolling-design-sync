@@ -2,7 +2,7 @@ import { inBothThemes, Icon, type GalleryEntry } from '../primitives';
 import { Avatar } from '../Avatar';
 import { Badge } from '../Badge';
 import { ButtonUtility } from '../Button';
-import { ActionsCell, AvatarCell, BadgeCell, BadgesCell, LeadAction, ProgressCell, Table, TextCell } from './Table';
+import { ActionsCell, AvatarCell, BadgeCell, BadgesCell, FileTypeCell, LeadAction, ProgressCell, Table, TextCell } from './Table';
 
 const photo =
   'data:image/svg+xml;utf8,' +
@@ -69,11 +69,36 @@ function AvatarActionsExample() {
   );
 }
 
+function FileTypeExample() {
+  return (
+    <Table>
+      <Table.Header>
+        <Table.HeaderCell>File</Table.HeaderCell>
+        <Table.HeaderCell>Notes</Table.HeaderCell>
+      </Table.Header>
+      <Table.Body>
+        <Table.Row>
+          <FileTypeCell
+            label="PDF file"
+            fileType="pdf"
+            supportingText="200 KB"
+            leadAction={<LeadAction aria-label="Select Tech requirements.pdf" />}
+          >
+            Tech requirements.pdf
+          </FileTypeCell>
+          <FileTypeCell label="1 open note" />
+        </Table.Row>
+      </Table.Body>
+    </Table>
+  );
+}
+
 export default {
   component: 'Table',
   examples: inBothThemes([
     { figma: 'State=Default (Type=Text · Badge · Badges multiple · Progress bar) · Table header cell', render: () => <Example /> },
     { figma: 'State=Hover/selected', render: () => <Example selected /> },
     { figma: 'Type=Avatar · Type=Action icons · Table header cell Text=False', render: () => <AvatarActionsExample /> },
+    { figma: 'Type=File type icon (File type=Document / PDF · Simple / Empty)', render: () => <FileTypeExample /> },
   ]),
 } satisfies GalleryEntry;

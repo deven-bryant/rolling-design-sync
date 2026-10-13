@@ -43,7 +43,7 @@ export function WorkFiltersBar({ filters, onFiltersChange, addon, groupSwitch }:
           className="w-70"
           type="search"
           placeholder="Search name, node id, or key:value"
-          tooltip="Plain text matches node names, a node id lists that node, and key:value pairs (state:dirty changed:fills) filter like the API's q."
+          tooltip="Plain text matches node names anywhere in the scope, a node id lists that node, and key:value pairs (state:dirty changed:fills) filter like the API's q. Separate several names or node ids with commas: Button, Pagination."
           iconLeading={<Icon name="search-lg" size="md" />}
           value={draft}
           onChange={setDraft}

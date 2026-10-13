@@ -11,7 +11,11 @@ export const buttonUtilityStyles = variants({
     'text-fg-quaternary data-hovered:text-fg-quaternary_hover data-disabled:cursor-not-allowed data-disabled:text-fg-disabled_subtle',
   ].join(' '),
   variants: {
-    size: { xs: 'rounded-sm p-sm *:data-[slot=icon]:size-4' },
+    size: {
+      xs: 'rounded-sm p-sm *:data-[slot=icon]:size-4',
+      /** Beside `md` buttons (a page header): 40px square, radius-md, 20px icon. Not in the design file. */
+      md: 'rounded-md p-2.5 *:data-[slot=icon]:size-5',
+    },
     hierarchy: {
       secondary: 'bg-primary shadow-xs ring-1 ring-primary ring-inset data-hovered:bg-primary_hover data-disabled:ring-disabled_subtle',
       tertiary: 'data-hovered:bg-primary_hover data-disabled:bg-transparent',

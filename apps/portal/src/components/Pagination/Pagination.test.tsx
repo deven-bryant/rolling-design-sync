@@ -65,7 +65,10 @@ describe('Pagination', () => {
     const onPageChange = vi.fn();
     const { container, rerender } = render(<Pagination page={2} hasNext onPageChange={onPageChange} />);
     expect(screen.queryByRole('list')).toBeNull();
-    expect(screen.getByText('Page 2')).toBeTruthy();
+    const current = screen.getByText('2', { selector: '[aria-live]' });
+    expect(current.textContent).toBe('Page 2');
+    expect(current.querySelector('span')?.textContent).toBe('Page ');
+    expect(current.className).toContain('bg-primary_hover');
     await userEvent.setup().click(screen.getByRole('button', { name: 'Next' }));
     expect(onPageChange).toHaveBeenCalledWith(3);
     rerender(<Pagination page={3} hasNext={false} onPageChange={onPageChange} />);

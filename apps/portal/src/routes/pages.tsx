@@ -10,7 +10,7 @@ import { AgentSetup, agentSetupSnippets, StatusMetrics, TokensTable, useServerSt
 import { FilesMetrics, FilesTable, formatCount, plural, useFiles } from '../features/files';
 import { NodeDrawer, NodeTable } from '../features/nodes';
 import { ScopeViewedBadge } from '../features/scopes';
-import { WorkFiltersBar, WorkGroupSwitch, WorkTable } from '../features/work';
+import { useWorkItems, WorkFiltersBar, WorkGroupSwitch, WorkTable } from '../features/work';
 import { CopyButton } from './CopyButton';
 import { useFileOutlet } from './FileLayout';
 import { lastFile } from './lastFile';
@@ -77,7 +77,7 @@ export function NodesPage() {
         filtersAddon={scopeViewed ? <ScopeViewedBadge count={scopes.length} /> : undefined}
         className="gap-4xl"
       />
-      <NodeDrawer fileKey={fileKey} nodeId={nodeId} onClose={() => setNode(null)} />
+      <NodeDrawer fileKey={fileKey} nodeId={nodeId} onClose={() => setNode(null)} onOpenNode={setNode} />
     </>
   );
 }
@@ -89,7 +89,17 @@ export function WorkPage() {
   const state = readWorkState(params);
   const several = scopes.length > 1;
   const group = several ? 'component' : state.group;
-  const toNodes = (nodeUnder: string | undefined) => void navigate(`${filePath(fileKey, 'nodes')}${query({ under: nodeUnder })}`);
+  const toNodes = (nodeUnder: string | undefined, q?: string) => void navigate(`${filePath(fileKey, 'nodes')}${query({ under: nodeUnder, q })}`);
+  const nodeId = params.get('node');
+  const setNode = (id: string | null) =>
+    setParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set('node', id);
+      else next.delete('node');
+      return next;
+    });
+  const work = useWorkItems({ fileKey, under, group, q: state.q, expandInstances: state.expandInstances, page: state.page });
+  const removed = nodeId ? work.items.find(item => item.kind === 'removed' && item.key === nodeId) : undefined;
   return (
     <>
       <WorkFiltersBar
@@ -115,6 +125,15 @@ export function WorkPage() {
         page={state.page}
         onPageChange={page => setParams(prev => writeWorkState(prev, { ...state, page }))}
         onOpenComponent={toNodes}
+        onOpenRemoved={setNode}
+        onOpenPlacements={key => toNodes(under, `component:${key}`)}
+      />
+      <NodeDrawer
+        fileKey={fileKey}
+        nodeId={nodeId}
+        onClose={() => setNode(null)}
+        onOpenNode={setNode}
+        removal={removed && { name: removed.name, uses: removed.uses, warnings: removed.warnings }}
       />
     </>
   );

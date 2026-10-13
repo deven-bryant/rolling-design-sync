@@ -12,6 +12,7 @@ import { Menu } from '../components/Menu';
 import { VisuallyHidden } from '../components/primitives';
 import { SidebarNav } from '../components/SidebarNav';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { ToastRegion } from '../components/Toast';
 import { useServerStatus, type ServerHealth } from '../features/connect';
 import { useTheme } from '../theme';
 import { lastFile } from './lastFile';
@@ -175,6 +176,7 @@ export function Layout() {
       <Shell sidebar={<Sidebar />}>
         <Outlet />
       </Shell>
+      <ToastRegion />
     </RouteLinks>
   );
 }

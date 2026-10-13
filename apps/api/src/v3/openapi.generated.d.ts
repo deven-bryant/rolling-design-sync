@@ -402,6 +402,11 @@ export interface paths {
                                 name?: null | string;
                                 lastSyncAt?: null | string;
                                 createdAt?: null | string;
+                                /** @description Per-file settings, defaults filled in. */
+                                settings?: {
+                                    /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
+                                    trackLibraryComponents?: boolean;
+                                };
                                 counts?: {
                                     total?: number;
                                     dirty?: number;
@@ -547,6 +552,11 @@ export interface paths {
                             name?: null | string;
                             lastSyncAt?: null | string;
                             createdAt?: null | string;
+                            /** @description Per-file settings, defaults filled in. */
+                            settings?: {
+                                /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
+                                trackLibraryComponents?: boolean;
+                            };
                             counts?: {
                                 total?: number;
                                 dirty?: number;
@@ -673,7 +683,174 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Change file settings
+         * @description Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
+         */
+        patch: {
+            parameters: {
+                query?: {
+                    /** @description A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. */
+                    url?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description The settings to change (trackLibraryComponents); others keep their value. */
+                        settings: {
+                            /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
+                            trackLibraryComponents?: boolean;
+                        };
+                        /** @description Your worker id; recorded as the event actor (default: the token label). */
+                        worker?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            name?: null | string;
+                            lastSyncAt?: null | string;
+                            createdAt?: null | string;
+                            /** @description Per-file settings, defaults filled in. */
+                            settings?: {
+                                /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
+                                trackLibraryComponents?: boolean;
+                            };
+                            counts?: {
+                                total?: number;
+                                dirty?: number;
+                                clean?: number;
+                                blocked?: number;
+                            };
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/v3/files/{fileKey}/scopes": {
@@ -715,7 +892,8 @@ export interface paths {
                                 name?: null | string;
                                 type?: null | string;
                                 deleted?: boolean;
-                                figmaUrl?: string;
+                                /** @description The scope root in Figma; null for the design-tokens scope (`tokens`). */
+                                figmaUrl?: null | string;
                                 lastSyncAt?: string;
                                 lastSyncCounts?: {
                                     [key: string]: unknown;
@@ -864,7 +1042,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    /** @description Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. */
+                    /** @description Comma-separated: dirty, clean, blocked, requested, all. Default dirty (changed since last built or with open notes, not blocked); `requested`: dirty only by open notes; `all` for every state. */
                     state?: string;
                     /** @description Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. */
                     under?: string;
@@ -872,11 +1050,13 @@ export interface paths {
                     depth?: number;
                     /** @description Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. */
                     type?: string;
-                    /** @description Comma-separated: added, modified, deleted (dirty nodes only). */
+                    /** @description Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes). */
                     changeType?: string;
+                    /** @description true: only nodes with open notes; false: only nodes without. */
+                    hasNotes?: "true" | "false";
                     /** @description Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). */
                     changed?: string;
-                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other. */
+                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. */
                     category?: string;
                     /** @description Comma-separated main component ids: the components and all their instances. */
                     component?: string;
@@ -890,16 +1070,18 @@ export interface paths {
                     worker?: string;
                     /** @description true: only component instances (`isInstance`); false: only other nodes. */
                     instance?: "true" | "false";
+                    /** @description Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. */
+                    library?: "include" | "exclude" | "only";
                     /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
                     q?: string;
                     /** @description compact (default: state, changes, hash, claim, block) or full (adds attrs, implementedAttrs, path; change values never truncated). */
                     view?: "compact" | "full";
                     /** @description auto (default): the built→now diff for modified and deleted nodes, omitted for added ones (their property names are in `changedProps`) — keeps fresh-sync pages small; diff: the diff for every node, including added ones' full values; names: never `changes`, only `changedProps`. Ask for `changes=diff` (or `get_node`) when you need the values of added nodes. */
                     changes?: "auto" | "diff" | "names";
-                    /** @description Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, via (`via` needs `expand=instances`). */
+                    /** @description Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage, via (`via` needs `expand=instances`). */
                     fields?: string;
-                    /** @description `counts` adds subtree counts (`descendants`) to each node. */
-                    include?: "counts";
+                    /** @description Comma-separated: counts, usage. `counts` adds subtree counts (`descendants`) to each node; `usage` adds `usage: { layers }` to each design token (`token:<variableKey>`). */
+                    include?: string;
                     /** @description document (default: the design's layer order — auto-layout flow order, else top-to-bottom, left-to-right), path (node-id path order), updatedAt or name; prefix `-` for descending. */
                     sort?: "document" | "path" | "updatedAt" | "name" | "-document" | "-path" | "-updatedAt" | "-name";
                     /** @description Page size (default 100, max 1000). With format=outline: rendered lines per page (default: every line). */
@@ -957,7 +1139,7 @@ export interface paths {
                                 /** @enum {string} */
                                 state?: "dirty" | "clean" | "blocked";
                                 /** @enum {null|string} */
-                                changeType?: "added" | "modified" | "deleted" | null;
+                                changeType?: "added" | "modified" | "deleted" | "requested" | null;
                                 /** @description Sorted names of the properties changed since last built (every property of an `added` node). */
                                 changedProps?: string[];
                                 /** @description Property-level diff against what was built: `{ prop: { built, now, category } }`; values bound to a token are `{ token, value }`. `null` when unknown (`changesKnown: false`). Omitted for `added` nodes by default (`changes=auto`) and always with `changes=names`. In compact listing / work responses a side whose JSON exceeds 1 KB is `{ truncated: true, bytes }` — `get_node` returns it whole. */
@@ -966,7 +1148,14 @@ export interface paths {
                                 };
                                 changesKnown?: boolean;
                                 contentHash?: null | string;
-                                figmaUrl?: string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
                                 claim?: null | {
                                     claimId?: null | string;
                                     worker?: string;
@@ -978,6 +1167,15 @@ export interface paths {
                                     by?: null | string;
                                     at?: string;
                                 };
+                                /** @description Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built). */
+                                notes?: {
+                                    noteId?: string;
+                                    body?: string;
+                                    author?: string;
+                                    createdAt?: string;
+                                }[];
+                                /** @description `get_node` only: how many of its notes clears have resolved. */
+                                notesResolved?: number;
                                 attrs?: null | {
                                     [key: string]: unknown;
                                 };
@@ -1000,6 +1198,10 @@ export interface paths {
                                     total?: number;
                                     dirty?: number;
                                     blocked?: number;
+                                };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has an entry with its variable key, under any imported id). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
                                 };
                                 /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
                                 via?: null | {
@@ -1159,7 +1361,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    /** @description Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants. */
+                    /** @description Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage. */
                     fields?: string;
                     /** @description diff (default): the whole built→now diff, never truncated — the way to read an added node's values; auto: omitted for added nodes; names: never `changes`, only `changedProps`. */
                     changes?: "auto" | "diff" | "names";
@@ -1209,7 +1411,7 @@ export interface paths {
                             /** @enum {string} */
                             state?: "dirty" | "clean" | "blocked";
                             /** @enum {null|string} */
-                            changeType?: "added" | "modified" | "deleted" | null;
+                            changeType?: "added" | "modified" | "deleted" | "requested" | null;
                             /** @description Sorted names of the properties changed since last built (every property of an `added` node). */
                             changedProps?: string[];
                             /** @description Property-level diff against what was built: `{ prop: { built, now, category } }`; values bound to a token are `{ token, value }`. `null` when unknown (`changesKnown: false`). Omitted for `added` nodes by default (`changes=auto`) and always with `changes=names`. In compact listing / work responses a side whose JSON exceeds 1 KB is `{ truncated: true, bytes }` — `get_node` returns it whole. */
@@ -1218,7 +1420,14 @@ export interface paths {
                             };
                             changesKnown?: boolean;
                             contentHash?: null | string;
-                            figmaUrl?: string;
+                            /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                            figmaUrl?: null | string;
+                            /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                            library?: null | {
+                                key?: null | string;
+                                fileKey?: string;
+                                resolved?: boolean;
+                            };
                             claim?: null | {
                                 claimId?: null | string;
                                 worker?: string;
@@ -1230,6 +1439,15 @@ export interface paths {
                                 by?: null | string;
                                 at?: string;
                             };
+                            /** @description Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built). */
+                            notes?: {
+                                noteId?: string;
+                                body?: string;
+                                author?: string;
+                                createdAt?: string;
+                            }[];
+                            /** @description `get_node` only: how many of its notes clears have resolved. */
+                            notesResolved?: number;
                             attrs?: null | {
                                 [key: string]: unknown;
                             };
@@ -1252,6 +1470,10 @@ export interface paths {
                                 total?: number;
                                 dirty?: number;
                                 blocked?: number;
+                            };
+                            /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has an entry with its variable key, under any imported id). Always on `get_node`; on listings with `include=usage`. */
+                            usage?: {
+                                layers?: number;
                             };
                             /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
                             via?: null | {
@@ -1714,7 +1936,7 @@ export interface paths {
                         filter?: {
                             /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
                             q?: string;
-                            /** @description Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. */
+                            /** @description Comma-separated: dirty, clean, blocked, requested, all. Default dirty (changed since last built or with open notes, not blocked); `requested`: dirty only by open notes; `all` for every state. */
                             state?: string;
                             /** @description Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. */
                             under?: string;
@@ -1722,11 +1944,11 @@ export interface paths {
                             depth?: number;
                             /** @description Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. */
                             type?: string;
-                            /** @description Comma-separated: added, modified, deleted (dirty nodes only). */
+                            /** @description Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes). */
                             changeType?: string;
                             /** @description Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). */
                             changed?: string;
-                            /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other. */
+                            /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. */
                             category?: string;
                             /** @description Comma-separated main component ids: the components and all their instances. */
                             component?: string;
@@ -1739,6 +1961,16 @@ export interface paths {
                             name?: string;
                             /** @description ISO 8601 time: only nodes changed at or after it. */
                             since?: string;
+                            /**
+                             * @description Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude.
+                             * @enum {string}
+                             */
+                            library?: "include" | "exclude" | "only";
+                            /**
+                             * @description true: only nodes with open notes; false: only nodes without.
+                             * @enum {string}
+                             */
+                            hasNotes?: "true" | "false";
                         };
                     };
                 };
@@ -1781,7 +2013,7 @@ export interface paths {
                                 /** @enum {string} */
                                 state?: "dirty" | "clean" | "blocked";
                                 /** @enum {null|string} */
-                                changeType?: "added" | "modified" | "deleted" | null;
+                                changeType?: "added" | "modified" | "deleted" | "requested" | null;
                                 /** @description Sorted names of the properties changed since last built (every property of an `added` node). */
                                 changedProps?: string[];
                                 /** @description Property-level diff against what was built: `{ prop: { built, now, category } }`; values bound to a token are `{ token, value }`. `null` when unknown (`changesKnown: false`). Omitted for `added` nodes by default (`changes=auto`) and always with `changes=names`. In compact listing / work responses a side whose JSON exceeds 1 KB is `{ truncated: true, bytes }` — `get_node` returns it whole. */
@@ -1790,7 +2022,14 @@ export interface paths {
                                 };
                                 changesKnown?: boolean;
                                 contentHash?: null | string;
-                                figmaUrl?: string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
                                 claim?: null | {
                                     claimId?: null | string;
                                     worker?: string;
@@ -1802,6 +2041,15 @@ export interface paths {
                                     by?: null | string;
                                     at?: string;
                                 };
+                                /** @description Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built). */
+                                notes?: {
+                                    noteId?: string;
+                                    body?: string;
+                                    author?: string;
+                                    createdAt?: string;
+                                }[];
+                                /** @description `get_node` only: how many of its notes clears have resolved. */
+                                notesResolved?: number;
                                 attrs?: null | {
                                     [key: string]: unknown;
                                 };
@@ -1824,6 +2072,10 @@ export interface paths {
                                     total?: number;
                                     dirty?: number;
                                     blocked?: number;
+                                };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has an entry with its variable key, under any imported id). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
                                 };
                                 /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
                                 via?: null | {
@@ -2088,7 +2340,7 @@ export interface paths {
         put?: never;
         /**
          * Clear implemented nodes
-         * @description Records nodes as implemented (up to 500 per call) once your code matches the design: they become clean, their current design becomes the new baseline, and their leases are released. Send each node with the `contentHash` you implemented (from `list_nodes` / `get_node`). Each item is checked on its own and the call is 200 even when some fail: `cleared`; `stale` — the design changed since you read it, so re-read that node with `get_node`, implement the new changes and clear it with the returned `contentHash`; `not_found` — a wrong id. Clear only what you actually built; never clear to hide changes (use `block_node` for nodes you cannot implement). The `nodes.cleared` event's actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
+         * @description Records nodes as implemented (up to 500 per call) once your code matches the design: they become clean, their current design becomes the new baseline, and their leases are released. Send each node with the `contentHash` you implemented (from `list_nodes` / `get_node`). Each item is checked on its own and the call is 200 even when some fail: `cleared`; `stale` — the design changed since you read it, so re-read that node with `get_node`, implement the new changes and clear it with the returned `contentHash`; `not_found` — a wrong id; `not_removed` — `subtree: true` on a node that is not deleted (nothing cleared). Removed design (a `kind: "removed"` work item): once its code is gone, clear just its root with `subtree: true` — that also clears every dirty deleted node below it (`subtreeCleared`); live nodes below are untouched. Clear only what you actually built; never clear to hide changes (use `block_node` for nodes you cannot implement). The `nodes.cleared` event's actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
          */
         post: {
             parameters: {
@@ -2116,6 +2368,11 @@ export interface paths {
                             nodeId: string;
                             /** @description The node's `contentHash` as you read it before implementing. */
                             contentHash: string;
+                            /**
+                             * @description For a deleted (removed) root: also clear every dirty deleted node below it. On a live node the item fails with `not_removed`.
+                             * @default false
+                             */
+                            subtree?: boolean;
                         }[];
                     };
                 };
@@ -2133,14 +2390,17 @@ export interface paths {
                             results?: {
                                 nodeId?: string;
                                 /** @enum {string} */
-                                status?: "cleared" | "stale" | "not_found";
-                                /** @description cleared: the hash cleared; stale: the current hash; not_found: null. */
+                                status?: "cleared" | "stale" | "not_found" | "not_removed";
+                                /** @description cleared: the hash cleared; stale and not_removed: the current hash; not_found: null. */
                                 contentHash?: null | string;
+                                /** @description subtree: true and cleared: how many deleted nodes below the root were cleared with it. */
+                                subtreeCleared?: number;
                             }[];
                             totals?: {
                                 cleared?: number;
                                 stale?: number;
                                 notFound?: number;
+                                notRemoved?: number;
                             };
                         };
                     };
@@ -2338,7 +2598,7 @@ export interface paths {
                                 /** @enum {string} */
                                 state?: "dirty" | "clean" | "blocked";
                                 /** @enum {null|string} */
-                                changeType?: "added" | "modified" | "deleted" | null;
+                                changeType?: "added" | "modified" | "deleted" | "requested" | null;
                                 /** @description Sorted names of the properties changed since last built (every property of an `added` node). */
                                 changedProps?: string[];
                                 /** @description Property-level diff against what was built: `{ prop: { built, now, category } }`; values bound to a token are `{ token, value }`. `null` when unknown (`changesKnown: false`). Omitted for `added` nodes by default (`changes=auto`) and always with `changes=names`. In compact listing / work responses a side whose JSON exceeds 1 KB is `{ truncated: true, bytes }` — `get_node` returns it whole. */
@@ -2347,7 +2607,14 @@ export interface paths {
                                 };
                                 changesKnown?: boolean;
                                 contentHash?: null | string;
-                                figmaUrl?: string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
                                 claim?: null | {
                                     claimId?: null | string;
                                     worker?: string;
@@ -2359,6 +2626,15 @@ export interface paths {
                                     by?: null | string;
                                     at?: string;
                                 };
+                                /** @description Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built). */
+                                notes?: {
+                                    noteId?: string;
+                                    body?: string;
+                                    author?: string;
+                                    createdAt?: string;
+                                }[];
+                                /** @description `get_node` only: how many of its notes clears have resolved. */
+                                notesResolved?: number;
                                 attrs?: null | {
                                     [key: string]: unknown;
                                 };
@@ -2381,6 +2657,10 @@ export interface paths {
                                     total?: number;
                                     dirty?: number;
                                     blocked?: number;
+                                };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has an entry with its variable key, under any imported id). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
                                 };
                                 /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
                                 via?: null | {
@@ -2682,7 +2962,7 @@ export interface paths {
         };
         /**
          * List file events
-         * @description The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
+         * @description The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
          */
         get: {
             parameters: {
@@ -2693,7 +2973,7 @@ export interface paths {
                     before?: number;
                     /** @description `asc` (default): oldest first, page with `after` / `nextAfter`. `desc`: newest first, page with `before` / `nextBefore`. JSON pages only; SSE is unchanged. */
                     order?: "asc" | "desc";
-                    /** @description Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. */
+                    /** @description Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. */
                     types?: string;
                     /** @description JSON page size (default 100, max 1000). */
                     limit?: number;
@@ -2728,7 +3008,7 @@ export interface paths {
                                 id?: number;
                                 fileKey?: string;
                                 /** @enum {string} */
-                                type?: "sync.completed" | "nodes.cleared" | "claim.created" | "claim.renewed" | "claim.released" | "node.blocked" | "node.unblocked";
+                                type?: "sync.completed" | "nodes.cleared" | "claim.created" | "claim.renewed" | "claim.released" | "node.blocked" | "node.unblocked" | "file.settings_changed" | "note.added" | "note.resolved" | "note.dismissed";
                                 /** @description `plugin`, or the worker / token label that caused it. */
                                 actor?: null | string;
                                 /** @description IDs, counts, labels and commit refs; never design content. */
@@ -2875,7 +3155,7 @@ export interface paths {
         };
         /**
          * List events across files
-         * @description Activity across all files in global event-id order. Every event includes fileKey and, on JSON pages, fileName; fileKey optionally narrows to a tracked file. The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
+         * @description Activity across all files in global event-id order. Every event includes fileKey and, on JSON pages, fileName; fileKey optionally narrows to a tracked file. The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
          */
         get: {
             parameters: {
@@ -2886,7 +3166,7 @@ export interface paths {
                     before?: number;
                     /** @description `asc` (default): oldest first, page with `after` / `nextAfter`. `desc`: newest first, page with `before` / `nextBefore`. JSON pages only; SSE is unchanged. */
                     order?: "asc" | "desc";
-                    /** @description Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. */
+                    /** @description Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. */
                     types?: string;
                     /** @description JSON page size (default 100, max 1000). */
                     limit?: number;
@@ -2920,7 +3200,7 @@ export interface paths {
                                 id?: number;
                                 fileKey?: string;
                                 /** @enum {string} */
-                                type?: "sync.completed" | "nodes.cleared" | "claim.created" | "claim.renewed" | "claim.released" | "node.blocked" | "node.unblocked";
+                                type?: "sync.completed" | "nodes.cleared" | "claim.created" | "claim.renewed" | "claim.released" | "node.blocked" | "node.unblocked" | "file.settings_changed" | "note.added" | "note.resolved" | "note.dismissed";
                                 /** @description `plugin`, or the worker / token label that caused it. */
                                 actor?: null | string;
                                 /** @description IDs, counts, labels and commit refs; never design content. */
@@ -3133,7 +3413,7 @@ export interface paths {
                                 /** @enum {string} */
                                 state?: "dirty" | "clean" | "blocked";
                                 /** @enum {null|string} */
-                                changeType?: "added" | "modified" | "deleted" | null;
+                                changeType?: "added" | "modified" | "deleted" | "requested" | null;
                                 /** @description Sorted names of the properties changed since last built (every property of an `added` node). */
                                 changedProps?: string[];
                                 /** @description Property-level diff against what was built: `{ prop: { built, now, category } }`; values bound to a token are `{ token, value }`. `null` when unknown (`changesKnown: false`). Omitted for `added` nodes by default (`changes=auto`) and always with `changes=names`. In compact listing / work responses a side whose JSON exceeds 1 KB is `{ truncated: true, bytes }` — `get_node` returns it whole. */
@@ -3142,7 +3422,14 @@ export interface paths {
                                 };
                                 changesKnown?: boolean;
                                 contentHash?: null | string;
-                                figmaUrl?: string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
                                 claim?: null | {
                                     claimId?: null | string;
                                     worker?: string;
@@ -3154,6 +3441,15 @@ export interface paths {
                                     by?: null | string;
                                     at?: string;
                                 };
+                                /** @description Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built). */
+                                notes?: {
+                                    noteId?: string;
+                                    body?: string;
+                                    author?: string;
+                                    createdAt?: string;
+                                }[];
+                                /** @description `get_node` only: how many of its notes clears have resolved. */
+                                notesResolved?: number;
                                 attrs?: null | {
                                     [key: string]: unknown;
                                 };
@@ -3176,6 +3472,10 @@ export interface paths {
                                     total?: number;
                                     dirty?: number;
                                     blocked?: number;
+                                };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has an entry with its variable key, under any imported id). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
                                 };
                                 /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
                                 via?: null | {
@@ -3382,7 +3682,7 @@ export interface paths {
                                 /** @enum {string} */
                                 state?: "dirty" | "clean" | "blocked";
                                 /** @enum {null|string} */
-                                changeType?: "added" | "modified" | "deleted" | null;
+                                changeType?: "added" | "modified" | "deleted" | "requested" | null;
                                 /** @description Sorted names of the properties changed since last built (every property of an `added` node). */
                                 changedProps?: string[];
                                 /** @description Property-level diff against what was built: `{ prop: { built, now, category } }`; values bound to a token are `{ token, value }`. `null` when unknown (`changesKnown: false`). Omitted for `added` nodes by default (`changes=auto`) and always with `changes=names`. In compact listing / work responses a side whose JSON exceeds 1 KB is `{ truncated: true, bytes }` — `get_node` returns it whole. */
@@ -3391,7 +3691,14 @@ export interface paths {
                                 };
                                 changesKnown?: boolean;
                                 contentHash?: null | string;
-                                figmaUrl?: string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
                                 claim?: null | {
                                     claimId?: null | string;
                                     worker?: string;
@@ -3403,6 +3710,15 @@ export interface paths {
                                     by?: null | string;
                                     at?: string;
                                 };
+                                /** @description Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built). */
+                                notes?: {
+                                    noteId?: string;
+                                    body?: string;
+                                    author?: string;
+                                    createdAt?: string;
+                                }[];
+                                /** @description `get_node` only: how many of its notes clears have resolved. */
+                                notesResolved?: number;
                                 attrs?: null | {
                                     [key: string]: unknown;
                                 };
@@ -3426,6 +3742,10 @@ export interface paths {
                                     dirty?: number;
                                     blocked?: number;
                                 };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has an entry with its variable key, under any imported id). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
+                                };
                                 /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
                                 via?: null | {
                                     instanceId?: string;
@@ -3434,6 +3754,1249 @@ export interface paths {
                                 };
                             };
                             unblocked?: boolean;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/nodes/{nodeId}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a node's notes
+         * @description The notes on a node, newest first: its open ones (default), or `status=all` for resolved and dismissed ones too.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description open (default) or all. */
+                    status?: "open" | "all";
+                    /** @description A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. */
+                    url?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`. */
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            nodeId?: string;
+                            notes?: {
+                                noteId?: string;
+                                nodeId?: string;
+                                body?: string;
+                                /** @description Who wrote it: the token label, or `portal:<label>` from a portal session. */
+                                author?: string;
+                                /** @description The worker id passed when it was added, if any. */
+                                worker?: null | string;
+                                /** @enum {string} */
+                                status?: "open" | "resolved" | "dismissed";
+                                createdAt?: string;
+                                updatedAt?: string;
+                                /** @description When it was resolved (by a clear) or dismissed. */
+                                resolvedAt?: null | string;
+                                resolvedBy?: null | string;
+                                /** @description The `commitRef` of the clear that resolved it. */
+                                commitRef?: null | string;
+                            }[];
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Add a note to a node
+         * @description Records that the built node does not match the design, with what is wrong. An open note makes the node dirty — `changeType: requested` (category `note`) when its design is otherwise built, or its design change plus category `note` — and keeps it dirty across re-syncs. The node is listed with its open `notes` until it is cleared (`clear_nodes` resolves its notes) or the note is dismissed. Viewer tokens and sessions may add notes too. Returns the note and the node's new state; a tombstoned node cannot take notes.
+         */
+        post: {
+            parameters: {
+                query?: {
+                    /** @description A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. */
+                    url?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`. */
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description What does not match the design, as a person would say it (1–4000 chars). */
+                        body: string;
+                        /** @description Your worker id, recorded on the note. */
+                        worker?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            note?: {
+                                noteId?: string;
+                                nodeId?: string;
+                                body?: string;
+                                /** @description Who wrote it: the token label, or `portal:<label>` from a portal session. */
+                                author?: string;
+                                /** @description The worker id passed when it was added, if any. */
+                                worker?: null | string;
+                                /** @enum {string} */
+                                status?: "open" | "resolved" | "dismissed";
+                                createdAt?: string;
+                                updatedAt?: string;
+                                /** @description When it was resolved (by a clear) or dismissed. */
+                                resolvedAt?: null | string;
+                                resolvedBy?: null | string;
+                                /** @description The `commitRef` of the clear that resolved it. */
+                                commitRef?: null | string;
+                            };
+                            /** @description A node. Compact nodes carry the first group of properties; `view=full` adds `attrs`, `implementedAttrs` and `path`; `fields` picks any subset. */
+                            node?: {
+                                nodeId?: string;
+                                name?: null | string;
+                                type?: null | string;
+                                parentId?: null | string;
+                                /** @description An INSTANCE of a component; `mainComponentId` is that component. */
+                                isInstance?: boolean;
+                                /** @description The instance's main component node id (`get_node` it, or filter `component=`); null for non-instances. */
+                                mainComponentId?: null | string;
+                                /** @description The captured component reference (the main for an instance, self for a component), including its set when it is a variant; null on other nodes. */
+                                component?: null | {
+                                    id?: string;
+                                    key?: string;
+                                    name?: string;
+                                    remote?: boolean;
+                                    /** @description The variant's Figma component set. Omitted when unavailable (including inaccessible library parents). */
+                                    set?: {
+                                        id?: string;
+                                        key?: string;
+                                        name?: string;
+                                    };
+                                };
+                                /** @enum {string} */
+                                state?: "dirty" | "clean" | "blocked";
+                                /** @enum {null|string} */
+                                changeType?: "added" | "modified" | "deleted" | "requested" | null;
+                                /** @description Sorted names of the properties changed since last built (every property of an `added` node). */
+                                changedProps?: string[];
+                                /** @description Property-level diff against what was built: `{ prop: { built, now, category } }`; values bound to a token are `{ token, value }`. `null` when unknown (`changesKnown: false`). Omitted for `added` nodes by default (`changes=auto`) and always with `changes=names`. In compact listing / work responses a side whose JSON exceeds 1 KB is `{ truncated: true, bytes }` — `get_node` returns it whole. */
+                                changes?: null | {
+                                    [key: string]: unknown;
+                                };
+                                changesKnown?: boolean;
+                                contentHash?: null | string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
+                                claim?: null | {
+                                    claimId?: null | string;
+                                    worker?: string;
+                                    label?: null | string;
+                                    expiresAt?: string;
+                                };
+                                blocked?: null | {
+                                    reason?: null | string;
+                                    by?: null | string;
+                                    at?: string;
+                                };
+                                /** @description Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built). */
+                                notes?: {
+                                    noteId?: string;
+                                    body?: string;
+                                    author?: string;
+                                    createdAt?: string;
+                                }[];
+                                /** @description `get_node` only: how many of its notes clears have resolved. */
+                                notesResolved?: number;
+                                attrs?: null | {
+                                    [key: string]: unknown;
+                                };
+                                implementedAttrs?: null | {
+                                    [key: string]: unknown;
+                                };
+                                /** @description Ancestor node ids, root first, ending with this node. */
+                                path?: string[];
+                                deleted?: boolean;
+                                history?: {
+                                    createdAt?: null | string;
+                                    updatedAt?: null | string;
+                                    implementedAt?: null | string;
+                                    implementedCommit?: null | string;
+                                    implementedHash?: null | string;
+                                    deletedAt?: null | string;
+                                };
+                                /** @description Counts over the node's subtree, excluding the node itself (`include=counts`). */
+                                descendants?: {
+                                    total?: number;
+                                    dirty?: number;
+                                    blocked?: number;
+                                };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has an entry with its variable key, under any imported id). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
+                                };
+                                /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
+                                via?: null | {
+                                    instanceId?: string;
+                                    mainComponentId?: string;
+                                    depth?: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/notes/{noteId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a note
+         * @description Deletes an open note (only its author may); the node's state is recomputed without it.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The note id (`noteId` from `add_note` / `list_notes`). */
+                    noteId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            noteId?: string;
+                            deleted?: boolean;
+                            /** @description A node. Compact nodes carry the first group of properties; `view=full` adds `attrs`, `implementedAttrs` and `path`; `fields` picks any subset. */
+                            node?: {
+                                nodeId?: string;
+                                name?: null | string;
+                                type?: null | string;
+                                parentId?: null | string;
+                                /** @description An INSTANCE of a component; `mainComponentId` is that component. */
+                                isInstance?: boolean;
+                                /** @description The instance's main component node id (`get_node` it, or filter `component=`); null for non-instances. */
+                                mainComponentId?: null | string;
+                                /** @description The captured component reference (the main for an instance, self for a component), including its set when it is a variant; null on other nodes. */
+                                component?: null | {
+                                    id?: string;
+                                    key?: string;
+                                    name?: string;
+                                    remote?: boolean;
+                                    /** @description The variant's Figma component set. Omitted when unavailable (including inaccessible library parents). */
+                                    set?: {
+                                        id?: string;
+                                        key?: string;
+                                        name?: string;
+                                    };
+                                };
+                                /** @enum {string} */
+                                state?: "dirty" | "clean" | "blocked";
+                                /** @enum {null|string} */
+                                changeType?: "added" | "modified" | "deleted" | "requested" | null;
+                                /** @description Sorted names of the properties changed since last built (every property of an `added` node). */
+                                changedProps?: string[];
+                                /** @description Property-level diff against what was built: `{ prop: { built, now, category } }`; values bound to a token are `{ token, value }`. `null` when unknown (`changesKnown: false`). Omitted for `added` nodes by default (`changes=auto`) and always with `changes=names`. In compact listing / work responses a side whose JSON exceeds 1 KB is `{ truncated: true, bytes }` — `get_node` returns it whole. */
+                                changes?: null | {
+                                    [key: string]: unknown;
+                                };
+                                changesKnown?: boolean;
+                                contentHash?: null | string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
+                                claim?: null | {
+                                    claimId?: null | string;
+                                    worker?: string;
+                                    label?: null | string;
+                                    expiresAt?: string;
+                                };
+                                blocked?: null | {
+                                    reason?: null | string;
+                                    by?: null | string;
+                                    at?: string;
+                                };
+                                /** @description Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built). */
+                                notes?: {
+                                    noteId?: string;
+                                    body?: string;
+                                    author?: string;
+                                    createdAt?: string;
+                                }[];
+                                /** @description `get_node` only: how many of its notes clears have resolved. */
+                                notesResolved?: number;
+                                attrs?: null | {
+                                    [key: string]: unknown;
+                                };
+                                implementedAttrs?: null | {
+                                    [key: string]: unknown;
+                                };
+                                /** @description Ancestor node ids, root first, ending with this node. */
+                                path?: string[];
+                                deleted?: boolean;
+                                history?: {
+                                    createdAt?: null | string;
+                                    updatedAt?: null | string;
+                                    implementedAt?: null | string;
+                                    implementedCommit?: null | string;
+                                    implementedHash?: null | string;
+                                    deletedAt?: null | string;
+                                };
+                                /** @description Counts over the node's subtree, excluding the node itself (`include=counts`). */
+                                descendants?: {
+                                    total?: number;
+                                    dirty?: number;
+                                    blocked?: number;
+                                };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has an entry with its variable key, under any imported id). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
+                                };
+                                /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
+                                via?: null | {
+                                    instanceId?: string;
+                                    mainComponentId?: string;
+                                    depth?: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /**
+         * Edit a note
+         * @description Replaces the body of an open note. Only its author may edit it.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The note id (`noteId` from `add_note` / `list_notes`). */
+                    noteId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description What does not match the design, as a person would say it (1–4000 chars). */
+                        body: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            note?: {
+                                noteId?: string;
+                                nodeId?: string;
+                                body?: string;
+                                /** @description Who wrote it: the token label, or `portal:<label>` from a portal session. */
+                                author?: string;
+                                /** @description The worker id passed when it was added, if any. */
+                                worker?: null | string;
+                                /** @enum {string} */
+                                status?: "open" | "resolved" | "dismissed";
+                                createdAt?: string;
+                                updatedAt?: string;
+                                /** @description When it was resolved (by a clear) or dismissed. */
+                                resolvedAt?: null | string;
+                                resolvedBy?: null | string;
+                                /** @description The `commitRef` of the clear that resolved it. */
+                                commitRef?: null | string;
+                            };
+                            /** @description A node. Compact nodes carry the first group of properties; `view=full` adds `attrs`, `implementedAttrs` and `path`; `fields` picks any subset. */
+                            node?: {
+                                nodeId?: string;
+                                name?: null | string;
+                                type?: null | string;
+                                parentId?: null | string;
+                                /** @description An INSTANCE of a component; `mainComponentId` is that component. */
+                                isInstance?: boolean;
+                                /** @description The instance's main component node id (`get_node` it, or filter `component=`); null for non-instances. */
+                                mainComponentId?: null | string;
+                                /** @description The captured component reference (the main for an instance, self for a component), including its set when it is a variant; null on other nodes. */
+                                component?: null | {
+                                    id?: string;
+                                    key?: string;
+                                    name?: string;
+                                    remote?: boolean;
+                                    /** @description The variant's Figma component set. Omitted when unavailable (including inaccessible library parents). */
+                                    set?: {
+                                        id?: string;
+                                        key?: string;
+                                        name?: string;
+                                    };
+                                };
+                                /** @enum {string} */
+                                state?: "dirty" | "clean" | "blocked";
+                                /** @enum {null|string} */
+                                changeType?: "added" | "modified" | "deleted" | "requested" | null;
+                                /** @description Sorted names of the properties changed since last built (every property of an `added` node). */
+                                changedProps?: string[];
+                                /** @description Property-level diff against what was built: `{ prop: { built, now, category } }`; values bound to a token are `{ token, value }`. `null` when unknown (`changesKnown: false`). Omitted for `added` nodes by default (`changes=auto`) and always with `changes=names`. In compact listing / work responses a side whose JSON exceeds 1 KB is `{ truncated: true, bytes }` — `get_node` returns it whole. */
+                                changes?: null | {
+                                    [key: string]: unknown;
+                                };
+                                changesKnown?: boolean;
+                                contentHash?: null | string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
+                                claim?: null | {
+                                    claimId?: null | string;
+                                    worker?: string;
+                                    label?: null | string;
+                                    expiresAt?: string;
+                                };
+                                blocked?: null | {
+                                    reason?: null | string;
+                                    by?: null | string;
+                                    at?: string;
+                                };
+                                /** @description Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built). */
+                                notes?: {
+                                    noteId?: string;
+                                    body?: string;
+                                    author?: string;
+                                    createdAt?: string;
+                                }[];
+                                /** @description `get_node` only: how many of its notes clears have resolved. */
+                                notesResolved?: number;
+                                attrs?: null | {
+                                    [key: string]: unknown;
+                                };
+                                implementedAttrs?: null | {
+                                    [key: string]: unknown;
+                                };
+                                /** @description Ancestor node ids, root first, ending with this node. */
+                                path?: string[];
+                                deleted?: boolean;
+                                history?: {
+                                    createdAt?: null | string;
+                                    updatedAt?: null | string;
+                                    implementedAt?: null | string;
+                                    implementedCommit?: null | string;
+                                    implementedHash?: null | string;
+                                    deletedAt?: null | string;
+                                };
+                                /** @description Counts over the node's subtree, excluding the node itself (`include=counts`). */
+                                descendants?: {
+                                    total?: number;
+                                    dirty?: number;
+                                    blocked?: number;
+                                };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has an entry with its variable key, under any imported id). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
+                                };
+                                /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
+                                via?: null | {
+                                    instanceId?: string;
+                                    mainComponentId?: string;
+                                    depth?: number;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/notes/{noteId}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dismiss a note
+         * @description Closes an open note without changing the build (e.g. it is wrong or already handled); the node's state is recomputed without it. Its author or any agent may dismiss it. To resolve a note by fixing the code, clear the node instead.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The note id (`noteId` from `add_note` / `list_notes`). */
+                    noteId: string;
+                };
+                cookie?: never;
+            };
+            /** @description Optional; `{}` or null dismisses without a reason. */
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description Why it was dismissed. */
+                        reason?: string;
+                    } | null;
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            note?: {
+                                noteId?: string;
+                                nodeId?: string;
+                                body?: string;
+                                /** @description Who wrote it: the token label, or `portal:<label>` from a portal session. */
+                                author?: string;
+                                /** @description The worker id passed when it was added, if any. */
+                                worker?: null | string;
+                                /** @enum {string} */
+                                status?: "open" | "resolved" | "dismissed";
+                                createdAt?: string;
+                                updatedAt?: string;
+                                /** @description When it was resolved (by a clear) or dismissed. */
+                                resolvedAt?: null | string;
+                                resolvedBy?: null | string;
+                                /** @description The `commitRef` of the clear that resolved it. */
+                                commitRef?: null | string;
+                            };
+                            /** @description A node. Compact nodes carry the first group of properties; `view=full` adds `attrs`, `implementedAttrs` and `path`; `fields` picks any subset. */
+                            node?: {
+                                nodeId?: string;
+                                name?: null | string;
+                                type?: null | string;
+                                parentId?: null | string;
+                                /** @description An INSTANCE of a component; `mainComponentId` is that component. */
+                                isInstance?: boolean;
+                                /** @description The instance's main component node id (`get_node` it, or filter `component=`); null for non-instances. */
+                                mainComponentId?: null | string;
+                                /** @description The captured component reference (the main for an instance, self for a component), including its set when it is a variant; null on other nodes. */
+                                component?: null | {
+                                    id?: string;
+                                    key?: string;
+                                    name?: string;
+                                    remote?: boolean;
+                                    /** @description The variant's Figma component set. Omitted when unavailable (including inaccessible library parents). */
+                                    set?: {
+                                        id?: string;
+                                        key?: string;
+                                        name?: string;
+                                    };
+                                };
+                                /** @enum {string} */
+                                state?: "dirty" | "clean" | "blocked";
+                                /** @enum {null|string} */
+                                changeType?: "added" | "modified" | "deleted" | "requested" | null;
+                                /** @description Sorted names of the properties changed since last built (every property of an `added` node). */
+                                changedProps?: string[];
+                                /** @description Property-level diff against what was built: `{ prop: { built, now, category } }`; values bound to a token are `{ token, value }`. `null` when unknown (`changesKnown: false`). Omitted for `added` nodes by default (`changes=auto`) and always with `changes=names`. In compact listing / work responses a side whose JSON exceeds 1 KB is `{ truncated: true, bytes }` — `get_node` returns it whole. */
+                                changes?: null | {
+                                    [key: string]: unknown;
+                                };
+                                changesKnown?: boolean;
+                                contentHash?: null | string;
+                                /** @description The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`). */
+                                figmaUrl?: null | string;
+                                /** @description Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component's); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
+                                claim?: null | {
+                                    claimId?: null | string;
+                                    worker?: string;
+                                    label?: null | string;
+                                    expiresAt?: string;
+                                };
+                                blocked?: null | {
+                                    reason?: null | string;
+                                    by?: null | string;
+                                    at?: string;
+                                };
+                                /** @description Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built). */
+                                notes?: {
+                                    noteId?: string;
+                                    body?: string;
+                                    author?: string;
+                                    createdAt?: string;
+                                }[];
+                                /** @description `get_node` only: how many of its notes clears have resolved. */
+                                notesResolved?: number;
+                                attrs?: null | {
+                                    [key: string]: unknown;
+                                };
+                                implementedAttrs?: null | {
+                                    [key: string]: unknown;
+                                };
+                                /** @description Ancestor node ids, root first, ending with this node. */
+                                path?: string[];
+                                deleted?: boolean;
+                                history?: {
+                                    createdAt?: null | string;
+                                    updatedAt?: null | string;
+                                    implementedAt?: null | string;
+                                    implementedCommit?: null | string;
+                                    implementedHash?: null | string;
+                                    deletedAt?: null | string;
+                                };
+                                /** @description Counts over the node's subtree, excluding the node itself (`include=counts`). */
+                                descendants?: {
+                                    total?: number;
+                                    dirty?: number;
+                                    blocked?: number;
+                                };
+                                /** @description Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has an entry with its variable key, under any imported id). Always on `get_node`; on listings with `include=usage`. */
+                                usage?: {
+                                    layers?: number;
+                                };
+                                /** @description Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope. */
+                                via?: null | {
+                                    instanceId?: string;
+                                    mainComponentId?: string;
+                                    depth?: number;
+                                };
+                            };
                         };
                     };
                 };
@@ -3569,7 +5132,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    /** @description Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. */
+                    /** @description Comma-separated: dirty, clean, blocked, requested, all. Default dirty (changed since last built or with open notes, not blocked); `requested`: dirty only by open notes; `all` for every state. */
                     state?: string;
                     /** @description Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. */
                     under?: string;
@@ -3577,11 +5140,11 @@ export interface paths {
                     depth?: number;
                     /** @description Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. */
                     type?: string;
-                    /** @description Comma-separated: added, modified, deleted (dirty nodes only). */
+                    /** @description Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes). */
                     changeType?: string;
                     /** @description Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). */
                     changed?: string;
-                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other. */
+                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. */
                     category?: string;
                     /** @description Comma-separated main component ids: the components and all their instances. */
                     component?: string;
@@ -3595,6 +5158,10 @@ export interface paths {
                     claimed?: string;
                     /** @description Your worker id; needed with `claimed=mine`. */
                     worker?: string;
+                    /** @description Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. */
+                    library?: "include" | "exclude" | "only";
+                    /** @description true: only nodes with open notes; false: only nodes without. */
+                    hasNotes?: "true" | "false";
                     /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
                     q?: string;
                     /** @description A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. */
@@ -3632,6 +5199,7 @@ export interface paths {
                                 added?: number;
                                 modified?: number;
                                 deleted?: number;
+                                requested?: number;
                             };
                             /** @description A node counts once per change category it has. */
                             byCategory?: {
@@ -3643,7 +5211,9 @@ export interface paths {
                                 content?: number;
                                 structure?: number;
                                 prototype?: number;
+                                token?: number;
                                 other?: number;
+                                note?: number;
                             };
                             /** @description Node type → count. */
                             byType?: {
@@ -3988,12 +5558,12 @@ export interface paths {
         };
         /**
          * List work items
-         * @description The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design's layer order, by each item's key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories. `group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last. `group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged. `group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item. `include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar. `expand=instances` answers "which components do I need to build for this screen, and how often does it use each?": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`. Each item's `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.
+         * @description The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design's layer order, by each item's key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories. `group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last. Removed design (group=component and group=set): deleted nodes that were built are grouped under their removed root — the topmost deleted node — into one `kind: "removed"` item (after the component items, before `key: null`, in the roots' document order), unless that root sits inside a live component (then they are part of that component's item). For a removed item: remove the code that rendered the root; keep components in `uses` with `livePlacements > 0` (still used elsewhere), consider removing those with 0; heed `warnings`; then clear the root with `subtree: true` (`clear_nodes`) — one item clears the whole removed subtree. Deleted nodes that were never built are not work (they resolve at sync). Design tokens (group=component and group=set): the dirty tokens of each collection form one `kind: "tokens"` item (key = the collection node id, after the component and removed items, before `key: null`). For each token, update the code variable named by its `codeSyntax` (WEB, else the token name) for every changed `value:<Mode>`, then clear it. `include=usage` adds how many layers use each token. `group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged. `group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item. `include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar. `expand=instances` answers "which components do I need to build for this screen, and how often does it use each?": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`. Notes: a node someone noted as not matching the design is dirty with `changeType: requested` (category `note`) when its design is otherwise built, and grouped like any dirty node; `notes` counts an item's open notes. Read the notes (`get_node` or `list_notes`), fix the code to match the design as they describe, then clear the node — clearing resolves its notes. Each item's `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.
          */
         get: {
             parameters: {
                 query?: {
-                    /** @description Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. */
+                    /** @description Comma-separated: dirty, clean, blocked, requested, all. Default dirty (changed since last built or with open notes, not blocked); `requested`: dirty only by open notes; `all` for every state. */
                     state?: string;
                     /** @description Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. */
                     under?: string;
@@ -4001,11 +5571,11 @@ export interface paths {
                     depth?: number;
                     /** @description Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. */
                     type?: string;
-                    /** @description Comma-separated: added, modified, deleted (dirty nodes only). */
+                    /** @description Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes). */
                     changeType?: string;
                     /** @description Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). */
                     changed?: string;
-                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other. */
+                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. */
                     category?: string;
                     /** @description Comma-separated main component ids: the components and all their instances. */
                     component?: string;
@@ -4019,6 +5589,10 @@ export interface paths {
                     claimed?: string;
                     /** @description Your worker id; needed with `claimed=mine`. */
                     worker?: string;
+                    /** @description Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. */
+                    library?: "include" | "exclude" | "only";
+                    /** @description true: only nodes with open notes; false: only nodes without. */
+                    hasNotes?: "true" | "false";
                     /** @description All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. */
                     q?: string;
                     /** @description A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. */
@@ -4035,8 +5609,8 @@ export interface paths {
                     limit?: number;
                     /** @description The previous page's `nextCursor`, unchanged, with all other parameters the same (else `invalid_cursor`). With format=outline: the previous response's `X-RDS-Next-Cursor` header (a line position in the rendered outline). */
                     cursor?: string;
-                    /** @description progress: add total and clean node counts across all states for each work item. */
-                    include?: "progress";
+                    /** @description Comma-separated: progress, usage. progress: add total and clean node counts across all states for each work item; usage: add `usage: { nodeId: { layers } }` to token items. */
+                    include?: string;
                     /** @description json (default); ndjson — one JSON object per line, streamed; md — a markdown checklist, one line per row, streamed. ndjson and md return every match from `cursor` on (up to `limit` when given) instead of one page. outline — text/plain, an indented tree with one line per item: use this first to see a screen's structure (under=<the screen>, and expand=instances for the components inside). Each item is a line `Name (TYPE) · 3 nodes · changed (4: characters, fills, …) · 2 placements`, with its listed nodes as an indented tree below it (`Name (TYPE) · modified (…)`, indented under their nearest listed ancestor). Lines are the `fields`-independent summary. The whole result (up to 2000 lines of whole items, in order) is rendered once, then paged by rendered lines, so nesting and `(shown above)` read the same at any page size: `limit` is lines per page (default: every line), and when lines remain the response has an `X-RDS-Next-Cursor` header — pass it as `cursor`, with every other parameter unchanged, for the next lines. Past the 2000-line cap the outline's last line (counted like any other) is `… N more items (use cursor/limit) — cursor=<c>` (the same cursor is in the header), which continues after the rendered part. */
                     format?: "json" | "ndjson" | "md" | "outline";
                 };
@@ -4060,7 +5634,22 @@ export interface paths {
                             /** @enum {string} */
                             group?: "component" | "frame" | "set";
                             items?: {
-                                /** @description The component or frame node id; with group=set, the Figma set key (id when no key is available). Standalone components retain their node id; null for nodes with none. */
+                                /**
+                                 * @description `removed`: design deleted in Figma that was built — one item per removed root (the topmost tombstoned node; key = its id), listing the components it used (`uses`). `library`: a reference item — a library (remote) main component the scope uses while the file does not track library components (`expand=instances`, group=component or set): `tracked: false`, `nodeCount: 0`, no `nodeIds`, no `progress`, with `placements` / `placementsInScope`. Use the library component as is; there is nothing to build or clear. `tokens`: design tokens of one collection (key = the collection node id `tokens:<collectionKey>`, name = the collection name; the `tokens` root's own changes have key `tokens`): for each changed `value:<Mode>` update the code variable named by the token's `codeSyntax` (WEB, else the token name) in that mode, then clear the tokens. Absent on other component, set and frame items.
+                                 * @enum {string}
+                                 */
+                                kind?: "removed" | "library" | "tokens";
+                                /** @description Reference (`kind: "library"`) items only: false — the library component is not tracked in this file. */
+                                tracked?: boolean;
+                                /** @description Items whose component is a library (remote) component: `{ key, fileKey?, resolved }` as on nodes. Absent on other items. */
+                                library?: null | {
+                                    key?: null | string;
+                                    fileKey?: string;
+                                    resolved?: boolean;
+                                };
+                                /** @description Library items only: the component in its library file, or null while unresolved. */
+                                figmaUrl?: null | string;
+                                /** @description The component or frame node id; with group=set, the Figma set key (id when no key is available). Standalone components retain their node id; removed items: the removed root's id; null for nodes with none. */
                                 key?: null | string;
                                 name?: null | string;
                                 type?: null | string;
@@ -4078,6 +5667,8 @@ export interface paths {
                                     nodeCount?: number;
                                 }[];
                                 nodeCount?: number;
+                                /** @description Open notes on the listed `nodeIds`: read them on the nodes (`get_node` / `list_notes`), fix the code to match the design as they describe, then clear the nodes — clearing resolves them. */
+                                notes?: number;
                                 categories?: string[];
                                 changedProps?: string[];
                                 /** @description `{ nodeId: { prop: { built, now, category } } }` for the listed `nodeIds` (per `changes=`: by default modified and deleted nodes only; absent with `changes=names`). A side over 1 KB is `{ truncated: true, bytes }`; `get_node` returns it whole. */
@@ -4088,7 +5679,42 @@ export interface paths {
                                 placements?: null | number;
                                 /** @description group=component with expand=instances: the instances of the key reached from the scope (inside `under` or inside the expanded components) — how often this screen uses it. */
                                 placementsInScope?: null | number;
-                                /** @description The item's first 50 node ids, in document order (the design's layer order). */
+                                /** @description Removed items only: the main components referenced by instances inside the removed subtree, those with `livePlacements: 0` first (then by name). Keep the code of components with livePlacements > 0; consider removing those with 0. */
+                                uses?: {
+                                    /** @description The main component's node id. */
+                                    componentId?: string;
+                                    /** @description The main component's name; null when it was never synced. */
+                                    name?: null | string;
+                                    /** @description The variant's Figma component set. Omitted when unavailable (including inaccessible library parents). */
+                                    set?: {
+                                        id?: string;
+                                        key?: string;
+                                        name?: string;
+                                    };
+                                    /** @description True for a library (remote) main component, when captured. */
+                                    remote?: boolean;
+                                    /** @description Instance rows of it inside the removed subtree. */
+                                    placementsRemoved?: number;
+                                    /** @description Live (not tombstoned) instance rows of it anywhere in the file. 0: nothing in the design uses it any more. */
+                                    livePlacements?: number;
+                                }[];
+                                /** @description Removed items only (empty when none): main components removed with the design while other instances of them are still live. */
+                                warnings?: {
+                                    /**
+                                     * @description main_removed_with_live_placements: a main component inside the removed subtree still has live instances elsewhere — keep its code.
+                                     * @enum {string}
+                                     */
+                                    code?: "main_removed_with_live_placements";
+                                    componentId?: string;
+                                    livePlacements?: number;
+                                }[];
+                                /** @description Token items with `include=usage`: `{ nodeId: { layers } }` for the listed tokens — how many live layers use each. */
+                                usage?: {
+                                    [key: string]: {
+                                        layers?: number;
+                                    };
+                                };
+                                /** @description The item's first 50 node ids, in document order (the design's layer order; a removed item's root first). */
                                 nodeIds?: string[];
                                 /** @description How many node ids `nodeIds` leaves out. */
                                 more?: number;
@@ -4245,7 +5871,7 @@ export interface paths {
         };
         /**
          * Server and plugin status
-         * @description Connection diagnostics: server version, storage mode, live event bus mode and replay window. `plugin` describes the newest retained sync.completed across all files; its fields are null before the first sync.
+         * @description Connection diagnostics: server version, storage mode, live event bus mode and replay window, and whether library links are on (`libraryLinks`). `plugin` describes the newest retained sync.completed across all files; its fields are null before the first sync.
          */
         get: {
             parameters: {
@@ -4269,6 +5895,8 @@ export interface paths {
                             /** @enum {string} */
                             events?: "listening" | "polling";
                             replayHours?: number;
+                            /** @description True when RDS_FIGMA_TOKEN is set: library nodes link to their library file once resolved. False: their `figmaUrl` is null. */
+                            libraryLinks?: boolean;
                             plugin?: {
                                 lastSyncAt?: null | string;
                                 client?: null | string;
@@ -4471,7 +6099,7 @@ export interface paths {
         };
         /**
          * Subtree hashes (plugin)
-         * @description The stored `contentHash` of every live node in `under`'s subtree (inclusive), keyed by node id. `{}` when the node — or the file — was never synced. Plugin tokens only.
+         * @description The stored `contentHash` of every live node in `under`'s subtree (inclusive), keyed by node id, plus the file's `settings` (defaults filled in; read `trackLibraryComponents` when a sync starts). Only `settings` when the node — or the file — was never synced. With `under=tokens` (the design-tokens scope) it also has `tokens: { "token:<variableKey>": { variableId, remote, collectionId } }` for every stored live variable: tombstone (in `deletedNodeIds`) only local variables no longer in the file, never library ones or one a sync merely did not reference, and a collection only once all its tokens are tombstoned. That key takes the place of the root's own hash, so send the `tokens` root on every tokens sync. Plugin tokens only.
          */
         get: {
             parameters: {
@@ -4490,13 +6118,27 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description `{ [nodeId]: contentHash }`. */
+                /** @description `{ [nodeId]: contentHash, settings, tokens? }` — `settings` is never a node id; `tokens` only with `under=tokens`. */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
                         "application/json": {
+                            /** @description Per-file settings, defaults filled in. */
+                            settings?: {
+                                /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
+                                trackLibraryComponents?: boolean;
+                            };
+                            /** @description `under=tokens` only: every stored live variable (`token:<variableKey>`) with its Figma `variableId` (null when not captured), `remote` (a library variable) and `collectionId` (its collection node). */
+                            tokens?: {
+                                [key: string]: {
+                                    variableId?: null | string;
+                                    remote?: boolean;
+                                    collectionId?: null | string;
+                                };
+                            };
+                        } & {
                             [key: string]: null | string;
                         };
                     };
@@ -4632,7 +6274,7 @@ export interface paths {
         put?: never;
         /**
          * Sync a batch (plugin)
-         * @description Upserts scanned nodes and tombstones `deletedNodeIds`: `dirty` becomes `contentHash !== implementedHash`, a hash change unblocks a blocked node, and `markImplemented: true` inserts never-seen nodes as already implemented. `fileName` / `rootNodeId` name the file and record the sync for `…/scopes`. Emits `sync.completed`. Plugin tokens only.
+         * @description Upserts scanned nodes and tombstones `deletedNodeIds`. Design tokens sync as their own scope: `rootNodeId: "tokens"` (type TOKENS), collections `tokens:<collectionKey>` (VARIABLE_COLLECTION), variables `token:<variableKey>` (VARIABLE, one `value:<Mode name>` attr per mode). For every node: `dirty` becomes `contentHash !== implementedHash`, a hash change unblocks a blocked node, and `markImplemented: true` inserts never-seen nodes as already implemented. A tombstoned node that was never implemented resolves itself (a clean tombstone, counted in `autoResolved`, not dirty). A token whose attrs differ from its implemented ones only in `variableId` (another imported copy of the same variable) stays clean: its baseline moves to the new attrs, counted in `rebaselined`; a batch with the `tokens` root does this for every stored token. `fileName` / `rootNodeId` name the file and record the sync for `…/scopes`. Emits `sync.completed`. Plugin tokens only.
          */
         post: {
             parameters: {
@@ -4680,6 +6322,8 @@ export interface paths {
                             isInstance?: boolean | null;
                             /** @description An instance's main component (1:2 or 1-2). */
                             mainComponentId?: string | null;
+                            /** @description true: a library node — scanned under a remote (library) main component or set. Optional: main components / sets with a remote `componentReference` and the subtrees of the remote mains instances point at are flagged anyway. Never unset by a later sync. */
+                            library?: boolean | null;
                         }[];
                         /**
                          * @description Nodes that vanished from the scope; tombstoned.
@@ -4701,11 +6345,16 @@ export interface paths {
                             upserted?: number;
                             /** @description How many of the upserted nodes are dirty. */
                             dirty?: number;
+                            /** @description Nodes this sync tombstoned (deletedNodeIds that were stored and live). */
                             tombstoned?: number;
+                            /** @description Of `tombstoned`, the nodes that were never implemented: stored as clean tombstones at once, so they are not work. */
+                            autoResolved?: number;
                             /** @description Always 0; kept for older plugins. */
                             skippedInstances?: number;
                             /** @description With markImplemented: nodes inserted as implemented. */
                             baselined?: number;
+                            /** @description Tokens kept clean because only their Figma `variableId` changed (their baseline moved to the new attrs); present when > 0. */
+                            rebaselined?: number;
                         };
                     };
                 };

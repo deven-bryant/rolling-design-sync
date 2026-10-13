@@ -165,6 +165,15 @@ describe('routes', () => {
     expect(screen.getByText('1 Scope Viewed')).toBeDefined();
   });
 
+  it('opens the File settings drawer from the header', async () => {
+    renderAt(`/files/${FILE}/work?under=1:2`);
+    const user = userEvent.setup();
+    await screen.findByRole('heading', { level: 1, name: 'Team View' });
+    await user.click(screen.getByRole('button', { name: 'File settings' }));
+    const dialog = within(await screen.findByRole('dialog', { name: 'File settings' }));
+    expect(dialog.getByRole('switch', { name: /Track library components/ })).toBeDefined();
+  });
+
   it('selects several scopes through ?under=, in the panel order', async () => {
     const router = renderAt(`/files/${FILE}/nodes?under=1:2&state=dirty&page=2`);
     const user = userEvent.setup();
@@ -212,6 +221,8 @@ describe('routes', () => {
   it('names every selected scope in the agent prompt', () => {
     const text = scopePrompt({ fileKey: FILE, scopes: [{ nodeId: '3:4', name: 'Settings' }, { nodeId: '1:2', name: 'Team View' }] });
     expect(text).toContain('Implement the Figma scopes "Settings" (3:4), "Team View" (1:2) in file AbC123');
+    expect(text).toContain('An item with kind "removed" is design deleted in Figma: remove its code (keep the components in its uses with livePlacements > 0), then clear just its root with subtree: true.');
+    expect(text).toContain('An item with kind "tokens" is one collection of design tokens: update the code variables (each token\'s codeSyntax, WEB, else the token name) for every changed mode (value:<Mode>), then clear the tokens.');
     expect(text).toContain('"under": "3:4,1:2"');
     expect(text).toContain('--under 3:4,1:2');
     const one = scopePrompt({ fileKey: FILE, scopes: [{ nodeId: '1:2', name: 'Team View' }] });
@@ -391,5 +402,14 @@ describe('URL state', () => {
     expect(navItemOf('/claims')).toBe('claims');
     expect(navItemOf('/agents')).toBeNull();
     expect(navItemOf('/nope')).toBeNull();
+  });
+});
+
+describe('scopePrompt notes', () => {
+  it('tells the agent to read notes, fix the code and clear to resolve them', () => {
+    const text = scopePrompt({ fileKey: FILE, scopes: [{ nodeId: '1:2', name: 'Team View' }] });
+    expect(text).toContain('changeType "requested"');
+    expect(text).toContain('read the notes on the node');
+    expect(text).toContain('clearing resolves them');
   });
 });

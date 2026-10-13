@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../../test/axe';
+import { Badge } from '../../Badge';
 import { Table } from '../../Table';
 import { NodeCell, figmaNodeCell } from '.';
 
@@ -37,6 +38,15 @@ describe('NodeCell', () => {
     expect(indent?.style.width).toBe(`calc(var(--spacing-2xl) * ${depth})`);
   });
 
+  it('places badges after the name, outside its truncation', async () => {
+    const { container } = render(<NodeCell name="Files" meta="FRAME · 12:345" badges={<Badge color="error">Removed</Badge>} />);
+    const badge = screen.getByText('Removed');
+    expect(badge.previousElementSibling?.textContent).toBe('Files');
+    expect(classesOf(badge.parentElement)).toEqual(expect.arrayContaining(['flex', 'items-center', 'gap-md', 'min-w-0']));
+    expect(classesOf(screen.getByText('Files'))).toContain('truncate');
+    await expectNoAxeViolations(container);
+  });
+
   it('shows the chevron only when expandable', () => {
     const { rerender } = render(<NodeCell name="Leaf" />);
     expect(screen.queryByRole('button')).toBeNull();
@@ -44,6 +54,19 @@ describe('NodeCell', () => {
     const toggle = screen.getByRole('button', { name: 'Expand' });
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(toggle.querySelector('svg')).not.toBeNull();
+  });
+
+  it('keeps the chevron width on a leaf with reserveToggle, so siblings align by their text', () => {
+    const { container, rerender } = render(<NodeCell name="Leaf" />);
+    expect(container.querySelector('[data-slot="toggle-spacer"]')).toBeNull();
+    rerender(<NodeCell name="Leaf" reserveToggle />);
+    const spacer = container.querySelector('[data-slot="toggle-spacer"]');
+    expect(spacer?.getAttribute('aria-hidden')).toBe('true');
+    expect(classesOf(spacer)).toEqual(expect.arrayContaining(['size-4', 'shrink-0']));
+    expect(screen.queryByRole('button')).toBeNull();
+    rerender(<NodeCell name="Branch" expandable reserveToggle />);
+    expect(container.querySelector('[data-slot="toggle-spacer"]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Expand' })).toBeDefined();
   });
 
   it('calls onToggle with the next expanded state', async () => {

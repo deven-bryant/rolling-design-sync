@@ -1,6 +1,6 @@
 {
   "name": "rolling-design-sync",
-  "version": "0.13.1",
+  "version": "0.14.0",
   "private": true,
   "license": "Apache-2.0",
   "description": "Figma -> code change-sync service: a Figma plugin scans a scope for design changes, uploads a snapshot through an authenticated API, and worker agents pull a compact work queue and record verification.",
@@ -17,10 +17,10 @@
     "gen:types:check": "node scripts/gen-v3-types.js --check"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.22"
   },
   "devDependencies": {
-    "@types/node": "22.20.4",
+    "@types/node": "22.20.5",
     "openapi-typescript": "7.13.0",
     "typescript": "5.9.3"
   }

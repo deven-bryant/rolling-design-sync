@@ -128,6 +128,28 @@ function dsTree(v) {
   ];
 }
 
+/** The app's design tokens: one collection (Light / Dark); `v` 1 changes bg-brand-solid's Dark value. */
+const COLORS = `tokens:${'c0105'.padEnd(40, '0')}`;
+const tokenId = n => `token:${String(n).padStart(40, 'e')}`;
+function tokenTree(v) {
+  const T = ['tokens'];
+  const variable = (n, variableId, light, dark, web) => {
+    const name = VARS[variableId].name;
+    return node(tokenId(n), 'VARIABLE', name, {
+      name, resolvedType: 'COLOR', description: '', scopes: ['ALL_SCOPES'], codeSyntax: { WEB: web }, variableId, remote: false,
+      'value:Light': light, 'value:Dark': dark,
+    }, [...T, COLORS]);
+  };
+  return [
+    node('tokens', 'TOKENS', 'Design tokens', {}),
+    node(COLORS, 'VARIABLE_COLLECTION', 'Colors', { name: 'Colors', modes: ['Light', 'Dark'], remote: false }, T),
+    variable(1, 'VariableID:2:1', '#7f56d9', v ? '#9e77ed' : '#7f56d9', '--color-bg-brand-solid'),
+    variable(2, 'VariableID:2:2', '#ffffff', '#0c111d', '--color-bg-primary'),
+    variable(3, 'VariableID:2:4', '#f9fafb', '#161b26', '--color-bg-secondary'),
+    variable(4, 'VariableID:2:3', '#101828', '#f5f5f6', '--color-text-primary'),
+  ];
+}
+
 const hashes = rows => Object.fromEntries(rows.map(r => [r.nodeId, r.contentHash]));
 
 /** Seeds both files and the agent activity; `api(method, route, token, body)` as in fixture.js. */
@@ -156,6 +178,9 @@ async function seedDemo(api, tokens, shiftClock = async () => {}) {
 
   // App: built, then the design edit, then agents at work.
   await sync(APP, appTree(0), { markImplemented: true });
+  // Design tokens, before the app's edit so the app stays the most recently synced scope.
+  await api('POST', `/v3/files/${APP.fileKey}/sync`, tokens.plugin, { rootNodeId: 'tokens', upserts: tokenTree(0), markImplemented: true });
+  await api('POST', `/v3/files/${APP.fileKey}/sync`, tokens.plugin, { rootNodeId: 'tokens', upserts: tokenTree(1) });
   const edit = appTree(1);
   await sync(APP, edit);
   const done = [
@@ -164,6 +189,8 @@ async function seedDemo(api, tokens, shiftClock = async () => {}) {
   ];
   for (const [{ claimId }] of done) await api('DELETE', `/v3/files/${APP.fileKey}/claims/${claimId}`, tokens.agent);
   await sync(APP, appTree(2));
+  // The Settings screen was built, then deleted in Figma: one removed work item.
+  await sync(APP, [], { deletedNodeIds: ['5:1', '5:2', '5:3'] });
   await claim(APP, ['3:1', '3:3', '3:10'], 'claude-1', 'Dashboard');
   await claim(APP, [BUTTON_SECONDARY.id, '20:4', INPUT.id, '21:2'], 'cursor-2', 'Button and Input components');
   await claim(APP, ['4:1', '4:2', '4:5'], 'codex-3', 'Transfer screen');
@@ -173,4 +200,4 @@ async function seedDemo(api, tokens, shiftClock = async () => {}) {
   });
 }
 
-module.exports = { APP, DS, seedDemo };
+module.exports = { APP, DS, COLORS, BRAND_TOKEN: tokenId(1), seedDemo };

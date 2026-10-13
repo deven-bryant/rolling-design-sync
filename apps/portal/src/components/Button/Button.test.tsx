@@ -210,6 +210,14 @@ describe('ButtonUtility', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('renders size md as a 40px square beside md buttons: radius-md, 20px icon', async () => {
+    const { container } = render(<ButtonUtility size="md" icon={icon} tooltip="File settings" />);
+    const el = screen.getByRole('button', { name: 'File settings' });
+    expect(classesOf(el)).toEqual(expect.arrayContaining(['p-2.5', 'rounded-md', '*:data-[slot=icon]:size-5', 'ring-primary']));
+    expect(classesOf(el)).not.toContain('p-sm');
+    await expectNoAxeViolations(container);
+  });
+
   it('defaults to Hierarchy=Secondary', () => {
     render(<ButtonUtility icon={icon} tooltip="Copy" />);
     expect(classesOf(screen.getByRole('button'))).toEqual(expect.arrayContaining(['bg-primary', 'ring-primary', 'shadow-xs']));

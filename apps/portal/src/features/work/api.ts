@@ -70,6 +70,10 @@ export function useWorkItems({ page, ...query }: WorkQuery & { page: number }) {
     items: current?.items ?? [],
     /** Items across all pages. */
     total: data?.pages[0]?.total,
+    pageCount:
+      typeof data?.pages[0]?.total === 'number'
+        ? Math.max(1, Math.ceil(data.pages[0].total / pageSize), page + (loaded > page || hasNextPage ? 1 : 0))
+        : undefined,
     hasNext: loaded > page || hasNextPage,
     /** The requested page isn't here yet. */
     isPageLoading: !current && (result.isPending || needsMore || isFetchingNextPage),
@@ -90,11 +94,15 @@ export function useWorkLive(fileKey: string): StreamState {
   const claims = () => refresh(workKeys.claims(fileKey));
   return useEventStream(fileKey ? `/v3/files/${encodeURIComponent(fileKey)}/events` : null, {
     'sync.completed': work,
+    'note.added': work,
+    'note.resolved': work,
+    'note.dismissed': work,
     'nodes.cleared': () => {
       work();
       claims();
     },
     'node.blocked': work,
+    'file.settings_changed': work,
     'node.unblocked': work,
     'claim.created': claims,
     'claim.renewed': claims,

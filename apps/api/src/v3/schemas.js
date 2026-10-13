@@ -7,9 +7,9 @@
  */
 const core = require('@rolling-design-sync/core');
 
-const CATEGORIES = [...Object.keys(core.CATEGORY_RULES), 'other'];
-const STATES = ['dirty', 'clean', 'blocked', 'all'];
-const CHANGE_TYPES = ['added', 'modified', 'deleted'];
+const CATEGORIES = [...Object.keys(core.CATEGORY_RULES), 'other', 'note'];
+const STATES = ['dirty', 'clean', 'blocked', 'requested', 'all'];
+const CHANGE_TYPES = ['added', 'modified', 'deleted', 'requested'];
 const SORTS = ['document', 'path', 'updatedAt', 'name'];
 const MAX_LIMIT = 1000;
 const DEFAULT_LIMIT = 100;
@@ -17,16 +17,19 @@ const CHANGES_MODES = ['auto', 'diff', 'names'];
 /** Longest JSON (bytes) a change side keeps in compact listing / work responses before `{ truncated, bytes }`. */
 const MAX_CHANGE_SIDE_BYTES = 1024;
 const EXPANDS = ['instances'];
+const LIBRARY_MODES = ['include', 'exclude', 'only'];
 const DEFAULT_EXPAND_DEPTH = 10;
 const MAX_EXPAND_DEPTH = 20;
 /** `expand=instances` expands at most this many distinct main components per request. */
 const EXPANSION_LIMIT = 500;
 
 const COMPACT_FIELDS = ['nodeId', 'name', 'type', 'parentId', 'isInstance', 'mainComponentId', 'component', 'state', 'changeType', 'changedProps',
-  'changes', 'changesKnown', 'contentHash', 'figmaUrl', 'claim', 'blocked'];
+  'changes', 'changesKnown', 'contentHash', 'figmaUrl', 'library', 'claim', 'blocked', 'notes'];
 const FULL_FIELDS = [...COMPACT_FIELDS, 'attrs', 'implementedAttrs', 'path'];
-const DETAIL_FIELDS = [...FULL_FIELDS, 'deleted', 'history'];
-const NODE_FIELDS = [...DETAIL_FIELDS, 'descendants'];
+const DETAIL_FIELDS = [...FULL_FIELDS, 'deleted', 'notesResolved', 'history'];
+const NODE_FIELDS = [...DETAIL_FIELDS, 'descendants', 'usage'];
+/** `include=` values of the node listing (comma-separated). */
+const LISTING_INCLUDES = ['counts', 'usage'];
 /** Listing `fields`: every node field, plus `via` (with `expand=instances`). */
 const LISTING_FIELDS = [...NODE_FIELDS, 'via'];
 
@@ -74,6 +77,23 @@ const component = {
   properties: { id: { type: 'string' }, key: { type: 'string' }, name: { type: 'string' }, remote: { type: 'boolean' }, set: componentSet },
 };
 
+const library = {
+  type: ['object', 'null'],
+  description: 'Library nodes only (null on others): a remote (library) main component or component set, or a layer inside one. `key` is its component key (the nearest component\'s); `resolved` is true when the server (RDS_FIGMA_TOKEN) has resolved it to the library file — then `fileKey` is that file and `figmaUrl` opens the component there. Unresolved: `figmaUrl` is null; find it in the library by `key`.',
+  properties: { key: nullable('string'), fileKey: { type: 'string' }, resolved: { type: 'boolean' } },
+};
+
+const fileSettings = {
+  type: 'object',
+  description: 'Per-file settings, defaults filled in.',
+  properties: {
+    trackLibraryComponents: {
+      type: 'boolean',
+      description: 'Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked.',
+    },
+  },
+};
+
 const node = {
   type: 'object',
   description: 'A node. Compact nodes carry the first group of properties; `view=full` adds `attrs`, `implementedAttrs` and `path`; `fields` picks any subset.',
@@ -95,13 +115,20 @@ const node = {
     }),
     changesKnown: { type: 'boolean' },
     contentHash: nullable('string'),
-    figmaUrl: { type: 'string' },
+    figmaUrl: nullable('string', { description: 'The node in Figma. For a library node: the main component in its library file, or null while unresolved (see `library`).' }),
+    library,
     claim: nullable('object', {
       properties: { claimId: nullable('string'), worker: { type: 'string' }, label: nullable('string'), expiresAt: { type: 'string' } },
     }),
     blocked: nullable('object', {
       properties: { reason: nullable('string'), by: nullable('string'), at: { type: 'string' } },
     }),
+    notes: {
+      type: 'array',
+      description: 'Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built).',
+      items: { type: 'object', properties: { noteId: { type: 'string' }, body: { type: 'string' }, author: { type: 'string' }, createdAt: { type: 'string' } } },
+    },
+    notesResolved: { type: 'integer', description: '`get_node` only: how many of its notes clears have resolved.' },
     attrs: nullable('object', { additionalProperties: true }),
     implementedAttrs: nullable('object', { additionalProperties: true }),
     path: { type: 'array', items: { type: 'string' }, description: 'Ancestor node ids, root first, ending with this node.' },
@@ -114,6 +141,11 @@ const node = {
       },
     },
     descendants,
+    usage: {
+      type: 'object',
+      description: 'Design tokens (`token:<variableKey>`) only: `layers` — how many live layers use the token (their captured `resolvedVariables` has an entry with its variable key, under any imported id). Always on `get_node`; on listings with `include=usage`.',
+      properties: { layers: { type: 'integer' } },
+    },
     via: nullable('object', {
       description: 'Only with `expand=instances`: how the node was reached — `{ instanceId, mainComponentId, depth }` of the first (shortest) instance → main hop chain into its component; null for nodes in the original scope.',
       properties: { instanceId: { type: 'string' }, mainComponentId: { type: 'string' }, depth: { type: 'integer' } },
@@ -151,6 +183,7 @@ const file = {
     name: nullable('string'),
     lastSyncAt: nullable('string'),
     createdAt: nullable('string'),
+    settings: fileSettings,
     counts,
   },
 };
@@ -162,7 +195,7 @@ const scope = {
     name: nullable('string'),
     type: nullable('string'),
     deleted: { type: 'boolean' },
-    figmaUrl: { type: 'string' },
+    figmaUrl: nullable('string', { description: 'The scope root in Figma; null for the design-tokens scope (`tokens`).' }),
     lastSyncAt: { type: 'string' },
     lastSyncCounts: { type: 'object', additionalProperties: true },
     counts,
@@ -179,11 +212,12 @@ const urlQuery = str("A Figma link (figma.com/design/<fileKey>/…?node-id=1-2).
 const listQuery = {
   type: 'object',
   properties: {
-    state: str(`Comma-separated: ${STATES.join(', ')}. Default dirty (changed since last built, not blocked); \`all\` for every state.`),
+    state: str(`Comma-separated: ${STATES.join(', ')}. Default dirty (changed since last built or with open notes, not blocked); \`requested\`: dirty only by open notes; \`all\` for every state.`),
     under: str("Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id."),
     depth: { type: 'integer', minimum: 0, description: 'Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children).' },
     type: str('Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME.'),
-    changeType: str(`Comma-separated: ${CHANGE_TYPES.join(', ')} (dirty nodes only).`),
+    changeType: str(`Comma-separated: ${CHANGE_TYPES.join(', ')} (dirty nodes only; \`requested\`: built as designed but with open notes).`),
+    hasNotes: { type: 'string', enum: ['true', 'false'], description: 'true: only nodes with open notes; false: only nodes without.' },
     changed: str('Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*).'),
     category: str(`Comma-separated change categories: ${CATEGORIES.join(', ')}.`),
     component: str('Comma-separated main component ids: the components and all their instances.'),
@@ -192,6 +226,10 @@ const listQuery = {
     claimed: str('Comma-separated: true (leased), false (free), mine (leased to `worker`).'),
     worker: str('Your worker id; needed with `claimed=mine`.'),
     instance: { type: 'string', enum: ['true', 'false'], description: 'true: only component instances (`isInstance`); false: only other nodes.' },
+    library: {
+      type: 'string', enum: LIBRARY_MODES,
+      description: 'Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude.',
+    },
     q: str('All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter.'),
     view: { type: 'string', enum: ['compact', 'full'], description: 'compact (default: state, changes, hash, claim, block) or full (adds attrs, implementedAttrs, path; change values never truncated).' },
     changes: {
@@ -200,7 +238,7 @@ const listQuery = {
         + 'diff: the diff for every node, including added ones\' full values; names: never `changes`, only `changedProps`. Ask for `changes=diff` (or `get_node`) when you need the values of added nodes.',
     },
     fields: str(`Comma-separated node fields to return (overrides view): ${LISTING_FIELDS.join(', ')} (\`via\` needs \`expand=instances\`).`),
-    include: { type: 'string', enum: ['counts'], description: '`counts` adds subtree counts (`descendants`) to each node.' },
+    include: { type: 'string', description: `Comma-separated: ${LISTING_INCLUDES.join(', ')}. \`counts\` adds subtree counts (\`descendants\`) to each node; \`usage\` adds \`usage: { layers }\` to each design token (\`token:<variableKey>\`).` },
     sort: { type: 'string', enum: [...SORTS, ...SORTS.map(s => `-${s}`)], description: 'document (default: the design\'s layer order — auto-layout flow order, else top-to-bottom, left-to-right), path (node-id path order), updatedAt or name; prefix `-` for descending.' },
     limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT, description: `Page size (default ${DEFAULT_LIMIT}, max ${MAX_LIMIT}).` },
     cursor: str("The previous page's `nextCursor`, unchanged, with all other parameters the same (else `invalid_cursor`)."),
@@ -344,9 +382,9 @@ const OPENAPI_OPTIONS = {
 };
 
 module.exports = {
-  componentSet,
+  componentSet, library, fileSettings, LIBRARY_MODES,
   problemResponses,
-  CATEGORIES, STATES, CHANGE_TYPES, SORTS, MAX_LIMIT, DEFAULT_LIMIT, CHANGES_MODES, MAX_CHANGE_SIDE_BYTES, COMPACT_FIELDS, FULL_FIELDS, DETAIL_FIELDS, NODE_FIELDS,
+  LISTING_INCLUDES, CATEGORIES, STATES, CHANGE_TYPES, SORTS, MAX_LIMIT, DEFAULT_LIMIT, CHANGES_MODES, MAX_CHANGE_SIDE_BYTES, COMPACT_FIELDS, FULL_FIELDS, DETAIL_FIELDS, NODE_FIELDS,
   LISTING_FIELDS, EXPANDS, DEFAULT_EXPAND_DEPTH, MAX_EXPAND_DEPTH, EXPANSION_LIMIT, expansion, expandQuery,
   agentOp, listFiles, getFile, listScopes, listNodes, getNode, resolve, openapi, OPENAPI_OPTIONS,
 };

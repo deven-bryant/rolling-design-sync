@@ -15,7 +15,7 @@ Agents have two ways in, and both read the same variables:
   operations as shell commands (`nodes ls`, `work`, `claim`, `clear`, …).
   Details: [scripts/README.md](../scripts/README.md).
 
-Both need a checkout of this repo with Node 20+; run `npm install` in it once
+Both need a checkout of this repo with Node 22.22+; run `npm install` in it once
 for the MCP server (the CLI needs nothing installed).
 
 ## 1. The variables
@@ -264,6 +264,42 @@ MCP: list_work_items { "url": "<link>", "group": "set", "expand": "instances", "
 CLI: node scripts/rds-agent.js work "$LINK" --group set --expand instances --changes names
 ```
 
+### Library components
+
+Nodes of library (remote) components carry `library: { key, fileKey?, resolved }`;
+their `figmaUrl` opens the component in its library file once the server has
+resolved it (`RDS_FIGMA_TOKEN`), else it is `null` — find the component in the
+library by `key`. A file can stop tracking them:
+
+```text
+MCP: update_file_settings { "url": "<link>", "settings": { "trackLibraryComponents": false } }
+CLI: node scripts/rds-agent.js files settings --url "$LINK" --track-library-components=false
+```
+
+Then library nodes leave listings, counts and progress (`library=include` or
+`only` still lists them), and with `expand=instances` each library component a
+screen uses is a `kind: "library"` reference item (`tracked: false`, no nodes,
+with `placements`): use the library component as is — nothing to build or clear.
+
+### Design tokens
+
+Figma variables sync as their own scope, `tokens`: one `tokens:<collectionKey>`
+node per collection and one `token:<variableKey>` node per variable, with one
+`value:<Mode>` property per mode. A token change dirties the token, not the
+layers that use it. Work them collection by collection:
+
+```text
+MCP: list_work_items { "fileKey": "<key>", "under": "tokens", "changes": "diff", "include": "usage" }
+CLI: node scripts/rds-agent.js work --file-key <key> --under tokens --changes diff --include usage
+```
+
+Each `kind: "tokens"` item is a collection; its `changes` show each changed
+mode (`value:Dark: #202527 → #2b3033`, an alias as `{ alias, name }`) and
+`usage` how many layers use each token. For every token, update the code
+variable named by its `codeSyntax` (WEB, else the token name) in each changed
+mode, then clear it like any node (`clear_nodes` with its `contentHash`).
+`get_node` on a token shows its `codeSyntax`, every mode's value and `usage`.
+
 ### The clear loop
 
 1. **Read** the dirty nodes of what you're working on, with the hashes:
@@ -283,8 +319,29 @@ CLI: node scripts/rds-agent.js work "$LINK" --group set --expand instances --cha
    `contentHash`. Re-read that node (`get_node` /
    `node scripts/rds-agent.js nodes show 5:2 --file-key AbC123`), implement the
    newer change, and clear it with the new hash — never retry the old one.
-5. **Block** a node you can't implement instead of clearing it:
+5. **Notes.** A node with open `notes` (`changeType: "requested"` when the
+   design is otherwise built; work items count them) was noted by a person or
+   agent as not matching the design. Read the notes, fix the code to match the
+   design as they describe, then clear the node — clearing resolves its notes.
+   Add one yourself with `add_note` /
+   `node scripts/rds-agent.js notes add 5:2 --file-key AbC123 --body "…"`;
+   dismiss a wrong one with `dismiss_note` (it does not clear the node).
+6. **Block** a node you can't implement instead of clearing it:
    `block_node` / `node scripts/rds-agent.js block 5:2 --file-key AbC123 --reason "…"`.
+
+7. **Removed design.** A work item with `kind: "removed"` is a built screen
+   (or layer) that was deleted in Figma — one item per removed root, cleared
+   once. Remove the code that rendered the root; keep the components in its
+   `uses` with `livePlacements > 0` (still used elsewhere), consider removing
+   those with `livePlacements: 0`, and heed `warnings`
+   (`main_removed_with_live_placements`: a deleted main component still has
+   live instances). Then clear just the root with `subtree: true`:
+   ```text
+   MCP: clear_nodes { "url": "<link>", "commitRef": "<sha>", "items": [ { "nodeId": "2:1", "contentHash": "<hash>", "subtree": true } ] }
+   ```
+   The result's `subtreeCleared` counts the deleted nodes below it cleared with
+   it. `not_removed` means the node isn't deleted — clear it normally.
+   Deleting something that was never built creates no work at all.
 
 Repeat until the listing is empty.
 

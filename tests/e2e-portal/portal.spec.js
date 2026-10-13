@@ -5,7 +5,7 @@
 // then signs in as a viewer and an agent. See tests/README.md.
 
 const { test, expect } = require('@playwright/test');
-const { TOKENS, ROOT, FRAME, INSTANCE, MAIN_CHILD, SECOND, seedFile, syncSecondScope, claim, clear } = require('./fixture');
+const { TOKENS, ROOT, FRAME, INSTANCE, MAIN_CHILD, SECOND, REMOVED, TOKEN_COLLECTION, TOKEN, seedFile, syncSecondScope, syncRemovedScreen, syncTokens, claim, clear, notesOf } = require('./fixture');
 
 async function signIn(page, token) {
   await page.goto('/ui/sign-in');
@@ -46,6 +46,13 @@ test('viewer browses files, expands a frame and an instance, and sees no actions
   await page.getByRole('button', { name: 'Expand Card' }).click();
   await expect(row(page, INSTANCE)).toBeVisible();
   await row(page, INSTANCE).getByRole('button', { name: 'Expand Button' }).click();
+  await expect(row(page, MAIN_CHILD)).toBeVisible();
+  const expandInstances = page.getByRole('switch', { name: 'Expand instances' });
+  await page.getByText('Expand instances', { exact: true }).click();
+  await expect(expandInstances).not.toBeChecked();
+  await expect(row(page, INSTANCE)).toBeVisible();
+  await page.getByText('Expand instances', { exact: true }).click();
+  await expect(expandInstances).toBeChecked();
   await expect(row(page, MAIN_CHILD)).toBeVisible();
 
   await row(page, FRAME).getByText('Card', { exact: true }).click();
@@ -90,7 +97,7 @@ test('agent blocks and unblocks a node and releases a claim', async ({ page }) =
   await page.keyboard.press('Escape');
 });
 
-test('an API claim pops a sprite onto its row and a clear poofs it, without a reload', async ({ page }) => {
+test('an API claim pops a sprite onto its row and a clear poofs it, without a reload; a viewer note makes it Requested until the next clear', async ({ page }) => {
   const { fileKey } = await seedFile();
   await signIn(page, TOKENS.viewer);
   await openNodeTree(page, fileKey);
@@ -114,6 +121,30 @@ test('an API claim pops a sprite onto its row and a clear poofs it, without a re
   await expect(frame).toContainText('Clean');
   await expect(frame).not.toContainText('Dirty');
   expect(await page.evaluate(() => window.__noReload)).toBe(true);
+
+  // The viewer notes the now-clean node: it turns Requested; an agent clear resolves the note.
+  await frame.getByText('Card', { exact: true }).click();
+  const node = drawer(page);
+  await node.getByRole('tab', { name: 'Change List' }).click();
+  await node.getByRole('button', { name: 'Add change note', exact: true }).click();
+  await node.getByRole('textbox', { name: /Description/ }).fill('The card padding should be 24px, not 16px.');
+  await expect(node.getByText('42/4000')).toBeVisible();
+  await node.getByRole('button', { name: 'Add Change Note', exact: true }).click();
+  await expect(page.getByText('Note added — the node needs a change')).toBeVisible();
+  const notes = node.getByRole('region', { name: 'Open notes' });
+  await expect(notes.getByText('The card padding should be 24px, not 16px.')).toBeVisible();
+  await expect(node.getByRole('group', { name: 'Status' })).toContainText('Requested');
+  await expect(frame).toContainText('Requested');
+  await expect(frame.getByRole('img', { name: '1 open note' })).toBeVisible();
+  await expect(node.getByRole('button', { name: 'Block…' })).toHaveCount(0);
+
+  await clear(fileKey, [FRAME]);
+  await expect(frame).toContainText('Clean');
+  await expect(notes).toHaveCount(0);
+  const { notes: all } = await notesOf(fileKey, FRAME);
+  expect(all.map(n => n.status)).toEqual(['resolved']);
+  await node.getByRole('tab', { name: 'Change History' }).click();
+  await expect(node.getByText(/Resolved a note by clearing it/)).toBeVisible();
 });
 
 test('sidebar navigation, old links redirecting, the scope panel and the theme', async ({ page }) => {
@@ -185,4 +216,92 @@ test('several scopes: the union of their nodes, an "N scopes" header and the Wor
   await page.goto(`/ui/files/${fileKey}/work?under=${ROOT}`);
   await expect(page.getByRole('radio', { name: 'By frame' })).toBeEnabled();
   await expect(page.getByText('1 Scope Viewed')).toBeVisible();
+});
+
+test('file settings: an agent turns library tracking off and on; a viewer sees it read-only', async ({ page }) => {
+  const { fileKey, fileName } = await seedFile();
+  await signIn(page, TOKENS.agent);
+  await page.goto(`/ui/files/${fileKey}/work?under=${ROOT}`);
+  await page.getByRole('button', { name: 'File settings' }).click();
+  const settings = page.getByRole('dialog', { name: 'File settings' });
+  await expect(settings.getByText(fileName)).toBeVisible();
+  const toggle = settings.getByRole('switch', { name: /Track library components/ });
+  await expect(toggle).toBeChecked();
+  await expect(toggle).toBeEnabled();
+  await expect(settings.getByText(/^Links to library files: /)).toBeVisible();
+
+  const patched = page.waitForResponse(res => res.request().method() === 'PATCH' && res.url().endsWith(`/v3/files/${fileKey}`));
+  await settings.getByText('Track library components', { exact: true }).click();
+  expect((await patched).status()).toBe(200);
+  await expect(page.getByRole('region', { name: 'Notifications' }).getByText('Library components are no longer tracked')).toBeVisible();
+  await expect(toggle).not.toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
+
+  await page.reload();
+  await page.getByRole('button', { name: 'File settings' }).click();
+  const reopened = page.getByRole('dialog', { name: 'File settings' });
+  const again = reopened.getByRole('switch', { name: /Track library components/ });
+  await expect(again).not.toBeChecked();
+  await expect(again).toBeEnabled();
+  await reopened.getByText('Track library components', { exact: true }).click();
+  await expect(again).toBeChecked();
+  await page.keyboard.press('Escape');
+
+  await signOut(page);
+  await signIn(page, TOKENS.viewer);
+  await page.goto(`/ui/files/${fileKey}/work?under=${ROOT}`);
+  await page.getByRole('button', { name: 'File settings' }).click();
+  const readOnly = page.getByRole('dialog', { name: 'File settings' });
+  await expect(readOnly.getByText('Sign in with an agent token to change file settings.')).toBeVisible();
+  await expect(readOnly.getByRole('switch', { name: /Track library components/ })).toBeDisabled();
+});
+
+test('a removed screen is one Removed work item; its row opens the Removal panel', async ({ page }) => {
+  const { fileKey } = await seedFile();
+  await syncRemovedScreen(fileKey);
+  await signIn(page, TOKENS.viewer);
+  await page.goto(`/ui/files/${fileKey}/work?under=${ROOT}`);
+  const work = page.getByRole('table', { name: 'Work items' });
+  const removed = work.getByRole('row', { name: 'Old screen' });
+  await expect(removed.getByText('Removed', { exact: true })).toBeVisible();
+  await expect(removed.getByText('3 layers removed')).toBeVisible();
+  await removed.getByText('Old screen', { exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`node=${REMOVED.replace(':', '(%3A|:)')}`));
+  const panel = drawer(page).getByRole('group', { name: 'Removed from the design' });
+  await expect(panel.getByText('Remove the code that rendered “Old screen”. Keep components that are still used.')).toBeVisible();
+  await expect(panel.getByRole('listitem').filter({ hasText: 'Button' })).toContainText('Keep');
+  await expect(panel.getByRole('button', { name: 'Copy removal prompt' })).toBeVisible();
+});
+
+test('design tokens: browse a collection, read a changed mode, open the token and its work item', async ({ page }) => {
+  const { fileKey } = await seedFile();
+  await syncTokens(fileKey);
+  await signIn(page, TOKENS.viewer);
+  await page.goto(`/ui/files/${fileKey}/nodes?under=tokens`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Design tokens' })).toBeVisible();
+  await row(page, TOKEN_COLLECTION).getByRole('button', { name: 'Expand Semantic' }).click();
+  const token = row(page, TOKEN);
+  await expect(token.getByText('VARIABLE · COLOR · --color-bg-active')).toBeVisible();
+  await expect(token.getByText('Dark', { exact: true })).toBeVisible();
+  await expect(token.getByText('#202527')).toBeVisible();
+  await expect(token.getByText('#2b3033')).toBeVisible();
+
+  await token.getByText('Colors/bg-active', { exact: true }).click();
+  await expect(drawer(page).getByRole('heading', { name: /Colors\/bg-active/ })).toContainText('Token');
+  await expect(drawer(page).getByText('Used by 1 layer')).toBeVisible();
+  await expect(drawer(page).getByRole('link', { name: 'Open in Figma' })).toHaveCount(0);
+  await drawer(page).getByRole('tab', { name: 'Change List' }).click();
+  const change = drawer(page).getByRole('table', { name: 'Change list' }).getByRole('row').nth(1);
+  await expect(change).toContainText('value:Dark');
+  await expect(change).toContainText('#2b3033');
+  await page.keyboard.press('Escape');
+
+  await page.goto(`/ui/files/${fileKey}/work?under=tokens`);
+  const item = page.getByRole('table', { name: 'Work items' }).getByRole('row', { name: 'Semantic' });
+  await expect(item.getByText('Tokens', { exact: true })).toBeVisible();
+  await expect(item.getByText('1 token changed')).toBeVisible();
+  await item.getByText('Semantic', { exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/nodes\\?under=${encodeURIComponent(TOKEN_COLLECTION).replace('%3A', '(%3A|:)')}`));
+  await expect(row(page, TOKEN)).toBeVisible();
 });

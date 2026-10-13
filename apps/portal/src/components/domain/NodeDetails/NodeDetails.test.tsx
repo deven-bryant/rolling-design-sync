@@ -160,3 +160,50 @@ describe('NodeDetails under the dark theme', () => {
     await expectNoAxeViolations(container);
   });
 });
+
+describe('NodeDetails State=Add Change', () => {
+  const form = <textarea aria-label="Description" />;
+
+  it('maps the Add Change variant', () => {
+    expect(figmaNodeDetails.axes.State['Add Change']).toEqual({ nodeId: '173:34249', props: { state: 'add-change' } });
+  });
+
+  it('toggles between the change list and the note input with the dropdown, and Cancel goes back', async () => {
+    const onStateChange = vi.fn();
+    render(<Example addChange={form} onStateChange={onStateChange} />);
+    const user = userEvent.setup();
+    const toggle = screen.getByRole('button', { name: 'Add change note' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByRole('table', { name: 'Change list' })).toBeTruthy();
+    await user.click(toggle);
+    expect(onStateChange).toHaveBeenLastCalledWith('add-change');
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('textbox', { name: 'Description' })).toBeTruthy();
+    expect(screen.queryByRole('table', { name: 'Change list' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Change List' }).getAttribute('aria-selected')).toBe('true');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onStateChange).toHaveBeenLastCalledWith('change-list');
+    expect(screen.getByRole('table', { name: 'Change list' })).toBeTruthy();
+    await user.click(toggle);
+    await user.click(toggle);
+    expect(screen.queryByRole('textbox', { name: 'Description' })).toBeNull();
+  });
+
+  it('shows notes above the list and can leave out an empty list', () => {
+    const { rerender } = render(<Example notes={<p>A note</p>} />);
+    expect(screen.getByText('A note')).toBeTruthy();
+    rerender(<Example notes={<p>A note</p>} changes={[]} hideEmptyChanges />);
+    expect(screen.queryByText('Nothing changed.')).toBeNull();
+    expect(screen.getByText('A note')).toBeTruthy();
+  });
+
+  it('has no dropdown without addChange', () => {
+    render(<Example />);
+    expect(screen.queryByRole('button', { name: 'Add change note' })).toBeNull();
+  });
+
+  it('has no axe violations in State=Add Change', async () => {
+    const { container } = render(<Example defaultState="add-change" addChange={form} />);
+    await expectNoAxeViolations(container);
+  });
+});

@@ -5,7 +5,7 @@ steps. Everything runs on your machine: the API and portal in Docker, the plugin
 in Figma desktop, the agent tools from this checkout.
 
 You need **git**, **Docker** (with Compose), the **Figma desktop app**, and
-**Node 20+** for the agent tools.
+**Node 22.22+** for the agent tools.
 
 ## 1. Start the API
 

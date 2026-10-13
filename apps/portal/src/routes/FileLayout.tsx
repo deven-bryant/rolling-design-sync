@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router';
 import { useNow } from '../api/hooks/useNow';
-import { Button } from '../components/Button';
+import { Button, ButtonUtility } from '../components/Button';
+import { Icon } from '../components/primitives';
 import { PageHeader } from '../components/PageHeader';
-import { formatCount, timeAgo, useLastSyncClient } from '../features/files';
+import { FileSettingsDrawer, formatCount, timeAgo, useLastSyncClient } from '../features/files';
 import { splitUnder, useFile, useScope } from '../features/nodes';
 import { defaultScope, ScopePanel } from '../features/scopes';
 import { useWorkItems } from '../features/work';
@@ -47,6 +48,8 @@ export function scopePrompt({ fileKey, scopes }: { fileKey: string; scopes: read
     `1. List the work items under the ${scopes.length === 1 ? 'scope' : 'scopes'}; build leaves first, then the composites that contain them:`,
     `   - MCP: list_work_items { "fileKey": "${fileKey}", "under": "${nodeId}", "expand": "instances" }`,
     `   - CLI: ${cli} work --file-key ${fileKey} --under ${nodeId} --expand instances`,
+    '   An item with kind "removed" is design deleted in Figma: remove its code (keep the components in its uses with livePlacements > 0), then clear just its root with subtree: true.',
+    '   An item with kind "tokens" is one collection of design tokens: update the code variables (each token\'s codeSyntax, WEB, else the token name) for every changed mode (value:<Mode>), then clear the tokens.',
     "2. Claim each item's nodeIds with a stable worker id; work only on the nodes the claim returns:",
     `   - MCP: claim_nodes { "fileKey": "${fileKey}", "nodeIds": ["<nodeId>"], "worker": "<worker>" }`,
     `   - CLI: ${cli} claim --file-key ${fileKey} --node-ids <nodeId>,… --worker <worker>`,
@@ -54,6 +57,7 @@ export function scopePrompt({ fileKey, scopes }: { fileKey: string; scopes: read
     `   - MCP: list_nodes { "fileKey": "${fileKey}", "under": "<nodeId>" } or get_node { "fileKey": "${fileKey}", "nodeId": "<nodeId>" }`,
     `   - CLI: ${cli} nodes ls --file-key ${fileKey} --under <nodeId>, or ${cli} nodes show <nodeId> --file-key ${fileKey}`,
     '4. Implement the changes and commit them.',
+    '   An item with notes has nodes a person noted as not matching the design (changeType "requested" when the design is otherwise built): read the notes on the node (get_node), fix the code to match the design as they describe; clearing resolves them.',
     '5. Clear every node you built with its contentHash and the commit SHA:',
     `   - MCP: clear_nodes { "fileKey": "${fileKey}", "items": [{ "nodeId": "<nodeId>", "contentHash": "<contentHash>" }], "commitRef": "<sha>" }`,
     `   - CLI: ${cli} clear <nodeId>=<contentHash> … --file-key ${fileKey} --commit-ref <sha>`,
@@ -69,6 +73,7 @@ const typeName = (type: string | null | undefined) => (type ? type.charAt(0) + t
 function ScopeMeta({ fileKey, scope }: { fileKey: string; scope: Scope }) {
   const now = useNow();
   const client = useLastSyncClient(fileKey, scope.lastSyncAt);
+  const tokens = scope.type === 'TOKENS';
   const components = useWorkItems({
     fileKey,
     under: scope.nodeId,
@@ -78,9 +83,10 @@ function ScopeMeta({ fileKey, scope }: { fileKey: string; scope: Scope }) {
   const synced = scope.lastSyncAt ? `synced ${timeAgo(scope.lastSyncAt, now)}${client.data ? ` by ${client.data}` : ''}` : 'never synced';
   const counts = [
     scope.counts?.total !== undefined ? `${formatCount(scope.counts.total)} nodes` : null,
-    components !== undefined ? `${formatCount(components)} components` : null,
+    components !== undefined && !tokens ? `${formatCount(components)} components` : null,
   ].filter(Boolean);
-  return <>{[`${typeName(scope.type)} ${scope.nodeId ?? ''}`, synced, counts.join(', ')].filter(Boolean).join(' · ')}</>;
+  const kind = tokens ? 'Figma variables' : `${typeName(scope.type)} ${scope.nodeId ?? ''}`;
+  return <>{[kind, synced, counts.join(', ')].filter(Boolean).join(' · ')}</>;
 }
 
 /** Several scopes: their summed node counts, the components they use and the latest sync. */
@@ -104,6 +110,7 @@ export function FileLayout() {
   const { pathname } = useLocation();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const file = useFile(fileKey);
   const scopes = useScope(fileKey, undefined);
   useEffect(() => rememberFile(fileKey), [fileKey]);
@@ -136,7 +143,7 @@ export function FileLayout() {
 
   return (
     <>
-      <PageHeader divider>
+      <PageHeader divider className="bg-primary">
         <PageHeader.Title>{title ?? fileName}</PageHeader.Title>
         <PageHeader.Description>
           {several ? (
@@ -150,6 +157,7 @@ export function FileLayout() {
           )}
         </PageHeader.Description>
         <PageHeader.Actions>
+          <ButtonUtility size="md" icon={<Icon name="settings-01" />} tooltip="File settings" onPress={() => setSettingsOpen(true)} />
           {shown.length > 0 && (
             <CopyButton
               hierarchy="secondary"
@@ -176,6 +184,7 @@ export function FileLayout() {
         onSelectionChange={select}
         onViewNodes={onWork ? nodeIds => void navigate(`${filePath(fileKey, 'nodes')}${query({ under: nodeIds.join(',') })}`) : undefined}
       />
+      <FileSettingsDrawer fileKey={fileKey} isOpen={settingsOpen} onOpenChange={setSettingsOpen} />
       <Outlet context={{ fileKey, scope, scopes: picked, under, scopeViewed: picked.length > 0 } satisfies FileOutlet} />
     </>
   );

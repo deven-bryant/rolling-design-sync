@@ -14,9 +14,10 @@ import { cx, variants, type VariantProps } from '../primitives';
 export const tabListStyles = variants({
   base: 'flex',
   variants: {
-    type: { underline: 'gap-lg border-b border-secondary', 'button-gray': 'gap-xs' },
+    type: { underline: 'gap-lg border-b border-secondary', 'button-gray': 'gap-xs', 'button-brand': 'gap-xs' },
+    fullWidth: { true: 'w-full', false: '' },
   },
-  defaults: { type: 'underline' },
+  defaults: { type: 'underline', fullWidth: false },
 });
 
 export const tabStyles = variants({
@@ -26,16 +27,22 @@ export const tabStyles = variants({
       underline:
         '-mb-px border-b-2 border-transparent px-xs pb-lg data-hovered:text-brand-secondary data-selected:border-fg-brand-primary_alt data-selected:text-brand-secondary',
       'button-gray': 'rounded-sm px-lg py-md data-hovered:text-secondary data-selected:bg-active data-selected:text-secondary',
+      'button-brand':
+        'rounded-sm px-lg py-md data-hovered:text-brand-secondary data-selected:bg-brand-primary_alt data-selected:text-brand-secondary',
     },
     size: { sm: 'text-sm', md: 'text-md' },
+    fullWidth: { true: 'flex-1', false: '' },
   },
-  defaults: { type: 'underline', size: 'md' },
-  compound: [{ type: 'button-gray', size: 'md', className: 'h-11' }],
+  defaults: { type: 'underline', size: 'md', fullWidth: false },
+  compound: [
+    { type: 'button-gray', size: 'md', className: 'h-11' },
+    { type: 'button-brand', size: 'md', className: 'h-11' },
+  ],
 });
 
 type TabStyle = Required<VariantProps<typeof tabStyles>>;
 
-const TabStyleContext = createContext<TabStyle>({ type: 'underline', size: 'md' });
+const TabStyleContext = createContext<TabStyle>({ type: 'underline', size: 'md', fullWidth: false });
 
 export interface TabsProps extends Omit<AriaTabsProps, 'className'>, VariantProps<typeof tabStyles> {
   className?: string;
@@ -43,12 +50,13 @@ export interface TabsProps extends Omit<AriaTabsProps, 'className'>, VariantProp
 }
 
 /**
- * Figma `Horizontal tabs` (Type=Underline · Button gray): React Aria tabs. Selection is controlled with
+ * Figma `Horizontal tabs` (Type=Underline · Button gray · Button brand): React Aria tabs. `fullWidth` (Figma
+ * `Full width=True`) stretches the list and shares its width equally between the tabs. Selection is controlled with
  * `selectedKey` + `onSelectionChange` (e.g. from the URL) or uncontrolled with `defaultSelectedKey`.
  */
-export function Tabs({ type = 'underline', size = 'md', className, ...rest }: TabsProps) {
+export function Tabs({ type = 'underline', size = 'md', fullWidth = false, className, ...rest }: TabsProps) {
   return (
-    <TabStyleContext.Provider value={{ type, size }}>
+    <TabStyleContext.Provider value={{ type, size, fullWidth }}>
       <AriaTabs {...rest} className={cx('flex flex-col', className)} />
     </TabStyleContext.Provider>
   );
@@ -60,8 +68,8 @@ export interface TabsListProps<T> extends Omit<AriaTabListProps<T>, 'className'>
 }
 
 function TabsList<T extends object>({ className, ...rest }: TabsListProps<T>) {
-  const { type } = useContext(TabStyleContext);
-  return <AriaTabList {...rest} className={tabListStyles({ type, className })} />;
+  const { type, fullWidth } = useContext(TabStyleContext);
+  return <AriaTabList {...rest} className={tabListStyles({ type, fullWidth, className })} />;
 }
 
 export interface TabsTabProps extends Omit<AriaTabProps, 'className' | 'children'> {

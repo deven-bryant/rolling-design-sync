@@ -1,8 +1,10 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { fileClaimsQueryKey } from '../../api/hooks/useFileClaims';
+import { useStatus } from '../../api/hooks/useStatus';
 import { getSession } from '../../api/session';
 import type { FileClaims, NodeDetail, NodeFilters, NodeItem, NodeLike, NodePage, SessionRole } from './types';
+import { isTokenNodeId } from './format';
 
 /** Rows per top-level page (the design's "25 per page"). */
 export const PAGE_SIZE = 25;
@@ -31,14 +33,17 @@ export type NodeListParams = Record<string, string | number | undefined>;
 const NODE_ID = /^\d+[:-]\d+(?:;\d+[:-]\d+)*$/;
 const KEY_VALUE = /\b[A-Za-z]+:\S/;
 
-/** The search box as listing parameters: `key:value` → `q`, a node id → `under`, text → a `name` glob. */
+/** The search box as listing parameters: `key:value` → `q`, node ids → `under`, text → `name` globs; commas separate terms. */
 export function searchParams(search: string | undefined): NodeListParams {
   const text = search?.trim();
   if (!text) return {};
-  if (NODE_ID.test(text)) return { under: text.replace(/-/g, ':') };
+  const terms = text.split(',').map(term => term.trim()).filter(Boolean);
+  if (terms.every(term => NODE_ID.test(term))) return { under: terms.map(term => term.replace(/-/g, ':')).join(',') };
   if (KEY_VALUE.test(text)) return { q: text };
-  return { name: `*${text}*` };
+  return { name: terms.map(term => `*${term}*`).join(',') };
 }
+
+const searchesSubtree = (params: NodeListParams) => params.name !== undefined || params.q !== undefined;
 
 /** The filter parameters every node page sends (`search` only applies to the top level). */
 export function filterParams(filters: NodeFilters, { search = true } = {}): NodeListParams {
@@ -51,12 +56,21 @@ export function filterParams(filters: NodeFilters, { search = true } = {}): Node
   };
 }
 
+/** A compact listing's fields plus `attrs`: token rows show their resolved type and code name. */
+export const TOKEN_FIELDS =
+  'nodeId,name,type,parentId,isInstance,mainComponentId,component,state,changeType,changedProps,changes,changesKnown,contentHash,figmaUrl,library,claim,blocked,notes,attrs';
+
+/** `fields` for a level under the design-tokens scope (`tokens`, `tokens:<collectionKey>`). */
+const tokenFields = (under: string | number | undefined) =>
+  typeof under === 'string' && splitUnder(under).some(isTokenNodeId) ? { fields: TOKEN_FIELDS } : {};
+
 /** A tree level: `under` and its direct children, in document order, with subtree counts. */
 export function nodePageParams(under: string | undefined, filters: NodeFilters, cursor?: string): NodeListParams {
   const params: NodeListParams = { under, ...filterParams(filters) };
   return {
     ...params,
-    depth: params.under ? 1 : undefined,
+    ...tokenFields(params.under),
+    depth: params.under && !searchesSubtree(params) ? 1 : undefined,
     include: 'counts',
     sort: 'document',
     limit: PAGE_SIZE,
@@ -65,13 +79,13 @@ export function nodePageParams(under: string | undefined, filters: NodeFilters, 
 }
 
 function childParams(under: string, filters: NodeFilters): NodeListParams {
-  return { under, depth: 1, include: 'counts', sort: 'document', limit: CHILD_PAGE_SIZE, ...filterParams(filters, { search: false }) };
+  return { under, ...tokenFields(under), depth: 1, include: 'counts', sort: 'document', limit: CHILD_PAGE_SIZE, ...filterParams(filters, { search: false }) };
 }
 
 const clean = (params: NodeListParams) =>
   Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '')) as Record<string, string | number>;
 
-const listNodes = (fileKey: string, params: NodeListParams, signal?: AbortSignal) =>
+export const listNodes = (fileKey: string, params: NodeListParams, signal?: AbortSignal) =>
   api.get('/v3/files/{fileKey}/nodes', { path: { fileKey }, query: clean(params), signal });
 
 /** The file's header data: name, last sync and counts. */
@@ -140,6 +154,16 @@ export function useNodeDetail(fileKey: string, nodeId: string | null | undefined
   });
 }
 
+export function useNoteList(fileKey: string, nodeId: string | null | undefined, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: [...nodeKeys.all(fileKey), 'notes', nodeId ?? ''] as const,
+    queryFn: ({ signal }) =>
+      api.get('/v3/files/{fileKey}/nodes/{nodeId}/notes', { path: { fileKey, nodeId: nodeId ?? '' }, query: { status: 'all' }, signal }),
+    enabled: enabled && !!fileKey && !!nodeId,
+    staleTime: 60_000,
+  });
+}
+
 /** A node's history: the file's events that touched it, newest first. */
 export function useNodeHistory(fileKey: string, nodeId: string | null | undefined) {
   return useQuery({
@@ -150,10 +174,21 @@ export function useNodeHistory(fileKey: string, nodeId: string | null | undefine
   });
 }
 
+/** `/v3/status` `libraryLinks`: library nodes can link to their library file (the server has RDS_FIGMA_TOKEN). */
+export function useLibraryLinks(): boolean | undefined {
+  return useStatus().data?.libraryLinks;
+}
+
 /** The signed-in session's role; `viewer` until it is known. */
 export function useSessionRole(): SessionRole {
   const session = useQuery({ queryKey: ['session'], queryFn: () => getSession(), retry: false });
   return session.data?.role === 'agent' ? 'agent' : 'viewer';
+}
+
+/** The author name the API records for the signed-in session's notes (`portal:<label>`); undefined until known. */
+export function useSessionAuthor(): string | undefined {
+  const session = useQuery({ queryKey: ['session'], queryFn: () => getSession(), retry: false });
+  return session.data?.label ? `portal:${session.data.label}` : undefined;
 }
 
 type NodePatch = Partial<NodeItem> | ((node: NodeLike) => Partial<NodeItem>);
@@ -244,5 +279,56 @@ export function useUnblockNode(fileKey: string) {
       storeNode(queryClient, fileKey, data.node);
       void queryClient.invalidateQueries({ queryKey: nodeKeys.histories(fileKey) });
     },
+  });
+}
+
+/** A note's body length bounds (the API's). */
+export const NOTE_MAX = 4000;
+
+/** After a note write: refetch the file's nodes (state, change type, notes), work items and histories. */
+function refreshAfterNote(queryClient: QueryClient, fileKey: string) {
+  void queryClient.invalidateQueries({ queryKey: nodeKeys.all(fileKey) });
+  void queryClient.invalidateQueries({ queryKey: ['files', fileKey, 'work'] });
+}
+
+/** Anyone signed in (viewers too): notes that the built node doesn't match the design; the node turns dirty. */
+export function useAddNote(fileKey: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ nodeId, body }: { nodeId: string; body: string }) =>
+      api.post('/v3/files/{fileKey}/nodes/{nodeId}/notes', { path: { fileKey, nodeId }, body: { body } }),
+    onSuccess: data => {
+      const { nodeId, state, changeType, notes } = data.node ?? {};
+      if (nodeId) patchNodes(queryClient, fileKey, [nodeId], { state, changeType, notes });
+      refreshAfterNote(queryClient, fileKey);
+    },
+  });
+}
+
+/** The author: rewrites an open note. */
+export function useEditNote(fileKey: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ noteId, body }: { noteId: string; body: string }) =>
+      api.patch('/v3/files/{fileKey}/notes/{noteId}', { path: { fileKey, noteId }, body: { body } }),
+    onSuccess: () => refreshAfterNote(queryClient, fileKey),
+  });
+}
+
+/** The author: deletes an open note. */
+export function useDeleteNote(fileKey: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (noteId: string) => api.delete('/v3/files/{fileKey}/notes/{noteId}', { path: { fileKey, noteId } }),
+    onSuccess: () => refreshAfterNote(queryClient, fileKey),
+  });
+}
+
+/** The author or an agent: dismisses an open note; the node goes back to its design-only state. */
+export function useDismissNote(fileKey: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (noteId: string) => api.post('/v3/files/{fileKey}/notes/{noteId}/dismiss', { path: { fileKey, noteId }, body: {} }),
+    onSuccess: () => refreshAfterNote(queryClient, fileKey),
   });
 }

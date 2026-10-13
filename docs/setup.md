@@ -4,7 +4,7 @@ The full self-hosting walkthrough behind the root README's
 [Self-hosting](../README.md#self-hosting) section. You need the Figma desktop
 app, plus one of:
 
-- **Docker** (or Node 20+ and nothing else) — a single user on one machine can
+- **Docker** (or Node 22.22+ and nothing else) — a single user on one machine can
   run the API with an embedded Postgres
   ([Run with Docker](#run-with-docker-recommended-for-local-use),
   [Single user, no database server](#single-user-no-database-server)).
@@ -149,9 +149,49 @@ the root README):
 for f in supabase/migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
 ```
 
-Or paste each file, in order, into the Supabase SQL editor. Unlike local mode,
-Postgres mode doesn't track or apply migrations itself: when you pull new
-files, apply just those, in order.
+Or paste each file, in order, into the Supabase SQL editor.
+
+**The startup check.** On every start in Postgres mode, before it listens, the
+API runs one read-only probe per file in `supabase/migrations/` — a query that
+is true when that migration's effect (its table, column or constraint) is in the
+database. If every probe passes it starts. If any fails it **refuses to start**
+and exits non-zero, listing the missing files in order with the `psql` loop for
+just those files:
+
+```text
+Database schema is missing 2 migration(s); refusing to start. Apply, in this order:
+  20261013000000_api_v3_library_components.sql
+  20261014000000_api_v3_node_notes.sql
+From the repository root:
+  for f in supabase/migrations/20261013000000_api_v3_library_components.sql supabase/migrations/20261014000000_api_v3_node_notes.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"; done
+Or set RDS_AUTO_MIGRATE=true to apply them at startup. See docs/setup.md, "Apply the migrations".
+```
+
+**`RDS_AUTO_MIGRATE=true`** (default `false`) makes the API apply them itself:
+it takes a Postgres advisory lock (so of several instances starting at once,
+one applies and the others wait, then find nothing to do), re-runs the probes,
+applies only the failing files in filename order, each in its own transaction,
+logging `Applying migration <file>` for each, re-probes, releases the lock and
+starts — or exits if a probe still fails. A database whose probes all pass is
+left untouched: no statement other than the probes runs. A fresh, empty
+database is bootstrapped by applying every file. The lock is held on one
+session, so run with a **direct** connection (port 5432) in `DATABASE_URL`, not
+a transaction pooler. The connecting role needs the rights the migrations need
+(creating tables, indexes and the two extensions).
+
+**Upgrading** the API to a release with new migration files means either
+applying just those files, in order, before starting it (the refusal message
+lists them), or starting it once with `RDS_AUTO_MIGRATE=true`. Back up the
+database first either way.
+
+**`RDS_SCHEMA_CHECK=off`** skips the check entirely, with a warning at every
+start, for operators who manage the schema another way. Not recommended: a
+missing migration then surfaces as `500` errors on the routes that need it.
+
+The probes and migrations never log the connection string or row data. Local
+mode (`RDS_STORE=local`) doesn't use this check; it keeps tracking its own
+migrations in `schema_migrations` (see
+[Single user, no database server](#single-user-no-database-server)).
 
 **Upgrading from before v0.8.0.** Nodes synced before v0.8.0 were migrated
 with a change type but no changed properties or categories. The API repairs
@@ -385,9 +425,12 @@ replacement, so rename it.
 | `RDS_RATE_LIMIT_AUTH` | API | `10`; `0` when `RDS_STORE` is set | Sign-ins (`POST /v3/session`) plus rejected (`401`) tokens per minute per client IP; `0` disables |
 | `RDS_TRUST_PROXY` | API | off | Take the client IP from `X-Forwarded-For`: a hop count (`1` behind one proxy), `true` (every hop), or proxy addresses/CIDRs. Leave unset unless a proxy you control sits in front |
 | `PGSSLMODE` | API | — | Set to `disable` for a local Postgres without TLS |
+| `RDS_AUTO_MIGRATE` | API | `false` | Postgres mode: `true` applies the migrations the startup schema check finds missing (under an advisory lock) instead of refusing to start. See [Apply the migrations](#apply-the-migrations) |
+| `RDS_SCHEMA_CHECK` | API | on | Postgres mode: `off` skips the startup schema check, with a warning. Not recommended |
 | `RDS_LISTEN_URL` | API | `DATABASE_URL` | Direct (non-pooler) Postgres URL for the live-event listener; without `LISTEN` the API polls every 2 s |
 | `RDS_EVENT_REPLAY_HOURS` | API | `24` | How far back an event stream replays on reconnect; older cursors get a `reset` |
 | `RDS_EVENT_RETENTION_DAYS` | API | `30` | Events older than this are pruned (startup and hourly) |
+| `RDS_FIGMA_TOKEN` | API (optional) | — | Figma personal access token with the `library_assets:read` scope: library component keys resolve to their library file, so library nodes link there. Without it their `figmaUrl` is null. Server-side only; never logged or returned |
 | `RDS_API_BASE_URL` | CLI / MCP | — | API base URL |
 | `RDS_AGENT_TOKEN` | CLI / MCP | — | This worker's agent token (one of `RDS_AGENT_TOKENS`) |
 | `RDS_FILE_KEY` | MCP (optional) | — | Default Figma file key, so tools can omit `fileKey` |

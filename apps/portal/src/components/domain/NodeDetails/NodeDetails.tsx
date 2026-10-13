@@ -1,15 +1,16 @@
 import { useId, useState, type HTMLAttributes, type ReactNode, type Ref } from 'react';
 import { Badge } from '../../Badge';
+import { Button } from '../../Button';
 import { Card } from '../../Card';
 import { Feed, FeedItem } from '../../FeedItem';
 import { Pagination } from '../../Pagination';
-import { cx, Text, VisuallyHidden } from '../../primitives';
+import { cx, Icon, Text, VisuallyHidden } from '../../primitives';
 import { SectionHeader } from '../../SectionHeader';
 import { Table, TextCell } from '../../Table';
 import { Tabs } from '../../Tabs';
 
-/** Figma `State`: which tab is showing. */
-export type NodeDetailsState = 'change-list' | 'change-history';
+/** Figma `State`: which tab is showing; `add-change` is the Change List tab with its note input open. */
+export type NodeDetailsState = 'change-list' | 'add-change' | 'change-history';
 
 /** One side of a change: the token (or raw value) and, under it, the raw value. */
 export interface NodeDetailsValue {
@@ -70,6 +71,17 @@ export interface NodeDetailsProps extends Omit<HTMLAttributes<HTMLElement>, 'tit
   changesMenu?: ReactNode;
   /** Shown in the card instead of the table when there are no rows. */
   changesEmpty?: ReactNode;
+  /** Leave out the `Change List` card when there are no rows (e.g. the open notes say what to change instead). */
+  hideEmptyChanges?: boolean;
+  /** Above the `Change List` card: the node's open notes. */
+  notes?: ReactNode;
+  /**
+   * `State=Add Change`: the note input (`Textarea input field` and its button). When set, a `Dropdown` above the
+   * change list opens it in place of the list, with *Cancel* to go back.
+   */
+  addChange?: ReactNode;
+  /** The `Dropdown` button's text. */
+  addChangeLabel?: ReactNode;
   /** Rows per table page. */
   pageSize?: number;
   /** The change list's pagination landmark name; make it unique when a page shows more than one `NodeDetails`. */
@@ -143,8 +155,9 @@ function ChangeList({
 }
 
 /**
- * Figma `Node Details` (`State=Change List` · `State=Change History`): a node's header, status badges and
- * claim, then its changes as a table or its history as a feed, switched by `button-gray` tabs. It fills its
+ * Figma `Node Details` (`State=Change List` · `State=Add Change` · `State=Change History`): a node's header, status
+ * badges and claim, then its changes as a table (or, `Add Change`, a note input) or its history as a feed, switched by
+ * full-width `button-brand` tabs. It fills its
  * container; status, claim text and table columns hug, and the claim row is space-between (`gap-4xl`, or
  * `gap-6xl` in `Change History`).
  */
@@ -166,6 +179,10 @@ export function NodeDetails({
   changesDescription,
   changesMenu,
   changesEmpty = 'Nothing changed.',
+  hideEmptyChanges = false,
+  notes,
+  addChange,
+  addChangeLabel = 'Add change note',
   pageSize = 10,
   paginationLabel = 'Change list pages',
   history,
@@ -179,6 +196,11 @@ export function NodeDetails({
   const [uncontrolledState, setUncontrolledState] = useState(defaultState);
   const current = state ?? uncontrolledState;
   const compact = current === 'change-history';
+  const adding = current === 'add-change' && addChange != null;
+  const setState = (next: NodeDetailsState) => {
+    setUncontrolledState(next);
+    onStateChange?.(next);
+  };
   return (
     <article ref={ref} {...rest} data-state={current} className={cx('flex w-full flex-col gap-4xl bg-primary', className)}>
       <SectionHeader>
@@ -217,21 +239,58 @@ export function NodeDetails({
         {claimContent}
       </div>
       <Tabs
-        type="button-gray"
+        type="button-brand"
         size="md"
-        className="gap-lg"
-        selectedKey={current}
+        fullWidth
+        className="gap-3xl"
+        selectedKey={current === 'add-change' ? 'change-list' : current}
         onSelectionChange={key => {
-          setUncontrolledState(key as NodeDetailsState);
-          onStateChange?.(key as NodeDetailsState);
+          if (key === 'change-list' && current === 'add-change') return;
+          setState(key as NodeDetailsState);
         }}
       >
-        <Tabs.List aria-label="Node details" className="px-xs">
+        <Tabs.List aria-label="Node details">
           <Tabs.Tab id="change-list">Change List</Tabs.Tab>
           <Tabs.Tab id="change-history">Change History</Tabs.Tab>
         </Tabs.List>
-        <Tabs.Panel id="change-list" className="px-md">
-          <ChangeList changes={changes} description={changesDescription} menu={changesMenu} empty={changesEmpty} pageSize={pageSize} paginationLabel={paginationLabel} />
+        <Tabs.Panel id="change-list" className="flex flex-col gap-3xl">
+          {addChange != null && (
+            <div className="flex h-9 items-center justify-between gap-lg px-md">
+              <Button
+                hierarchy="link-color"
+                size="md"
+                aria-expanded={adding}
+                iconTrailing={<Icon name={adding ? 'chevron-up' : 'chevron-down'} size="md" />}
+                onPress={() => setState(adding ? 'change-list' : 'add-change')}
+              >
+                {addChangeLabel}
+              </Button>
+              {adding && (
+                <Button hierarchy="link-gray" size="sm" onPress={() => setState('change-list')}>
+                  Cancel
+                </Button>
+              )}
+            </div>
+          )}
+          {adding ? (
+            <div className="flex flex-col gap-3xl px-md">{addChange}</div>
+          ) : (
+            <>
+              {notes != null && <div className="px-md">{notes}</div>}
+              {(changes.length > 0 || !hideEmptyChanges) && (
+                <div className="px-md">
+                  <ChangeList
+                    changes={changes}
+                    description={changesDescription}
+                    menu={changesMenu}
+                    empty={changesEmpty}
+                    pageSize={pageSize}
+                    paginationLabel={paginationLabel}
+                  />
+                </div>
+              )}
+            </>
+          )}
         </Tabs.Panel>
         <Tabs.Panel id="change-history" className="px-md">
           {history.length ? (

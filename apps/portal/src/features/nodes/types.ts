@@ -17,9 +17,14 @@ export type Scope = NonNullable<ScopeList['scopes']>[number];
 /** The fields a listed node and a node in full share. */
 export type NodeLike = NodeItem | NodeDetail;
 export type NodeClaim = NonNullable<NodeItem['claim']>;
+/** An open note on a node, as the node lists it. */
+export type NodeNote = NonNullable<NodeItem['notes']>[number];
+export type NoteList = ApiResponse<'/v3/files/{fileKey}/nodes/{nodeId}/notes'>;
+/** A note in full (any status), as the notes list returns it. */
+export type Note = NonNullable<NoteList['notes']>[number];
 
 export type StateFilter = 'all' | 'dirty' | 'clean' | 'blocked';
-export type ChangeFilter = 'added' | 'modified' | 'deleted';
+export type ChangeFilter = 'added' | 'modified' | 'deleted' | 'requested';
 
 /**
  * The Node tree's filters, one-to-one with listing parameters. Kept by the route (in the URL);

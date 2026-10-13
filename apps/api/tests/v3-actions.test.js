@@ -124,7 +124,7 @@ for (const kind of Object.keys(STORES)) {
         { nodeId: '9:9', status: 'not_found', contentHash: null },
         { nodeId: '2:3', status: 'cleared', contentHash: hashOf('2:3') },
       ]);
-      assert.deepEqual(body.totals, { cleared: 2, stale: 1, notFound: 1 });
+      assert.deepEqual(body.totals, { cleared: 2, stale: 1, notFound: 1, notRemoved: 0 });
       sameSet(await listIds(app, 'state=dirty'), ['2:2', '2:4']);
     });
 
@@ -148,7 +148,7 @@ for (const kind of Object.keys(STORES)) {
       await claim(app, { worker: 'w2', nodeIds: ['2:4'] });
       assert.equal((await getNode(app, '2:4')).claim.worker, 'w2');
       const body = ok(await clear(app, { items: [{ nodeId: '2:2', contentHash: hashOf('2:2') }, { nodeId: '2:4', contentHash: hashOf('2:4') }] }));
-      assert.deepEqual(body.totals, { cleared: 2, stale: 0, notFound: 0 });
+      assert.deepEqual(body.totals, { cleared: 2, stale: 0, notFound: 0, notRemoved: 0 });
       assert.equal(body.commitRef, null);
       assert.equal((await getNode(app, '2:2')).claim, null);
       assert.equal((await getNode(app, '2:4')).claim, null);
@@ -161,7 +161,7 @@ for (const kind of Object.keys(STORES)) {
       assertProblem(await clear(app, { items: [{ nodeId: '2:1' }] }), 400, 'invalid_parameter');
       const many = Array.from({ length: 501 }, (_, i) => ({ nodeId: `9:${i}`, contentHash: 'x' }));
       assertProblem(await clear(app, { items: many }), 400, 'invalid_parameter');
-      assert.deepEqual(ok(await clear(app, { items: many.slice(0, 500) })).totals, { cleared: 0, stale: 0, notFound: 500 });
+      assert.deepEqual(ok(await clear(app, { items: many.slice(0, 500) })).totals, { cleared: 0, stale: 0, notFound: 500, notRemoved: 0 });
       const unknown = assertProblem(await clear(app, { itemz: [], items: [{ nodeId: '2:1', contentHash: 'x' }] }), 400, 'invalid_body');
       assert.match(unknown.detail, /itemz/);
       assertProblem(await call(app, 'POST', '/v3/files/NoSuchFile/clear', { items: [{ nodeId: '2:1', contentHash: 'x' }] }), 404, 'file_not_found');

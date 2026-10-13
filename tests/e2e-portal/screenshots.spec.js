@@ -15,7 +15,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { test, expect } = require('@playwright/test');
 const { TOKENS } = require('./fixture');
-const { APP, seedDemo } = require('./screenshots.seed');
+const { APP, COLORS, BRAND_TOKEN, seedDemo } = require('./screenshots.seed');
 
 const API = (process.env.RDS_API_URL || 'http://127.0.0.1:8787').replace(/\/$/, '');
 const OUT = path.join(__dirname, '..', '..', 'docs', 'images');
@@ -107,7 +107,20 @@ test(`portal screenshots (${theme})`, async ({ page }) => {
   await drawer.getByRole('tab', { name: 'Change List' }).click();
   await expect(drawer.getByRole('table', { name: 'Change list' })).toBeVisible();
   await capture(page, 'portal-node-changes', suffix);
+  await drawer.getByRole('button', { name: 'Add change note', exact: true }).click();
+  await drawer.getByRole('textbox', { name: /Description/ }).fill('The balance should use display-sm, not display-xs.');
+  await capture(page, 'portal-node-notes', suffix);
+  await drawer.getByRole('button', { name: 'Cancel' }).click();
   await page.keyboard.press('Escape');
+
+  await go(page, `/ui/files/${APP.fileKey}/nodes?under=tokens`);
+  await nodes.locator(`[data-node-id="${COLORS}"]`).getByRole('button', { name: 'Expand Colors' }).click();
+  const brand = nodes.locator(`[data-node-id="${BRAND_TOKEN}"]`);
+  await expect(brand.getByText('#9e77ed')).toBeVisible();
+  await page.getByText('View Scopes', { exact: true }).click();
+  await brand.scrollIntoViewIfNeeded();
+  await capture(page, 'portal-design-tokens', suffix);
+  await page.getByText('View Scopes', { exact: true }).click();
 
   await go(page, `/ui/files/${APP.fileKey}/work`);
   await expect(page.getByRole('table').first()).toBeVisible();

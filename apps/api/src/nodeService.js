@@ -19,6 +19,20 @@ const nonEmptyString = v => typeof v === 'string' && v.trim().length > 0;
 /** Instances are stored as placement rows (docs/node-sync-design.md, "Instance placements"). */
 const isInstanceNode = u => u.isInstance === true || u.nodeType === 'INSTANCE';
 
+const COMPONENT_TYPES = ['COMPONENT', 'COMPONENT_SET'];
+const remoteRef = attrs => !!attrs && !!attrs.componentReference && attrs.componentReference.remote === true;
+
+/** Per-file settings and their defaults (docs/api-v3-design.md, "Library components"). */
+const DEFAULT_SETTINGS = Object.freeze({ trackLibraryComponents: true });
+
+/** A file's effective settings: the stored known ones over the defaults. */
+function fileSettings(file) {
+  const stored = (file && file.settings) || {};
+  const out = { ...DEFAULT_SETTINGS };
+  for (const k of Object.keys(DEFAULT_SETTINGS)) if (typeof stored[k] === typeof DEFAULT_SETTINGS[k]) out[k] = stored[k];
+  return out;
+}
+
 /**
  * Stamped on every upsert; rows with a lower stored `capture_version` are
  * reported as `stale` by `POST /v3/files/{fileKey}/exists` so the plugin re-scans them
@@ -27,28 +41,77 @@ const isInstanceNode = u => u.isInstance === true || u.nodeType === 'INSTANCE';
 const CAPTURE_VERSION = 2;
 
 const CLEAN_CHANGES = Object.freeze({ changeType: null, changedProps: [], changeCategories: [] });
+const REQUESTED_CHANGES = Object.freeze({ changeType: 'requested', changedProps: [], changeCategories: ['note'] });
 
 /**
  * The v3 change columns for a node row (docs/api-v3-design.md, "The change
  * model"): clean -> `null`/`[]`/`[]`; tombstoned -> `deleted`, diffed against
  * `null`; never implemented -> `added`; implemented -> `modified`, diffed
  * against `implementedAttrs` (empty when those are unknown, i.e. migrated).
+ * With `openNotes` (a live node's open note count): design-clean ->
+ * `requested`/`[]`/`['note']`; design-dirty -> its change plus category `note`.
  *
- * @param {{ dirty?: boolean, deletedAt?: string | null, implementedHash?: string | null, implementedAttrs?: object | null, attrs?: object | null }} row
+ * @param {{ dirty?: boolean, deletedAt?: string | null, implementedHash?: string | null, implementedAttrs?: object | null, attrs?: object | null, openNotes?: number }} row
  */
-function changeColumns({ dirty, deletedAt, implementedHash, implementedAttrs, attrs }) {
-  if (!dirty) return { ...CLEAN_CHANGES };
+function changeColumns({ dirty, deletedAt, implementedHash, implementedAttrs, attrs, openNotes = 0 }) {
+  const noted = openNotes > 0 && !deletedAt;
+  if (!dirty) return noted ? { ...REQUESTED_CHANGES, changedProps: [], changeCategories: ['note'] } : { ...CLEAN_CHANGES };
   const built = implementedAttrs ?? null;
   let changeType, diff;
   if (deletedAt) { changeType = 'deleted'; diff = core.diffAttrs(built, null); }
   else if (implementedHash === null || implementedHash === undefined) { changeType = 'added'; diff = core.diffAttrs(null, attrs ?? {}); }
   else { changeType = 'modified'; diff = built ? core.diffAttrs(built, attrs ?? {}) : null; }
-  return { changeType, changedProps: diff ? diff.changedProps : [], changeCategories: diff ? diff.categories : [] };
+  const categories = diff ? diff.categories : [];
+  return { changeType, changedProps: diff ? diff.changedProps : [], changeCategories: noted && !categories.includes('note') ? [...categories, 'note'] : categories };
+}
+
+/**
+ * A stored node's `dirty` and change columns given its `openNotes`: a live
+ * node is dirty when its content hash differs from its implemented hash or it
+ * has open notes; a tombstone keeps its stored `dirty`.
+ *
+ * @param {{ dirty?: boolean, deletedAt?: string | null, contentHash?: string | null, implementedHash?: string | null, implementedAttrs?: object | null, attrs?: object | null }} node
+ * @param {number} openNotes
+ */
+function noteState(node, openNotes) {
+  if (node.deletedAt) return { dirty: !!node.dirty, ...changeColumns(node) };
+  const dirty = node.contentHash !== node.implementedHash;
+  return { dirty: dirty || openNotes > 0, ...changeColumns({ ...node, dirty, openNotes }) };
+}
+
+/** Open note counts by node id for `nodeIds` (absent: none). */
+async function openNoteCounts(store, fileKey, nodeIds) {
+  if (!nodeIds.length) return new Map();
+  return new Map((await store.noteCounts(fileKey, nodeIds)).filter(c => c.open > 0).map(c => [c.nodeId, c.open]));
+}
+
+/** Rewrites a node's dirty / change columns after its open notes changed; returns the stored row (null if unknown). */
+async function refreshNoteState(store, fileKey, nodeId) {
+  const node = await store.getNode(fileKey, nodeId);
+  if (!node) return null;
+  const open = (await openNoteCounts(store, fileKey, [nodeId])).get(nodeId) || 0;
+  const want = noteState(node, open);
+  if (want.dirty === node.dirty && sameChanges(want, node)) return node;
+  return store.updateNode(fileKey, nodeId, want);
 }
 
 const sameChanges = (a, b) => (a.changeType ?? null) === (b.changeType ?? null)
   && core.stable(a.changedProps ?? []) === core.stable(b.changedProps ?? [])
   && core.stable(a.changeCategories ?? []) === core.stable(b.changeCategories ?? []);
+
+/** A design-token variable node (`token:<variableKey>`, type VARIABLE). */
+const isTokenVariable = n => n.nodeType === 'VARIABLE' && typeof n.nodeId === 'string' && n.nodeId.startsWith('token:');
+
+/** Attrs without `variableId`: a token's Figma id is not part of its design (re-imports change it, the key stays). */
+const withoutVariableId = attrs => { const { variableId: _id, ...rest } = attrs || {}; return rest; };
+
+/**
+ * Whether a live token is dirty only because its `variableId` differs from
+ * the implemented attrs (another imported copy of the same library variable).
+ */
+const idOnlyChange = n => isTokenVariable(n) && n.dirty && !n.deletedAt
+  && n.implementedHash !== null && n.implementedHash !== undefined && isObject(n.implementedAttrs)
+  && core.stable(withoutVariableId(n.implementedAttrs)) === core.stable(withoutVariableId(n.attrs));
 
 /** Optional batch metadata: absent / `null` / blank -> `null`; any other non-string is a 400. */
 const optionalString = (v, name) => {
@@ -78,24 +141,48 @@ const EXISTS_MAX_IDS = 5000;
 class NodeSyncService {
   /**
    * @param {import('./store/types').Store} store
-   * @param {{ now?: () => Date, existsMaxIds?: number, bus?: import('./events/bus').MemoryBus | import('./events/postgres').PostgresBus | null }} [options]
+   * @param {{ now?: () => Date, existsMaxIds?: number, bus?: import('./events/bus').MemoryBus | import('./events/postgres').PostgresBus | null, libraryLinks?: import('./library').LibraryLinks | null }} [options]
    */
-  constructor(store, { now = () => new Date(), existsMaxIds = EXISTS_MAX_IDS, bus = null } = {}) {
+  constructor(store, { now = () => new Date(), existsMaxIds = EXISTS_MAX_IDS, bus = null, libraryLinks = null } = {}) {
     this.store = store;
     this.bus = bus;
+    /** @type {import('./library').LibraryLinks | null} */
+    this.libraryLinks = libraryLinks;
     this.now = now;
     this.existsMaxIds = existsMaxIds;
   }
 
   // --- plugin -------------------------------------------------------------
 
-  /** `{ [nodeId]: contentHash }` for the node's subtree; `{}` when never scanned. */
+  /** The file's effective settings (defaults when the file was never synced). */
+  async fileSettings(fileKey) {
+    const [file] = await this.store.listFiles({ fileKey });
+    return fileSettings(file);
+  }
+
+  /**
+   * `{ [nodeId]: contentHash }` for the node's subtree; `{}` when never scanned.
+   * For the tokens scope (`nodeId` = core.TOKENS_ROOT_ID) it also has
+   * `tokens: { [nodeId]: { variableId, remote, collectionId } }` for every live variable, so
+   * the plugin can check which stored tokens still exist; that key replaces
+   * the root's own hash (the plugin re-sends the root on every tokens sync).
+   */
   async subtreeHashes(fileKey, nodeId) {
     if (!nonEmptyString(fileKey)) throw badRequest('fileKey is required.');
     if (!nonEmptyString(nodeId)) throw badRequest('nodeId is required.');
     const rows = await this.store.listNodeSubtree(fileKey, nodeId, { includeDeleted: false });
+    /** @type {Record<string, any>} */
     const out = {};
     for (const row of rows) out[row.nodeId] = row.contentHash ?? null;
+    if (nodeId === core.TOKENS_ROOT_ID) {
+      const tokens = {};
+      for (const row of rows) {
+        if (!row.nodeId.startsWith('token:')) continue;
+        const attrs = row.attrs || {};
+        tokens[row.nodeId] = { variableId: typeof attrs.variableId === 'string' ? attrs.variableId : null, remote: attrs.remote === true, collectionId: row.parentId ?? null };
+      }
+      out.tokens = tokens;
+    }
     return out;
   }
 
@@ -136,8 +223,18 @@ class NodeSyncService {
    * bumped on every batch; optional `fileName` / `rootNodeId` also name the
    * file and record a `sync_event` with this batch's counts.
    *
+   * A tombstoned node that was never implemented (`implementedHash` null)
+   * resolves itself: it becomes a clean tombstone, counted as `autoResolved`.
+   *
+   * A token (`token:<variableKey>`) whose attrs differ from its implemented
+   * attrs only in `variableId` stays clean: its baseline is carried forward
+   * (`implementedHash` / `implementedAttrs` = the new ones), counted as
+   * `rebaselined` — not dirty, not changed, not a clear. A batch that upserts
+   * the tokens root also does this for the scope's stored tokens.
+   *
    * Events: one `sync.completed` per batch (its `counts.dirty`: nodes the
-   * batch made dirty — new, or clean before), and a `node.unblocked` (`auto`)
+   * batch made dirty — new, or clean before; `counts.autoResolved`: the
+   * never-built nodes it tombstoned clean), and a `node.unblocked` (`auto`)
    * for each blocked node whose content hash changed.
    */
   async batchUpsert(body) {
@@ -162,7 +259,11 @@ class NodeSyncService {
       if (u.attrs !== undefined && !isObject(u.attrs)) throw badRequest(`upsert.attrs must be an object (node ${u.nodeId}).`);
       if (u.isInstance !== undefined && u.isInstance !== null && typeof u.isInstance !== 'boolean') throw badRequest('upsert.isInstance must be a boolean.');
       if (u.mainComponentId !== undefined && u.mainComponentId !== null && !nonEmptyString(u.mainComponentId)) throw badRequest('upsert.mainComponentId must be a node id string or null.');
-      rows.push({ ...u, isInstance: isInstanceNode(u), ancestors: pathInput(u.path) });
+      if (u.library !== undefined && u.library !== null && typeof u.library !== 'boolean') throw badRequest('upsert.library must be a boolean.');
+      const isInstance = isInstanceNode(u);
+      // A library node: flagged by the plugin, or a main component / set whose own reference is remote.
+      const library = u.library === true || (!isInstance && COMPONENT_TYPES.includes(u.nodeType) && remoteRef(u.attrs));
+      rows.push({ ...u, isInstance, library, ancestors: pathInput(u.path) });
     }
 
     const nowIso = this.now().toISOString();
@@ -178,10 +279,12 @@ class NodeSyncService {
       };
 
       const prior = new Map((await tx.getNodes(fileKey, [...new Set(rows.map(r => r.nodeId))])).map(n => [n.nodeId, n]));
-      const counts = { uploaded: rows.length, changed: 0, added: 0, deleted: 0, baselined: 0 };
+      const notes = await openNoteCounts(tx, fileKey, [...prior.keys()]);
+      const counts = { uploaded: rows.length, changed: 0, added: 0, deleted: 0, baselined: 0, autoResolved: 0 };
       const upserted = [];
       const unblocked = [];
-      let dirtied = 0;
+      const dirtiedIds = new Set();
+      const changedIds = new Set();
       const reorderParents = new Set();
       for (const row of rows) {
         const ancestors = await ancestorsOf(row);
@@ -196,6 +299,7 @@ class NodeSyncService {
           implementedHash,
           implementedAttrs: existing ? existing.implementedAttrs : baselining ? row.attrs ?? {} : null,
           attrs: row.attrs ?? {},
+          openNotes: notes.get(row.nodeId) || 0,
         });
         let node = await tx.upsertNode(fileKey, {
           nodeId: row.nodeId,
@@ -208,28 +312,72 @@ class NodeSyncService {
           mainComponentId: row.mainComponentId ?? null,
           contentHash: row.contentHash,
           captureVersion: CAPTURE_VERSION,
+          library: row.library,
           ...expected,
         }, markImplemented ? { implementedAt: nowIso } : null);
         // The upsert result is authoritative (a concurrent writer may have inserted the row meanwhile).
-        const actual = changeColumns(node);
-        if (!sameChanges(actual, node)) node = { ...(await tx.updateNode(fileKey, row.nodeId, actual)), baselined: node.baselined };
+        const actual = noteState(node, notes.get(row.nodeId) || 0);
+        if (actual.dirty !== node.dirty || !sameChanges(actual, node)) node = { ...(await tx.updateNode(fileKey, row.nodeId, actual)), baselined: node.baselined };
         prior.set(row.nodeId, node);
         upserted.push(node);
         if (node.parentId) reorderParents.add(node.parentId);
         if (existing && existing.parentId && existing.parentId !== node.parentId) reorderParents.add(existing.parentId);
         if (!existing || existing.deletedAt || orderInputsChanged(existing.attrs, node.attrs)) reorderParents.add(node.nodeId);
         if (existing && existing.blockedAt && !node.blockedAt) unblocked.push(existing);
-        if (node.dirty && !(existing && existing.dirty)) dirtied += 1;
+        if (node.dirty && !(existing && existing.dirty)) dirtiedIds.add(node.nodeId);
 
         if (!existing) counts[node.baselined ? 'baselined' : 'added'] += 1;
-        else if (existing.deletedAt || existing.contentHash !== row.contentHash) counts.changed += 1;
+        else if (existing.deletedAt || existing.contentHash !== row.contentHash) { counts.changed += 1; changedIds.add(node.nodeId); }
       }
+      // Tokens dirty only by their Figma id: carry the baseline forward (the tokens root batch covers the stored ones too).
+      const tokenRows = new Map(upserted.filter(isTokenVariable).map(n => [n.nodeId, n]));
+      if (upserted.some(n => n.nodeId === core.TOKENS_ROOT_ID)) {
+        for (const n of await tx.listNodeSubtree(fileKey, core.TOKENS_ROOT_ID, { dirty: true, includeDeleted: false })) {
+          if (!tokenRows.has(n.nodeId)) tokenRows.set(n.nodeId, n);
+        }
+      }
+      let rebaselined = 0;
+      const tokenNotes = await openNoteCounts(tx, fileKey, [...tokenRows.values()].filter(idOnlyChange).map(n => n.nodeId));
+      for (const n of tokenRows.values()) {
+        if (!idOnlyChange(n)) continue;
+        const built = { ...n, implementedHash: n.contentHash, implementedAttrs: n.attrs ?? {} };
+        const node = await tx.updateNode(fileKey, n.nodeId, { implementedHash: n.contentHash, implementedAttrs: n.attrs ?? {}, ...noteState(built, tokenNotes.get(n.nodeId) || 0) });
+        rebaselined += 1;
+        dirtiedIds.delete(n.nodeId);
+        if (changedIds.delete(n.nodeId)) counts.changed -= 1;
+        prior.set(n.nodeId, node);
+        const i = upserted.findIndex(u => u.nodeId === n.nodeId);
+        if (i >= 0) upserted[i] = { ...node, baselined: upserted[i].baselined };
+      }
+      if (rebaselined) counts.rebaselined = rebaselined;
       const wasDirty = new Set((deletedNodeIds.length ? await tx.getNodes(fileKey, [...new Set(deletedNodeIds)]) : []).filter(n => n.dirty).map(n => n.nodeId));
       const tombstoned = await tx.tombstoneNodes(fileKey, deletedNodeIds, nowIso);
-      dirtied += tombstoned.filter(n => !wasDirty.has(n.nodeId)).length;
+      for (const n of tombstoned) if (n.dirty && !wasDirty.has(n.nodeId)) dirtiedIds.add(n.nodeId);
       for (const node of tombstoned) await tx.updateNode(fileKey, node.nodeId, changeColumns(node));
       counts.deleted = tombstoned.length;
+      counts.autoResolved = tombstoned.filter(n => !n.dirty).length;
       for (const node of tombstoned) if (node.parentId) reorderParents.add(node.parentId);
+
+      // Library roots: the library rows of this batch, and the mains (and sets) its instances with a remote reference point at.
+      const libraryRoots = new Set(upserted.filter(n => n.library).map(n => n.nodeId));
+      for (const n of upserted) {
+        if (!n.isInstance || !remoteRef(n.attrs)) continue;
+        if (n.mainComponentId) libraryRoots.add(n.mainComponentId);
+        const set = n.attrs.componentReference.set;
+        if (set && nonEmptyString(set.id)) libraryRoots.add(set.id);
+      }
+      const marked = new Set(await tx.markLibrarySubtrees(fileKey, [...libraryRoots]));
+      const libraryIds = new Set([...upserted, ...tombstoned].filter(n => n.library).map(n => n.nodeId));
+      for (const id of marked) libraryIds.add(id);
+      const libraryDirty = [...dirtiedIds].filter(id => libraryIds.has(id)).length;
+      if (libraryDirty) counts.libraryDirty = libraryDirty;
+      const libraryRefs = [];
+      if (this.libraryLinks && this.libraryLinks.enabled && libraryIds.size) {
+        for (const n of await tx.getNodes(fileKey, [...libraryIds])) {
+          const key = n.attrs && n.attrs.componentReference && n.attrs.componentReference.key;
+          if (COMPONENT_TYPES.includes(n.nodeType) && nonEmptyString(key)) libraryRefs.push({ key, type: n.nodeType });
+        }
+      }
 
       const storedParents = new Set((await tx.getNodes(fileKey, [...new Set(upserted.map(n => n.parentId).filter(Boolean))])).map(n => n.nodeId));
       const rootIds = upserted.filter(n => !n.parentId || !storedParents.has(n.parentId)).map(n => n.nodeId);
@@ -243,17 +391,22 @@ class NodeSyncService {
         upserted: upserted.length,
         dirty: upserted.filter(n => n.dirty).length,
         tombstoned: tombstoned.length,
+        autoResolved: counts.autoResolved,
         skippedInstances: 0, // kept for plugin/CLI compatibility; instances are stored now
       };
       if (markImplemented) summary.baselined = upserted.filter(n => n.baselined).length;
+      if (rebaselined) summary.rebaselined = rebaselined;
 
-      await emit(fileKey, 'sync.completed', { actor: 'plugin', data: { rootNodeId, counts: { ...counts, dirty: dirtied } } });
+      await emit(fileKey, 'sync.completed', { actor: 'plugin', data: { rootNodeId, counts: { ...counts, dirty: dirtiedIds.size } } });
       for (const n of unblocked) {
         await emit(fileKey, 'node.unblocked', { actor: 'plugin', data: { nodeId: n.nodeId, reason: n.blockedReason ?? null, by: null, auto: true } });
       }
+      return { summary, libraryRefs };
+    }).then(({ summary, libraryRefs }) => {
+      if (libraryRefs.length && this.libraryLinks) this.libraryLinks.enqueue(libraryRefs).catch(() => {});
       return summary;
     });
   }
 }
 
-module.exports = { NodeSyncService, changeColumns, sameChanges, EXISTS_MAX_IDS, CAPTURE_VERSION };
+module.exports = { NodeSyncService, changeColumns, noteState, openNoteCounts, refreshNoteState, sameChanges, fileSettings, DEFAULT_SETTINGS, EXISTS_MAX_IDS, CAPTURE_VERSION };

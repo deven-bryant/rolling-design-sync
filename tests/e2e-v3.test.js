@@ -154,7 +154,7 @@ async function seed(fileKey) {
   const baseline = await batch(fileKey, { fileName: 'E2E File', rootNodeId: ROOT, upserts: BUILT, markImplemented: true });
   assert.equal(baseline.baselined, BUILT.length);
   const edit = await batch(fileKey, { fileName: 'E2E File', rootNodeId: ROOT, upserts: NOW });
-  assert.deepEqual(edit, { fileKey, upserted: NOW.length, dirty: DIRTY.length, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(edit, { fileKey, upserted: NOW.length, dirty: DIRTY.length, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
 }
 
 /**
@@ -389,7 +389,7 @@ test('v3 end to end: sync → files/scopes → listing → detail → claims →
     assert.equal(scope.type, 'SECTION');
     assert.equal(scope.deleted, false);
     assert.equal(scope.figmaUrl, core.link(fileKey, ROOT));
-    assert.deepEqual(scope.lastSyncCounts, { uploaded: 6, changed: 3, added: 1, deleted: 0, baselined: 0 });
+    assert.deepEqual(scope.lastSyncCounts, { uploaded: 6, changed: 3, added: 1, deleted: 0, baselined: 0, autoResolved: 0 });
     assert.deepEqual(scope.counts, { total: 6, dirty: 4, clean: 2, blocked: 0 });
   });
 
@@ -526,7 +526,7 @@ test('v3 end to end: sync → files/scopes → listing → detail → claims →
         { nodeId: '2:3', status: 'cleared', contentHash: hashOf(NOW, '2:3') },
         { nodeId: '9:9', status: 'not_found', contentHash: null },
       ],
-      totals: { cleared: 2, stale: 1, notFound: 1 },
+      totals: { cleared: 2, stale: 1, notFound: 1, notRemoved: 0 },
     });
     assert.deepEqual(await listIds(fileKey), ['2:2', '2:4']);
     const caption = await node(fileKey, '2:3');
@@ -576,7 +576,7 @@ test('v3 end to end: sync → files/scopes → listing → detail → claims →
     assert.ok(typo.validParameters.includes('state'));
 
     const badState = assertProblem(await files(fileKey, '/nodes', { query: { state: 'dirtyy' } }), 400, 'invalid_parameter');
-    assert.match(badState.hint, /dirty, clean, blocked, all/);
+    assert.match(badState.hint, /dirty, clean, blocked, requested, all/);
     assertProblem(await files(fileKey, '/nodes', { query: { limit: 0 } }), 400, 'invalid_parameter');
     assertProblem(await files('-', '/nodes'), 400, 'invalid_parameter');
 
@@ -652,7 +652,7 @@ test('GET /v3/openapi.json is reachable without a token and lists the phase-1 ro
   assert.equal(doc.info.title, 'Rolling Design Sync API v3');
   const routes = {
     '/v3/files': ['get'],
-    '/v3/files/{fileKey}': ['get'],
+    '/v3/files/{fileKey}': ['get', 'patch'],
     '/v3/files/{fileKey}/scopes': ['get'],
     '/v3/files/{fileKey}/nodes': ['get'],
     '/v3/files/{fileKey}/nodes/{nodeId}': ['get'],
@@ -712,13 +712,13 @@ test('v3 block: block releases the lease → listing shows blocked → unblock �
 test('v3 summary and work items after a sync; format=ndjson and format=md', async () => {
   const fileKey = newFileKey();
   await seed(fileKey);
-  const zero = { layout: 0, color: 0, typography: 0, effects: 0, component: 0, content: 0, structure: 0, prototype: 0, other: 0 };
+  const zero = { layout: 0, color: 0, typography: 0, effects: 0, component: 0, content: 0, structure: 0, prototype: 0, token: 0, other: 0, note: 0 };
 
   assert.deepEqual(await ok(files(fileKey, '/summary')), {
     fileKey,
     total: 4,
     byState: { dirty: 4, clean: 0, blocked: 0 },
-    byChangeType: { added: 1, modified: 3, deleted: 0 },
+    byChangeType: { added: 1, modified: 3, deleted: 0, requested: 0 },
     byCategory: { ...zero, layout: 1, content: 1, typography: 1, effects: 1 },
     byType: { FRAME: 2, TEXT: 2 },
   });
@@ -736,7 +736,7 @@ test('v3 summary and work items after a sync; format=ndjson and format=md', asyn
     fileKey,
     group: 'component',
     items: [{
-      key: null, name: null, type: null, nodeCount: 4, categories: ['content', 'effects', 'layout', 'typography'],
+      key: null, name: null, type: null, nodeCount: 4, notes: 0, categories: ['content', 'effects', 'layout', 'typography'],
       changedProps: ['characters', 'cornerRadius', 'fontSize', 'paddingLeft'],
       changes: {
         '2:1': { paddingLeft: { built: 16, now: 24, category: 'layout' } },
@@ -794,7 +794,7 @@ test('v3 fresh sync: the default listing is compact — changedProps, no added v
   assert.equal(page.truncated, undefined);
   for (const n of page.nodes) {
     assert.deepEqual(Object.keys(n).sort(), ['blocked', 'changeType', 'changedProps', 'changesKnown', 'claim', 'component', 'contentHash', 'figmaUrl',
-      'isInstance', 'mainComponentId', 'name', 'nodeId', 'parentId', 'state', 'type']);
+      'isInstance', 'library', 'mainComponentId', 'name', 'nodeId', 'notes', 'parentId', 'state', 'type']);
     assert.equal(n.changeType, 'added');
   }
   assert.deepEqual(page.nodes.map(n => [n.nodeId, n.changedProps, n.isInstance, n.mainComponentId]), [
@@ -854,23 +854,23 @@ test('v3 plugin routes: a full sync as the plugin runs it', async () => {
 
   // First scan: nothing stored yet, so the plugin baselines.
   assert.deepEqual(await ok(call('POST', `/v3/files/${fileKey}/exists`, { headers: client, body: { nodeIds: IDS.map(dashed) } })), { present: [], stale: [] });
-  assert.deepEqual(await ok(call('GET', `/v3/files/${fileKey}/hashes`, { headers: client, query: { under: dashed(ROOT) } })), {});
+  assert.deepEqual(await ok(call('GET', `/v3/files/${fileKey}/hashes`, { headers: client, query: { under: dashed(ROOT) } })), { settings: { trackLibraryComponents: true } });
   const baseline = await ok(call('POST', '/v3/files/-/sync', {
     headers: client, query: url, body: { fileName: 'E2E File', rootNodeId: dashed(ROOT), upserts: BUILT.map(dashedUp), markImplemented: true },
   }));
-  assert.deepEqual(baseline, { fileKey, upserted: BUILT.length, dirty: 0, tombstoned: 0, skippedInstances: 0, baselined: BUILT.length });
+  assert.deepEqual(baseline, { fileKey, upserted: BUILT.length, dirty: 0, tombstoned: 0, autoResolved: 0, skippedInstances: 0, baselined: BUILT.length });
 
   // Re-scan: send only what changed against the stored hashes, tombstone what vanished.
   const stored = await ok(call('GET', '/v3/files/-/hashes', { headers: client, query: url }));
-  assert.deepEqual(Object.keys(stored).sort(), BUILT.map(u => u.nodeId).sort());
+  assert.deepEqual(Object.keys(stored).filter(k => k !== 'settings').sort(), BUILT.map(u => u.nodeId).sort());
   const changed = NOW.filter(u => stored[u.nodeId] !== u.contentHash);
   const edit = await ok(call('POST', `/v3/files/${fileKey}/sync`, { headers: client, body: { fileName: 'E2E File', rootNodeId: ROOT, upserts: changed } }));
-  assert.deepEqual(edit, { fileKey, upserted: changed.length, dirty: DIRTY.length, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(edit, { fileKey, upserted: changed.length, dirty: DIRTY.length, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
   const gone = await ok(call('POST', `/v3/files/${fileKey}/sync`, { headers: client, body: { rootNodeId: ROOT, deletedNodeIds: ['2-3'] } }));
   assert.equal(gone.tombstoned, 1);
 
   const hashes = await hashesUnder(fileKey, ROOT);
-  assert.deepEqual(Object.keys(hashes).sort(), NOW.map(u => u.nodeId).filter(id => id !== '2:3').sort());
+  assert.deepEqual(Object.keys(hashes).filter(k => k !== 'settings').sort(), NOW.map(u => u.nodeId).filter(id => id !== '2:3').sort());
   for (const u of NOW.filter(u => u.nodeId !== '2:3')) assert.equal(hashes[u.nodeId], u.contentHash);
   const present = await existing(fileKey, IDS);
   sameSet(present.present, NOW.map(u => u.nodeId).filter(id => id !== '2:3'));
@@ -928,7 +928,7 @@ test('v3 instances: placements live in the page, the main once outside it; no fa
   const fileKey = newFileKey();
   const rows = instanceTree();
   const res = await batch(fileKey, { rootNodeId: ROOT, upserts: rows });
-  assert.deepEqual(res, { fileKey, upserted: rows.length, dirty: rows.length, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(res, { fileKey, upserted: rows.length, dirty: rows.length, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
 
   // The placement is a row in the page subtree under the frame it sits in; the main is not.
   sameSet(await listIds(fileKey, { under: ROOT }), [ROOT, '2:1', INSTANCE]);
@@ -952,7 +952,7 @@ test('v3 instances: placements live in the page, the main once outside it; no fa
   assert.equal(all.totals.cleared, rows.length);
   const editedMain = instanceTree(PLACEMENT_ATTRS, { ...MAIN_ATTRS, width: 160 });
   const mainEdit = await batch(fileKey, { upserts: [editedMain[3], editedMain[2]] });
-  assert.deepEqual(mainEdit, { fileKey, upserted: 2, dirty: 1, tombstoned: 0, skippedInstances: 0 });
+  assert.deepEqual(mainEdit, { fileKey, upserted: 2, dirty: 1, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
   assert.deepEqual(await listIds(fileKey, { under: MAIN }), [MAIN]);
   assert.deepEqual(await listIds(fileKey, { under: ROOT }), [], 'the page (with the instance) stays clean');
 
@@ -1207,14 +1207,14 @@ test('v3 sync markImplemented: never-seen nodes are baselined clean; existing an
   const fileKey = newFileKey();
   const bad = await sync(fileKey, { upserts: BUILT, markImplemented: 'yes' });
   assertProblem(bad, 400, 'invalid_parameter');
-  assert.deepEqual(await hashesUnder(fileKey, ROOT), {}, 'a rejected sync writes nothing');
+  assert.deepEqual(await hashesUnder(fileKey, ROOT), { settings: { trackLibraryComponents: true } }, 'a rejected sync writes nothing');
 
   // Existing dirty rows: 2:1 + 3:1 synced without the flag, then 3:1 tombstoned.
   await batch(fileKey, { upserts: BUILT.slice(1, 3) });
   assert.equal((await batch(fileKey, { deletedNodeIds: ['3:1'] })).tombstoned, 1);
 
   const res = await batch(fileKey, { upserts: BUILT, markImplemented: true });
-  assert.deepEqual(res, { fileKey, upserted: BUILT.length, dirty: 2, tombstoned: 0, skippedInstances: 0, baselined: BUILT.length - 2 });
+  assert.deepEqual(res, { fileKey, upserted: BUILT.length, dirty: 2, tombstoned: 0, autoResolved: 0, skippedInstances: 0, baselined: BUILT.length - 2 });
   sameSet(await listIds(fileKey), ['2:1', '3:1']);
   for (const id of ['2:1', '3:1']) {
     const n = await node(fileKey, id);
@@ -1285,4 +1285,181 @@ test('rate limits: a burst over the per-IP limit gets 429 rate_limited, then rec
   const after = await fetch(route);
   await after.arrayBuffer();
   assert.equal(after.status, 200, 'the budget is back once the window ends');
+});
+
+// --- removed design ---------------------------------------------------------------
+
+test('v3 removed design: a never-built deletion is no work; a built screen is one removed item cleared with subtree: true', async () => {
+  const fileKey = newFileKey();
+  const main = upsert('6:1', 'COMPONENT', 'Button', { cornerRadius: 4 }, [ROOT]);
+  const only = upsert('6:2', 'COMPONENT', 'Hero', { cornerRadius: 8 }, [ROOT]);
+  const screen = upsert('2:1', 'FRAME', 'Old screen', { childOrder: ['3:1', '3:2', '3:3'] }, [ROOT]);
+  const removed = [
+    screen,
+    { ...upsert('3:1', 'INSTANCE', 'Button', { fills: ['red'] }, [ROOT, '2:1']), mainComponentId: '6:1' },
+    { ...upsert('3:2', 'INSTANCE', 'Hero', { fills: ['blue'] }, [ROOT, '2:1']), mainComponentId: '6:2' },
+    upsert('3:3', 'TEXT', 'Title', { characters: 'Bye' }, [ROOT, '2:1']),
+  ];
+  const kept = [
+    upsert(ROOT, 'SECTION', 'Page', { childOrder: ['2:1', '2:2', '6:1', '6:2'] }),
+    upsert('2:2', 'FRAME', 'Live screen', {}, [ROOT]),
+    { ...upsert('3:4', 'INSTANCE', 'Button', { fills: ['green'] }, [ROOT, '2:2']), mainComponentId: '6:1' },
+    main, only,
+  ];
+  await batch(fileKey, { upserts: [...kept, ...removed], markImplemented: true, rootNodeId: ROOT });
+
+  // Never built, then deleted: resolves itself.
+  await batch(fileKey, { upserts: [upsert('2:9', 'FRAME', 'Draft', { width: 1 }, [ROOT])] });
+  const draft = await batch(fileKey, { deletedNodeIds: ['2:9'] });
+  assert.equal(draft.tombstoned, 1);
+  assert.equal(draft.autoResolved, 1);
+  assert.deepEqual((await ok(files(fileKey, '/work'))).items, []);
+
+  // Built, then deleted: one removed item listing the components it used.
+  const res = await batch(fileKey, { deletedNodeIds: removed.map(n => n.nodeId) });
+  assert.deepEqual([res.tombstoned, res.autoResolved], [4, 0]);
+  const { items } = await ok(files(fileKey, '/work', { query: { changes: 'names', include: 'progress' } }));
+  assert.equal(items.length, 1);
+  const [item] = items;
+  assert.equal(item.kind, 'removed');
+  assert.equal(item.key, '2:1');
+  assert.equal(item.name, 'Old screen');
+  assert.deepEqual(item.nodeIds, ['2:1', '3:1', '3:2', '3:3']);
+  assert.deepEqual(item.uses, [
+    { componentId: '6:2', name: 'Hero', placementsRemoved: 1, livePlacements: 0 },
+    { componentId: '6:1', name: 'Button', placementsRemoved: 1, livePlacements: 1 },
+  ]);
+  assert.deepEqual(item.warnings, []);
+  assert.deepEqual(item.progress, { total: 4, clean: 0 });
+  assert.equal((await ok(files(fileKey, '/work', { query: { group: 'set', changes: 'names' } }))).items[0].kind, 'removed');
+
+  const live = await ok(call('POST', `/v3/files/${fileKey}/clear`, { body: { items: [{ nodeId: '2:2', contentHash: hashOf(kept, '2:2'), subtree: true }] } }));
+  assert.deepEqual(live.results, [{ nodeId: '2:2', status: 'not_removed', contentHash: hashOf(kept, '2:2') }]);
+  const cleared = await ok(call('POST', `/v3/files/${fileKey}/clear`, {
+    body: { commitRef: 'e2e-removed', items: [{ nodeId: '2:1', contentHash: screen.contentHash, subtree: true }] },
+  }));
+  assert.deepEqual(cleared.results, [{ nodeId: '2:1', status: 'cleared', contentHash: screen.contentHash, subtreeCleared: 3 }]);
+  assert.deepEqual(cleared.totals, { cleared: 1, stale: 0, notFound: 0, notRemoved: 0 });
+  assert.deepEqual((await ok(files(fileKey, '/work'))).items, []);
+  const events = await ok(files(fileKey, '/events', { query: { types: 'nodes.cleared' } }));
+  assert.equal(events.events[events.events.length - 1].data.count, 4);
+});
+
+// --- library components -------------------------------------------------------------
+
+test('v3 library components: flagged at sync, the setting off hides them and lists the main as a reference item', async () => {
+  const fileKey = newFileKey();
+  const libRef = { id: '9:1', key: 'E2ELIBKEY', name: 'Lib button', remote: true };
+  await batch(fileKey, {
+    rootNodeId: ROOT, fileName: 'E2E library',
+    upserts: [
+      upsert(ROOT, 'SECTION', 'Page', { childOrder: ['2:1'] }),
+      upsert('2:1', 'FRAME', 'Screen', { childOrder: ['3:1'] }, [ROOT]),
+      { ...upsert('3:1', 'INSTANCE', 'Btn', { componentReference: libRef }, [ROOT, '2:1']), mainComponentId: '9:1' },
+      upsert('9:1', 'COMPONENT', 'Lib button', { componentReference: libRef, childOrder: ['9:2'] }),
+      upsert('9:2', 'TEXT', 'Label', { characters: 'OK' }, ['9:1']),
+    ],
+  });
+  const label = await node(fileKey, '9:2');
+  assert.deepEqual(label.library, { key: 'E2ELIBKEY', resolved: false });
+  assert.equal(label.figmaUrl, null);
+  assert.equal((await ok(call('GET', '/v3/status', { headers: viewer }))).libraryLinks, false);
+  assert.deepEqual((await ok(files(fileKey))).settings, { trackLibraryComponents: true });
+  sameSet(await listIds(fileKey, {}), [ROOT, '2:1', '3:1', '9:1', '9:2']);
+
+  const denied = await call('PATCH', `/v3/files/${fileKey}`, { headers: viewer, body: { settings: { trackLibraryComponents: false } } });
+  assert.equal(denied.status, 403);
+  assert.equal((await call('PATCH', `/v3/files/${fileKey}`, { body: { settings: { nope: true } } })).body.code, 'invalid_parameter');
+  const off = await ok(call('PATCH', `/v3/files/${fileKey}`, { body: { settings: { trackLibraryComponents: false } } }));
+  assert.deepEqual(off.settings, { trackLibraryComponents: false });
+  assert.equal(off.counts.dirty, 3);
+  assert.deepEqual((await hashesUnder(fileKey, ROOT)).settings, { trackLibraryComponents: false });
+
+  sameSet(await listIds(fileKey, {}), [ROOT, '2:1', '3:1']);
+  sameSet(await listIds(fileKey, { library: 'only' }), ['9:1', '9:2']);
+  const { items } = await ok(files(fileKey, '/work', { query: { under: '2:1', expand: 'instances', changes: 'names' } }));
+  const ref = items.find(i => i.key === '9:1');
+  assert.equal(ref.kind, 'library');
+  assert.equal(ref.tracked, false);
+  assert.equal(ref.nodeCount, 0);
+  assert.equal(ref.nodeIds, undefined);
+  assert.equal(ref.placementsInScope, 1);
+  const events = await ok(files(fileKey, '/events', { query: { types: 'file.settings_changed' } }));
+  assert.deepEqual(events.events.at(-1).data.settings, { trackLibraryComponents: false });
+});
+
+// --- design tokens ------------------------------------------------------------------
+
+test('v3 design tokens: a tokens scope syncs, diffs per mode, groups per collection, reports usage and clears', async () => {
+  const fileKey = newFileKey();
+  const collection = `tokens:${'c'.repeat(40)}`;
+  const active = `token:${'d'.repeat(40)}`;
+  const tokenAttrs = dark => ({ name: 'bg-active', resolvedType: 'COLOR', description: '', scopes: ['ALL_SCOPES'], codeSyntax: { WEB: '--bg-active' }, variableId: 'VariableID:7:1', remote: false, 'value:Light': '#ffffff', 'value:Dark': dark });
+  const tokens = dark => [
+    upsert('tokens', 'TOKENS', 'Design tokens', {}),
+    upsert(collection, 'VARIABLE_COLLECTION', 'Semantic', { name: 'Semantic', modes: ['Light', 'Dark'], remote: false }, ['tokens']),
+    upsert(active, 'VARIABLE', 'bg-active', tokenAttrs(dark), ['tokens', collection]),
+  ];
+  await batch(fileKey, {
+    rootNodeId: ROOT, fileName: 'E2E tokens', markImplemented: true,
+    upserts: [upsert(ROOT, 'SECTION', 'Page', { childOrder: ['2:1'] }), upsert('2:1', 'FRAME', 'Card', { width: 1, resolvedVariables: { 'VariableID:7:1': { name: 'bg-active', key: 'd'.repeat(40) } } }, [ROOT])],
+  });
+  await batch(fileKey, { rootNodeId: 'tokens', markImplemented: true, upserts: tokens('#202527') });
+  const edit = await batch(fileKey, { rootNodeId: 'tokens', upserts: tokens('#2b3033') });
+  assert.equal(edit.dirty, 1);
+
+  const hashes = await hashesUnder(fileKey, 'tokens');
+  assert.deepEqual(hashes.tokens, { [active]: { variableId: 'VariableID:7:1', remote: false, collectionId: collection } });
+  const scope = (await ok(files(fileKey, '/scopes'))).scopes.find(s => s.nodeId === 'tokens');
+  assert.equal(scope.name, 'Design tokens');
+  assert.equal(scope.type, 'TOKENS');
+  assert.equal(scope.figmaUrl, null);
+
+  const detail = await node(fileKey, active);
+  assert.deepEqual(detail.changes, { 'value:Dark': { built: '#202527', now: '#2b3033', category: 'token' } });
+  assert.deepEqual(detail.usage, { layers: 1 });
+  assert.equal(detail.figmaUrl, null);
+  const listed = await list(fileKey, { under: 'tokens', include: 'usage', fields: 'nodeId,usage' });
+  assert.deepEqual(listed.nodes, [{ nodeId: active, usage: { layers: 1 } }]);
+
+  const { items } = await ok(files(fileKey, '/work', { query: { changes: 'names', include: 'progress,usage' } }));
+  assert.deepEqual(items.map(i => [i.kind ?? null, i.key, i.name]), [['tokens', collection, 'Semantic']]);
+  assert.deepEqual(items[0].nodeIds, [active]);
+  assert.deepEqual(items[0].changedProps, ['value:Dark']);
+  assert.deepEqual(items[0].progress, { total: 2, clean: 1 });
+  assert.deepEqual(items[0].usage, { [active]: { layers: 1 } });
+
+  const cleared = await ok(call('POST', `/v3/files/${fileKey}/clear`, { body: { commitRef: 'e2e-tokens', items: [{ nodeId: active, contentHash: detail.contentHash }] } }));
+  assert.equal(cleared.results[0].status, 'cleared');
+  assert.equal((await node(fileKey, active)).state, 'clean');
+  const gone = await batch(fileKey, { rootNodeId: 'tokens', deletedNodeIds: [active] });
+  assert.equal(gone.tombstoned, 1);
+  assert.deepEqual((await hashesUnder(fileKey, 'tokens')).tokens, {});
+});
+
+test('v3 notes: a viewer note makes a clean node requested, survives re-sync; only a real clear resolves it', async () => {
+  const fileKey = newFileKey();
+  await seed(fileKey);
+  const added = await ok(call('POST', `/v3/files/${fileKey}/nodes/3-1/notes`, { headers: viewer, body: { body: 'Label should be bold' } }));
+  assert.equal(added.node.state, 'dirty');
+  assert.equal(added.node.changeType, 'requested');
+  sameSet(await listIds(fileKey), [...DIRTY, '3:1']);
+  sameSet(await listIds(fileKey, { hasNotes: 'true' }), ['3:1']);
+  assert.equal((await node(fileKey, '3:1')).notes[0].body, 'Label should be bold');
+
+  await batch(fileKey, { fileName: 'E2E File', rootNodeId: ROOT, upserts: NOW });
+  assert.equal((await node(fileKey, '3:1')).changeType, 'requested');
+
+  const stale = await ok(call('POST', `/v3/files/${fileKey}/clear`, { body: { items: [{ nodeId: '3:1', contentHash: 'stale' }] } }));
+  assert.equal(stale.totals.cleared, 0);
+  assert.equal((await node(fileKey, '3:1')).notes.length, 1);
+  const cleared = await ok(call('POST', `/v3/files/${fileKey}/clear`, { body: { commitRef: 'e2e', items: [{ nodeId: '3:1', contentHash: hashOf(NOW, '3:1') }] } }));
+  assert.equal(cleared.totals.cleared, 1);
+  const after = await node(fileKey, '3:1');
+  assert.equal(after.state, 'clean');
+  assert.deepEqual(after.notes, []);
+  assert.equal(after.notesResolved, 1);
+  const [resolved] = (await ok(call('GET', `/v3/files/${fileKey}/nodes/3:1/notes`, { query: { status: 'all' } }))).notes;
+  assert.equal(resolved.status, 'resolved');
+  assert.equal(resolved.commitRef, 'e2e');
 });

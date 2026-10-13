@@ -30,7 +30,8 @@ const nodeIds = description => ({ type: 'array', items: nodeId, description });
 
 const hashes = {
   summary: 'Subtree hashes (plugin)',
-  description: 'The stored `contentHash` of every live node in `under`\'s subtree (inclusive), keyed by node id. `{}` when the node — or the file — was never synced. Plugin tokens only.',
+  description: 'The stored `contentHash` of every live node in `under`\'s subtree (inclusive), keyed by node id, plus the file\'s `settings` (defaults filled in; read `trackLibraryComponents` when a sync starts). Only `settings` when the node — or the file — was never synced. '
+    + 'With `under=tokens` (the design-tokens scope) it also has `tokens: { "token:<variableKey>": { variableId, remote, collectionId } }` for every stored live variable: tombstone (in `deletedNodeIds`) only local variables no longer in the file, never library ones or one a sync merely did not reference, and a collection only once all its tokens are tombstoned. That key takes the place of the root\'s own hash, so send the `tokens` root on every tokens sync. Plugin tokens only.',
   tags, security,
   params: fileKeyParams,
   querystring: {
@@ -41,7 +42,17 @@ const hashes = {
     },
   },
   response: {
-    200: { type: 'object', description: '`{ [nodeId]: contentHash }`.', additionalProperties: nullable('string') },
+    200: {
+      type: 'object', description: '`{ [nodeId]: contentHash, settings, tokens? }` — `settings` is never a node id; `tokens` only with `under=tokens`.',
+      properties: {
+        settings: schemas.fileSettings,
+        tokens: {
+          type: 'object', description: '`under=tokens` only: every stored live variable (`token:<variableKey>`) with its Figma `variableId` (null when not captured), `remote` (a library variable) and `collectionId` (its collection node).',
+          additionalProperties: { type: 'object', properties: { variableId: nullable('string'), remote: { type: 'boolean' }, collectionId: nullable('string') } },
+        },
+      },
+      additionalProperties: nullable('string'),
+    },
     ...problemResponses(ERRORS),
   },
 };
@@ -62,12 +73,13 @@ const upsert = {
     attrs: { type: 'object', additionalProperties: true, description: 'The captured properties.' },
     isInstance: nullable('boolean'),
     mainComponentId: nullable('string', { minLength: 1, description: 'An instance\'s main component (1:2 or 1-2).' }),
+    library: nullable('boolean', { description: 'true: a library node — scanned under a remote (library) main component or set. Optional: main components / sets with a remote `componentReference` and the subtrees of the remote mains instances point at are flagged anyway. Never unset by a later sync.' }),
   },
 };
 
 const sync = {
   summary: 'Sync a batch (plugin)',
-  description: 'Upserts scanned nodes and tombstones `deletedNodeIds`: `dirty` becomes `contentHash !== implementedHash`, a hash change unblocks a blocked node, and `markImplemented: true` inserts never-seen nodes as already implemented. `fileName` / `rootNodeId` name the file and record the sync for `…/scopes`. Emits `sync.completed`. Plugin tokens only.',
+  description: 'Upserts scanned nodes and tombstones `deletedNodeIds`. Design tokens sync as their own scope: `rootNodeId: "tokens"` (type TOKENS), collections `tokens:<collectionKey>` (VARIABLE_COLLECTION), variables `token:<variableKey>` (VARIABLE, one `value:<Mode name>` attr per mode). For every node: `dirty` becomes `contentHash !== implementedHash`, a hash change unblocks a blocked node, and `markImplemented: true` inserts never-seen nodes as already implemented. A tombstoned node that was never implemented resolves itself (a clean tombstone, counted in `autoResolved`, not dirty). A token whose attrs differ from its implemented ones only in `variableId` (another imported copy of the same variable) stays clean: its baseline moves to the new attrs, counted in `rebaselined`; a batch with the `tokens` root does this for every stored token. `fileName` / `rootNodeId` name the file and record the sync for `…/scopes`. Emits `sync.completed`. Plugin tokens only.',
   tags, security,
   params: fileKeyParams,
   querystring: urlQuery,
@@ -89,9 +101,11 @@ const sync = {
         fileKey: { type: 'string' },
         upserted: { type: 'integer' },
         dirty: { type: 'integer', description: 'How many of the upserted nodes are dirty.' },
-        tombstoned: { type: 'integer' },
+        tombstoned: { type: 'integer', description: 'Nodes this sync tombstoned (deletedNodeIds that were stored and live).' },
+        autoResolved: { type: 'integer', description: 'Of `tombstoned`, the nodes that were never implemented: stored as clean tombstones at once, so they are not work.' },
         skippedInstances: { type: 'integer', description: 'Always 0; kept for older plugins.' },
         baselined: { type: 'integer', description: 'With markImplemented: nodes inserted as implemented.' },
+        rebaselined: { type: 'integer', description: 'Tokens kept clean because only their Figma `variableId` changed (their baseline moved to the new attrs); present when > 0.' },
       },
     },
     ...problemResponses(ERRORS),
@@ -193,7 +207,7 @@ function registerPluginRoutes(app, { config, nodes }) {
         hint: 'Pass ?under=<scope root node id>, or ?url=<figma link> with a node-id.',
       });
     }
-    return service(() => nodes.subtreeHashes(fileKey, address.normalizeNodeId(under)));
+    return service(async () => ({ ...(await nodes.subtreeHashes(fileKey, address.normalizeNodeId(under))), settings: await nodes.fileSettings(fileKey) }));
   });
 
   app.post('/files/:fileKey/sync', { schema: sync }, async (/** @type {import('./types').V3Request<'/v3/files/{fileKey}/sync', 'post'>} */ request) => {

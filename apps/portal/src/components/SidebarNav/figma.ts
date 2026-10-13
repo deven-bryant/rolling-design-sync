@@ -7,26 +7,26 @@ export const figma = {
       nodeId: '122:49271',
       variants: [
         {
-          name: 'Color Mode=Default',
-          nodeId: '120:36024',
-          key: '848f7b35b6f3241055d3dc24b060ee0a6d69a8e8',
+          name: 'Color Mode=Light',
+          nodeId: '122:49272',
+          key: '5c15b19e2dcfa892810d8d09f77f0392245c18c4',
           props: { header: '`SidebarNav.Header` `title` + `ThemeToggle` in `actions` (light theme)' },
         },
         {
           name: 'Color Mode=Dark',
-          nodeId: '122:49272',
-          key: '5c15b19e2dcfa892810d8d09f77f0392245c18c4',
+          nodeId: '120:36024',
+          key: '848f7b35b6f3241055d3dc24b060ee0a6d69a8e8',
           props: { header: '`SidebarNav.Header` `title` + `ThemeToggle` in `actions` (dark theme)' },
         },
       ],
     },
     {
       name: 'Sidebar navigation',
-      nodeId: '111:17495',
+      nodeId: '162:17105',
       variants: [
         {
           name: 'Open=False, Style=Simple, Breakpoint=Desktop',
-          nodeId: '111:17507',
+          nodeId: '162:17117',
           key: '3f157e01d7bd5186abe2d9c790e8d492387d82f7',
           props: {},
         },
@@ -34,12 +34,12 @@ export const figma = {
     },
     {
       name: '_Nav item base',
-      nodeId: '111:16642',
+      nodeId: '162:17010',
       part: 'SidebarNav.Item',
       variants: [
         {
           name: 'Current=False, State=Default',
-          nodeId: '111:16643',
+          nodeId: '162:17011',
           key: 'ebac58c9c5246cc09572c87394cd7b93c42164f0',
           props: {},
         },
@@ -51,7 +51,7 @@ export const figma = {
       variants: [
         {
           name: 'Open=False, Current=False',
-          nodeId: '111:16692',
+          nodeId: '162:17060',
           key: '183551a1a7a81d328cdadea072aa38e0040c8825',
           props: {},
         },

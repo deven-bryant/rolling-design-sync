@@ -22,17 +22,19 @@ const { registerPluginRoutes } = require('./plugin');
 const { registerStatusRoutes } = require('./status');
 const { registerTokenRoutes } = require('./tokens');
 const { registerClaimRoutes } = require('./claims');
+const { registerFileRoutes } = require('./files');
+const { registerNoteRoutes } = require('./notes');
 const schemas = require('./schemas');
 const { version: SERVER_VERSION } = require('../../package.json');
 
 /** Methods a viewer token or session may call. */
 const READ_METHODS = new Set(['GET', 'HEAD']);
 /** Methods the cookie CSRF check guards. */
-const WRITE_METHODS = new Set(['POST', 'DELETE']);
+const WRITE_METHODS = new Set(['POST', 'PATCH', 'DELETE']);
 
 /**
  * The session-cookie CSRF gate (docs/ui-portal.md, "CSRF"): a
- * cookie-authenticated POST/DELETE must carry `X-RDS-Client: portal/…` and
+ * cookie-authenticated POST/PATCH/DELETE must carry `X-RDS-Client: portal/…` and
  * an `Origin` equal to the request's own origin — the second layer after
  * `SameSite=Strict`.
  */
@@ -46,8 +48,12 @@ function checkSessionCsrf(request) {
   });
 }
 
+/** A viewer token or session may call this route: every read, and the writes flagged `config.viewerWrite` (notes). */
+const viewerMay = request => READ_METHODS.has(request.method) || !!(request.routeOptions && request.routeOptions.config && request.routeOptions.config.viewerWrite);
+
 /**
- * v3 auth: agent tokens call every route, viewer tokens the reads. A valid
+ * v3 auth: agent tokens call every route, viewer tokens the reads and the
+ * note writes. A valid
  * `rds_session` cookie (a minted portal session) does the same when no
  * `Authorization` header was sent — the bearer token wins when both are
  * present — and writes through a session pass `checkSessionCsrf`.
@@ -59,7 +65,7 @@ function v3Auth(config) {
       const found = readSession(request, config);
       if (found.status === 'ok') {
         const { session } = found;
-        if (session.role === AGENT || (session.role === VIEWER && READ_METHODS.has(request.method))) {
+        if (session.role === AGENT || (session.role === VIEWER && viewerMay(request))) {
           if (WRITE_METHODS.has(request.method)) checkSessionCsrf(request);
           request.auth = { role: session.role, label: session.label, session: true };
           return;
@@ -76,7 +82,7 @@ function v3Auth(config) {
       throw problem('unauthorized', 'Missing bearer token.', { hint: 'Send Authorization: Bearer <agent token>.' });
     }
     const role = roleOf(config, token, [AGENT, VIEWER]);
-    if (role === AGENT || (role === VIEWER && READ_METHODS.has(request.method))) {
+    if (role === AGENT || (role === VIEWER && viewerMay(request))) {
       request.auth = { role, token, label: authLabel(config, token) };
       return;
     }
@@ -99,7 +105,8 @@ function v3Auth(config) {
 /** Documents viewer access on the agent read routes: their `security` also lists `viewerToken`. */
 function documentViewerAccess(route) {
   const methods = [].concat(route.method);
-  if (!route.schema || !route.schema.security || !methods.every(m => READ_METHODS.has(m))) return;
+  const viewerWrite = !!(route.config && route.config.viewerWrite);
+  if (!route.schema || !route.schema.security || !(viewerWrite || methods.every(m => READ_METHODS.has(m)))) return;
   if (!route.schema.security.some(s => s.agentToken)) return;
   route.schema = { ...route.schema, security: [...route.schema.security, { viewerToken: [] }] };
 }
@@ -171,7 +178,7 @@ function notFoundHandler(request, reply) {
   return sendProblem(reply, problem('route_not_found', `No route ${request.method} ${path}.`, { hint }));
 }
 
-async function v3Routes(v3, { config, store, now, bus, nodes }) {
+async function v3Routes(v3, { config, store, now, bus, nodes, libraryLinks }) {
   v3.addHook('onRequest', async (request, reply) => { reply.header('x-rds-server', SERVER_VERSION); });
   v3.addHook('onRoute', documentViewerAccess);
   v3.addHook('onRoute', documentRateLimit);
@@ -187,13 +194,15 @@ async function v3Routes(v3, { config, store, now, bus, nodes }) {
   v3.register(async authed => {
     authed.addHook('onRequest', v3Auth(config));
     authed.addHook('onRoute', documentSessionAccess);
-    registerReadRoutes(authed, { store, now });
+    registerReadRoutes(authed, { store, now, libraryLinks });
+    registerFileRoutes(authed, { store, now, bus });
     registerClaimRoutes(authed, { store, now });
-    registerActionRoutes(authed, { store, now, config, bus });
+    registerActionRoutes(authed, { store, now, config, bus, libraryLinks });
     registerEventRoutes(authed, { store, now, config, bus });
-    registerBlockRoutes(authed, { store, now, bus });
-    registerInsightRoutes(authed, { store, now, config });
-    registerStatusRoutes(authed, { store, config, bus });
+    registerBlockRoutes(authed, { store, now, bus, libraryLinks });
+    registerNoteRoutes(authed, { store, now, bus, libraryLinks });
+    registerInsightRoutes(authed, { store, now, config, libraryLinks });
+    registerStatusRoutes(authed, { store, config, bus, libraryLinks });
     tokenRoutes(authed);
   });
   v3.register(async plugin => registerPluginRoutes(plugin, { config, nodes }));
@@ -201,7 +210,7 @@ async function v3Routes(v3, { config, store, now, bus, nodes }) {
 
 /** Registered from app.js: `app.register(require('./v3'), { config })`. */
 async function v3(app, { config }) {
-  await app.register(v3Routes, { prefix: '/v3', config, store: app.store, bus: app.eventBus, nodes: app.nodeService, now: () => app.nodeService.now() });
+  await app.register(v3Routes, { prefix: '/v3', config, store: app.store, bus: app.eventBus, nodes: app.nodeService, libraryLinks: app.libraryLinks, now: () => app.nodeService.now() });
 }
 
 v3.notFoundHandler = notFoundHandler;

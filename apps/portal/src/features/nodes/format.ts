@@ -95,6 +95,85 @@ export function whatChanged(node: NodeLike): { text: string; supportingText?: st
   return { text: plural(props.length, 'property', 'properties'), supportingText: since };
 }
 
+/** A design-token node (decision: tokens are nodes): the `tokens` root, a `tokens:<collectionKey>` collection or a `token:<variableKey>` variable. */
+export const isTokenNodeId = (id: string | null | undefined): boolean =>
+  !!id && (id === 'tokens' || id.startsWith('tokens:') || id.startsWith('token:'));
+
+/** A design token (`token:<variableKey>`, type `VARIABLE`). */
+export const isToken = (node: Pick<NodeLike, 'type' | 'nodeId'>): boolean => node.type === 'VARIABLE' || !!node.nodeId?.startsWith('token:');
+
+const attrsOf = (node: object): Record<string, unknown> => {
+  const attrs = (node as { attrs?: unknown }).attrs;
+  return isObject(attrs) ? attrs : {};
+};
+
+/** A token's code name: `codeSyntax.WEB` when the designer set one, else none. */
+export function tokenCodeSyntax(node: object): string | undefined {
+  const syntax = attrsOf(node).codeSyntax;
+  return isObject(syntax) && typeof syntax.WEB === 'string' && syntax.WEB ? syntax.WEB : undefined;
+}
+
+/** `VARIABLE · COLOR · --color-bg-active` for a token, `VARIABLE_COLLECTION · 2 modes` for a collection. */
+export function tokenMeta(node: Pick<NodeLike, 'type' | 'nodeId'>): string {
+  const attrs = attrsOf(node);
+  if (isToken(node)) {
+    const resolved = typeof attrs.resolvedType === 'string' ? attrs.resolvedType : null;
+    return [node.type ?? 'VARIABLE', resolved, tokenCodeSyntax(node)].filter(Boolean).join(' · ');
+  }
+  const modes = Array.isArray(attrs.modes) ? attrs.modes.length : 0;
+  return [node.type ?? 'TOKENS', modes ? plural(modes, 'mode', 'modes') : null].filter(Boolean).join(' · ');
+}
+
+/** A token value that points at another token (`{ alias: "token:<key>", name }`). */
+export interface TokenAlias {
+  alias: string;
+  name?: string | null;
+}
+
+export const isTokenAlias = (v: unknown): v is TokenAlias => isObject(v) && typeof v.alias === 'string';
+
+/** One side of a token's mode value as shown: the text, a swatch color for colors, the alias target for aliases. */
+export interface TokenValueView {
+  text: string;
+  swatch?: string;
+  /** The aliased token's node id. */
+  alias?: string;
+  /** The aliased token's full name (`Colors/gray-800`). */
+  aliasName?: string;
+}
+
+const HEX = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+
+/** A `value:<Mode>` side: `#202527` (with a swatch), `16`, `true`, or an alias's short name (`gray-800`). */
+export function tokenValueView(value: unknown): TokenValueView {
+  if (isTokenAlias(value)) {
+    const name = value.name || value.alias;
+    return { text: tokenName(name), alias: value.alias, aliasName: name };
+  }
+  if (typeof value === 'string' && HEX.test(value)) return { text: value, swatch: value };
+  const text = formatValue(value);
+  if (isColor(value)) return { text, swatch: text };
+  if (typeof value === 'number') return { text: String(Math.round(value * 10_000) / 10_000) };
+  return { text };
+}
+
+/** One changed mode of a token. */
+export interface TokenModeChange {
+  /** `Dark`. */
+  mode: string;
+  /** `value:Dark`. */
+  prop: string;
+  built: unknown;
+  now: unknown;
+}
+
+/** A token's changed `value:<Mode>` properties, in `changedProps` order. */
+export function tokenModeChanges(node: Pick<NodeLike, 'changes' | 'changedProps'>): TokenModeChange[] {
+  return changeEntries(node)
+    .filter(([prop]) => prop.startsWith('value:'))
+    .map(([prop, change]) => ({ mode: prop.slice('value:'.length), prop, built: change.built, now: change.now }));
+}
+
 /** `FRAME · 1:95540`, `INSTANCE · 1:95723 → 1:27892`, `COMPONENT · 1:27892 · via 1:95723`. */
 export function nodeMeta(node: Pick<NodeLike, 'type' | 'nodeId' | 'isInstance' | 'mainComponentId'>, via?: string): string {
   const main = node.isInstance && node.mainComponentId ? ` → ${node.mainComponentId}` : '';
@@ -135,20 +214,38 @@ export function timeUntil(iso: string | null | undefined, now: number): string {
 }
 
 /** A prompt an agent can start from on one node: MCP tools first, the CLI as the fallback. */
-export function nodePrompt({ fileKey, nodeId, name }: { fileKey: string; nodeId: string; name?: string | null }): string {
+export function nodePrompt({
+  fileKey,
+  nodeId,
+  name,
+  codeSyntax,
+}: {
+  fileKey: string;
+  nodeId: string;
+  name?: string | null;
+  /** A design token's `codeSyntax.WEB`, when it has one. */
+  codeSyntax?: string;
+}): string {
   const label = name ? `"${name}" (${nodeId})` : nodeId;
+  const token = isTokenNodeId(nodeId);
+  const variable = codeSyntax ? `the code variable ${codeSyntax} (its codeSyntax)` : `the code variable named after the token${name ? ` (${name})` : ''}`;
   const cli = 'node scripts/rds-agent.js';
   return [
-    `Implement the Figma node ${label} in file ${fileKey}, tracked by Rolling Design Sync.`,
+    token
+      ? `Update the design token ${label} in file ${fileKey}, tracked by Rolling Design Sync.`
+      : `Implement the Figma node ${label} in file ${fileKey}, tracked by Rolling Design Sync.`,
     'Use the rds MCP tools if you have them; otherwise run the CLI from a checkout of rolling-design-sync (needs RDS_API_BASE_URL and RDS_AGENT_TOKEN).',
     '',
     '1. Claim it with a stable worker id when other agents share the file:',
     `   - MCP: claim_nodes { "fileKey": "${fileKey}", "nodeIds": ["${nodeId}"], "worker": "<worker>" }`,
     `   - CLI: ${cli} claim --file-key ${fileKey} --node-ids ${nodeId} --worker <worker>`,
-    "2. Read what changed since it was last built and its contentHash:",
+    '2. Read what changed since it was last built, its open notes and its contentHash:',
     `   - MCP: get_node { "fileKey": "${fileKey}", "nodeId": "${nodeId}" }`,
     `   - CLI: ${cli} nodes show ${nodeId} --file-key ${fileKey}`,
-    '3. Implement the changes and commit them.',
+    token
+      ? `3. Update ${variable} for each changed mode (value:<Mode>) and commit.`
+      : '3. Implement the changes and commit them.',
+    '   Open notes (notes) are what a person saw doesn’t match the design: fix the code to match the design as they describe. Clearing resolves them.',
     '4. Clear it with the contentHash you read and the commit SHA:',
     `   - MCP: clear_nodes { "fileKey": "${fileKey}", "items": [{ "nodeId": "${nodeId}", "contentHash": "<contentHash>" }], "commitRef": "<sha>" }`,
     `   - CLI: ${cli} clear ${nodeId}=<contentHash> --file-key ${fileKey} --commit-ref <sha>`,
@@ -156,5 +253,59 @@ export function nodePrompt({ fileKey, nodeId, name }: { fileKey: string; nodeId:
     '5. If you cannot build it, block it with a reason a person can act on:',
     `   - MCP: block_node { "fileKey": "${fileKey}", "nodeId": "${nodeId}", "reason": "<why>" }`,
     `   - CLI: ${cli} block ${nodeId} --file-key ${fileKey} --reason "<why>"`,
+  ].join('\n');
+}
+
+/** A component a removed design used, for `removalPrompt`. */
+export interface RemovalPromptUse {
+  componentId?: string;
+  name?: string | null;
+  livePlacements?: number;
+}
+
+/**
+ * A prompt that has an agent remove the code of a removed design (a `kind: "removed"` work item): keep the
+ * components still placed elsewhere, consider removing the unused ones, then clear the root with `subtree: true`.
+ */
+export function removalPrompt({
+  fileKey,
+  nodeId,
+  name,
+  uses = [],
+  warnings = [],
+}: {
+  fileKey: string;
+  nodeId: string;
+  name?: string | null;
+  uses?: readonly RemovalPromptUse[];
+  warnings?: readonly { componentId?: string; livePlacements?: number }[];
+}): string {
+  const label = name ? `"${name}" (${nodeId})` : nodeId;
+  const cli = 'node scripts/rds-agent.js';
+  const useName = (u: RemovalPromptUse) => `"${u.name ?? u.componentId}"`;
+  const kept = uses.filter(u => (u.livePlacements ?? 0) > 0);
+  const unused = uses.filter(u => (u.livePlacements ?? 0) === 0);
+  const warned = warnings.map(w => {
+    const use = uses.find(u => u.componentId === w.componentId);
+    return `   - ${use ? useName(use) : `"${w.componentId}"`}: its main component was removed with the design, but ${plural(w.livePlacements ?? 0, 'instance', 'instances')} still use it — keep its code.`;
+  });
+  return [
+    `The Figma design ${label} in file ${fileKey} was deleted; remove the code that rendered it. Tracked by Rolling Design Sync.`,
+    'Use the rds MCP tools if you have them; otherwise run the CLI from a checkout of rolling-design-sync (needs RDS_API_BASE_URL and RDS_AGENT_TOKEN).',
+    '',
+    `1. Remove the code that rendered ${label}.`,
+    kept.length
+      ? `2. Keep the components it used that are still placed elsewhere: ${kept.map(u => `${useName(u)} (${plural(u.livePlacements ?? 0, 'placement', 'placements')} left)`).join(', ')}.`
+      : '2. None of the components it used are placed anywhere else.',
+    unused.length
+      ? `3. Consider removing the components nothing uses any more: ${unused.map(useName).join(', ')}.`
+      : '3. Every component it used is still placed elsewhere: keep them all.',
+    ...(warned.length ? ['   Warnings:', ...warned] : []),
+    '4. Commit, then read the root\'s contentHash:',
+    `   - MCP: get_node { "fileKey": "${fileKey}", "nodeId": "${nodeId}" }`,
+    `   - CLI: ${cli} nodes show ${nodeId} --file-key ${fileKey}`,
+    '5. Clear the root with subtree: true — that also clears every removed layer under it:',
+    `   - MCP: clear_nodes { "fileKey": "${fileKey}", "items": [{ "nodeId": "${nodeId}", "contentHash": "<contentHash>", "subtree": true }], "commitRef": "<sha>" }`,
+    `   - HTTP (the CLI's clear has no subtree flag): curl -X POST "$RDS_API_BASE_URL/v3/files/${fileKey}/clear" -H "Authorization: Bearer $RDS_AGENT_TOKEN" -H 'Content-Type: application/json' -d '{ "items": [{ "nodeId": "${nodeId}", "contentHash": "<contentHash>", "subtree": true }], "commitRef": "<sha>" }'`,
   ].join('\n');
 }

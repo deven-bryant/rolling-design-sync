@@ -20,6 +20,7 @@ class El {
   getAttribute(k) { return this.attributes.has(k) ? this.attributes.get(k) : null; }
   hasAttribute(k) { return this.attributes.has(k); }
   removeAttribute(k) { this.attributes.delete(k); }
+  focus() { El.focused = this; }
   append(...c) { this.children.push(...c); }
   replaceChildren(...c) { this.children = c; }
 }
@@ -63,7 +64,7 @@ test('progress with a total renders a determinate bar and "phase: count / total 
   u.receive({ type: 'busy', value: true }, { type: 'progress', phase: 'Uploading', count: 1200, total: 3400 });
   const bar = u.$('bar');
   assert.equal(bar.hidden, false);
-  assert.equal(bar.className, '');
+  assert.equal(u.$('spinner').hidden, true);
   assert.equal(u.$('busy').textContent, `Uploading: ${(1200).toLocaleString()} / ${(3400).toLocaleString()} nodes`);
   assert.deepEqual([bar.getAttribute('aria-valuemin'), bar.getAttribute('aria-valuenow'), bar.getAttribute('aria-valuemax')], ['0', '1200', '3400']);
   assert.equal(u.$('bar-fill').style.width, (100 * 1200 / 3400) + '%');
@@ -75,22 +76,38 @@ test('progress with a total renders a determinate bar and "phase: count / total 
   assert.equal(u.$('busy').textContent, '');
 });
 
-test('progress without a total renders an indeterminate bar and the running count', () => {
+test('progress without a total shows a spinner next to the running count instead of the bar', () => {
   const u = ui();
+  assert.equal(u.$('spinner').hidden, true);
+  assert.equal(u.$('spinner').getAttribute('aria-hidden'), 'true');
   u.receive({ type: 'busy', value: true });
+  assert.equal(u.$('bar').hidden, true);
+  assert.equal(u.$('spinner').hidden, false);
+  u.receive({ type: 'progress', phase: 'Uploading', count: 10, total: 20 });
+  assert.equal(u.$('spinner').hidden, true);
   assert.equal(u.$('bar').hidden, false);
-  assert.equal(u.$('bar').className, 'indeterminate');
-  u.receive({ type: 'progress', phase: 'Uploading', count: 10, total: 20 }, { type: 'progress', phase: 'Scanning', count: 500 });
+  for (const phase of ['Fetching stored hashes', 'Scanning', 'Comparing', 'Scanning main components']) {
+    u.receive({ type: 'progress', phase, count: 500 });
+    assert.equal(u.$('spinner').hidden, false, phase);
+    assert.equal(u.$('bar').hidden, true, phase);
+    assert.equal(u.$('busy').textContent, phase + ': 500 nodes');
+  }
   const bar = u.$('bar');
-  assert.equal(bar.className, 'indeterminate');
-  assert.equal(u.$('busy').textContent, 'Scanning: 500 nodes');
   for (const a of ['aria-valuenow', 'aria-valuemin', 'aria-valuemax']) assert.equal(bar.hasAttribute(a), false);
   assert.equal(u.$('bar-fill').style.width, '');
+  assert.equal(u.$('busy').getAttribute('role'), 'status');
+  u.receive({ type: 'confirm-new-layers', id: 1, added: 30, total: 40 });
+  assert.equal(u.$('spinner').hidden, true, 'paused for the prompt');
+  u.receive({ type: 'busy', value: false });
+  assert.equal(u.$('spinner').hidden, true);
+  assert.equal(u.$('bar').hidden, true);
 });
 
-test('the indeterminate bar animates only without reduced motion and uses Figma theme variables', () => {
-  assert.match(HTML, /#bar\.indeterminate #bar-fill\{[^}]*animation:bar-slide/);
-  assert.match(HTML, /@media \(prefers-reduced-motion:reduce\)\{[^@]*#bar\.indeterminate #bar-fill\{animation:none/);
+test('the spinner spins only without reduced motion; spinner and bar use Figma theme variables', () => {
+  assert.match(HTML, /<div class="status"><span id="spinner" aria-hidden="true" hidden><\/span><div id="busy" role="status"><\/div><\/div>/);
+  assert.match(HTML, /#spinner\{[^}]*border:2px solid var\(--figma-color-bg-tertiary,[^}]*border-top-color:var\(--figma-color-bg-brand,[^}]*animation:spin/);
+  assert.match(HTML, /@media \(prefers-reduced-motion:reduce\)\{[^@]*#spinner\{animation:none/);
+  assert.doesNotMatch(HTML, /indeterminate|bar-slide/);
   assert.match(HTML, /#bar\{[^}]*var\(--figma-color-bg-tertiary,/);
   assert.match(HTML, /#bar-fill\{[^}]*var\(--figma-color-bg-brand,/);
 });
@@ -137,4 +154,74 @@ test('errors still show in the error style and replace a success message', () =>
   assert.equal(u.$('message').textContent, 'Invalid bearer token');
   u.receive({ type: 'notice', message: 'Settings saved on this machine.' });
   assert.equal(u.$('message').className, '');
+});
+
+const ASK = { type: 'confirm-new-layers', id: 7, added: 1234, total: 1500 };
+function asking() {
+  const u = ui();
+  u.$('upload').onclick(); u.receive({ type: 'busy', value: true }, ASK); u.posted.length = 0;
+  return u;
+}
+test('"already built?" prompt: counts, rationale, three enabled choices, focus on the first; progress paused', () => {
+  const u = ui();
+  assert.equal(u.$('prompt').hidden, true);
+  assert.equal(u.$('prompt').getAttribute('role'), 'alertdialog');
+  assert.equal(u.$('prompt').getAttribute('aria-labelledby'), 'prompt-title');
+  assert.equal(u.$('prompt').getAttribute('aria-describedby'), 'prompt-text');
+  u.$('upload').onclick(); u.receive({ type: 'busy', value: true }, ASK);
+  assert.equal(u.$('prompt').hidden, false);
+  assert.equal(u.$('prompt-title').textContent, '1,234 of 1,500 layers are new to Rolling Design Sync.');
+  assert.match(HTML, /<p id="prompt-text">If the code already matches them[^<]*mark them as implemented/);
+  assert.match(HTML, />Mark as implemented<\/button><button id="prompt-new">Track as new work<\/button><button id="prompt-cancel">Cancel<\/button>/);
+  for (const id of ['prompt-implemented', 'prompt-new', 'prompt-cancel']) assert.equal(u.$(id).disabled, false, id);
+  assert.equal(El.focused, u.$('prompt-implemented'));
+  assert.equal(u.$('bar').hidden, true);
+  assert.match(u.$('busy').textContent, /Paused/);
+});
+for (const [button, choice] of [['prompt-implemented', 'implemented'], ['prompt-new', 'new'], ['prompt-cancel', 'cancel']])
+  test(`prompt button "${button}" answers "${choice}" with the request id and closes the prompt`, () => {
+    const u = asking();
+    u.$(button).onclick();
+    assert.deepEqual(JSON.parse(JSON.stringify(u.posted)), [{ type: 'new-layers-choice', id: 7, choice }]);
+    assert.equal(u.$('prompt').hidden, true);
+    u.$(button).onclick(); assert.equal(u.posted.length, 1, 'a closed prompt does not answer twice');
+  });
+test('Escape and the main Cancel button answer the prompt with "cancel"', () => {
+  let u = asking(); let prevented = false;
+  u.$('prompt').onkeydown({ key: 'Enter', preventDefault() {} }); assert.equal(u.posted.length, 0);
+  u.$('prompt').onkeydown({ key: 'Escape', preventDefault() { prevented = true; } });
+  assert.ok(prevented);
+  assert.deepEqual(JSON.parse(JSON.stringify(u.posted)), [{ type: 'new-layers-choice', id: 7, choice: 'cancel' }]);
+  u = asking(); u.$('cancel').onclick();
+  assert.deepEqual(JSON.parse(JSON.stringify(u.posted)), [{ type: 'new-layers-choice', id: 7, choice: 'cancel' }]);
+});
+test('the prompt is cleared by the next upload, by the run ending and by an error', () => {
+  let u = asking(); u.$('upload').onclick(); assert.equal(u.$('prompt').hidden, true);
+  u = asking(); u.receive({ type: 'busy', value: false }); assert.equal(u.$('prompt').hidden, true);
+  assert.equal(u.$('prompt-new').disabled, true);
+  u = asking(); u.receive({ type: 'error', message: 'boom' }); assert.equal(u.$('prompt').hidden, true);
+});
+test('the prompt uses Figma theme variables and a visible keyboard focus ring', () => {
+  assert.match(HTML, /#prompt\{[^}]*border:1px solid var\(--figma-color-border-brand[^}]*background:var\(--figma-color-bg-brand-tertiary[^}]*color:var\(--figma-color-text/);
+  assert.match(HTML, /#prompt button:focus-visible\{outline:2px solid var\(--figma-color-border-selected/);
+});
+test('the result says how many library components were not tracked because of the file setting', () => {
+  const u = ui();
+  u.receive({ ...SYNCED, mains: { librarySkipped: 12 } });
+  assert.match(u.$('result-note').textContent, / 12 library components not tracked \(file setting\)\.$/);
+  u.receive({ ...SYNCED, mains: { librarySkipped: 1 } });
+  assert.match(u.$('result-note').textContent, / 1 library component not tracked \(file setting\)\.$/);
+  u.receive(SYNCED);
+  assert.doesNotMatch(u.$('result-note').textContent, /library/);
+});
+test('the result reports the design tokens pass with a tokens stat', () => {
+  const u = ui();
+  u.receive({ ...SYNCED, tokens: { tracked: 48, changed: 1, added: 2, unchanged: 45, deleted: 0 } });
+  assert.match(u.$('result-note').textContent, / Tokens: 48 tracked, 1 changed, 2 new\.$/);
+  const tile = u.$('stats').children.find(s => s.children[1].textContent === 'tokens');
+  assert.equal(tile.children[0].textContent, '48');
+  u.receive({ ...SYNCED, tokens: { tracked: 3, changed: 0, added: 0, deleted: 1 } });
+  assert.match(u.$('result-note').textContent, / Tokens: 3 tracked, 0 changed, 0 new, 1 deleted\.$/);
+  u.receive(SYNCED);
+  assert.doesNotMatch(u.$('result-note').textContent, /Tokens/);
 });

@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { createContext, use, useEffect, useState, type ReactNode } from 'react';
 import { buildUrl } from '../../api/client';
 import { useFileClaims } from '../../api/hooks/useFileClaims';
@@ -10,17 +11,18 @@ import { CategoryBadges } from '../../components/domain/CategoryBadges';
 import { ChangeBadge } from '../../components/domain/ChangeBadge';
 import { NodeCell } from '../../components/domain/NodeCell';
 import { StateBadge } from '../../components/domain/StateBadge';
+import { TokenValue } from '../../components/domain/TokenValue';
 import { Input } from '../../components/Input';
 import { Menu } from '../../components/Menu';
 import { Pagination } from '../../components/Pagination';
 import { Select, SelectItem } from '../../components/Select';
-import { Table, TextCell } from '../../components/Table';
+import { FileTypeCell, Table, TextCell } from '../../components/Table';
 import { Toggle } from '../../components/Toggle';
-import { cx, Icon, Text } from '../../components/primitives';
+import { cx, Icon, Text, VisuallyHidden } from '../../components/primitives';
 import { CATEGORIES, categoriesOf, type Category } from './categories';
-import { nodeMeta, timeAgo, whatChanged } from './format';
+import { isTokenNodeId, nodeMeta, plural, timeAgo, tokenMeta, tokenModeChanges, tokenValueView, whatChanged, type TokenModeChange } from './format';
 import { useNodeLiveUpdates, type NodeLiveUpdates } from './live';
-import { filterParams, nodePageParams, PAGE_SIZE, splitUnder, useChildNodes, useFile, useNodePage, useScope } from './queries';
+import { filterParams, listNodes, nodeKeys, nodePageParams, PAGE_SIZE, splitUnder, useChildNodes, useFile, useNodePage, useScope } from './queries';
 import type { ChangeFilter, FileClaim, NodeFilters, NodeItem, StateFilter } from './types';
 
 /** How long the search box waits after typing before it updates the filters. */
@@ -32,6 +34,7 @@ const COLUMNS = [
   { id: 'categories', label: 'Categories', width: 'w-43' },
   { id: 'changed', label: 'What changed', width: 'w-45' },
   { id: 'agent', label: 'Agent', width: 'w-45' },
+  { id: 'notes', label: 'Notes', width: 'w-45' },
 ] as const;
 export type NodeColumn = (typeof COLUMNS)[number]['id'];
 
@@ -46,10 +49,12 @@ const CHANGE_OPTIONS: { id: ChangeFilter | 'any'; label: string }[] = [
   { id: 'added', label: 'Added' },
   { id: 'modified', label: 'Modified' },
   { id: 'deleted', label: 'Deleted' },
+  { id: 'requested', label: 'Requested' },
 ];
 const CATEGORY_OPTIONS: { id: Category | 'any'; label: string }[] = [{ id: 'any', label: 'Any' }, ...CATEGORIES.map(c => ({ id: c, label: c }))];
 const NODE_TYPES = [
   'FRAME', 'GROUP', 'SECTION', 'COMPONENT', 'COMPONENT_SET', 'INSTANCE', 'TEXT', 'RECTANGLE', 'ELLIPSE', 'LINE', 'VECTOR', 'BOOLEAN_OPERATION',
+  'VARIABLE_COLLECTION', 'VARIABLE',
 ];
 const TYPE_OPTIONS = [{ id: 'any', label: 'Any' }, ...NODE_TYPES.map(t => ({ id: t, label: t }))];
 
@@ -115,7 +120,7 @@ export function NodeFiltersBar({ filters, onFiltersChange, addon }: NodeFiltersB
         className="w-70"
         type="search"
         placeholder="Search name, node id, or key:value"
-        tooltip="Plain text matches node names, a node id lists that node, and key:value pairs (state:dirty changed:fills) filter like the API's q."
+        tooltip="Plain text matches node names anywhere in the scope, a node id lists that node, and key:value pairs (state:dirty changed:fills) filter like the API's q. Separate several names or node ids with commas: Button, Pagination."
         iconLeading={<Icon name="search-lg" size="md" />}
         value={draft}
         onChange={setDraft}
@@ -154,6 +159,9 @@ interface RowContextValue {
   live: NodeLiveUpdates;
   claims: ReadonlyMap<string, FileClaim>;
   now: number;
+  /** Rows the user opened or closed, by row key; others fall back to their default. */
+  expansion: ReadonlyMap<string, boolean>;
+  setExpanded: (rowKey: string, expanded: boolean) => void;
 }
 
 const RowContext = createContext<RowContextValue | null>(null);
@@ -201,6 +209,39 @@ function AgentColumn({ node }: { node: NodeItem }) {
   return <AgentCell worker="—" when="unclaimed" avatar={false} />;
 }
 
+/** How many changed modes the *What changed* cell lists before `+N modes`. */
+const MODES_SHOWN = 2;
+
+function ModeSide({ value }: { value: unknown }) {
+  const view = tokenValueView(value);
+  return (
+    <TokenValue swatch={view.swatch} title={view.aliasName}>
+      {view.text}
+    </TokenValue>
+  );
+}
+
+/** A token's *What changed*: each changed mode as `Dark ■ #202527 → ■ #2b3033`, then `+N modes`. */
+function TokenChanges({ modes }: { modes: TokenModeChange[] }) {
+  const hidden = modes.length - MODES_SHOWN;
+  return (
+    <Table.Cell>
+      <div className="flex flex-col">
+        {modes.slice(0, MODES_SHOWN).map(m => (
+          <Text key={m.prop} as="div" className="flex items-center gap-md whitespace-nowrap">
+            <Text weight="medium">{m.mode}</Text>
+            <ModeSide value={m.built} />
+            <span aria-hidden="true">→</span>
+            <VisuallyHidden>to</VisuallyHidden>
+            <ModeSide value={m.now} />
+          </Text>
+        ))}
+        {hidden > 0 && <Text color="tertiary">+{hidden} modes</Text>}
+      </div>
+    </Table.Cell>
+  );
+}
+
 interface NodeRowViewProps {
   node: NodeItem;
   depth: number;
@@ -214,7 +255,9 @@ function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeR
   const { columns, onOpenNode, selectedNodeId } = useRowContext();
   const id = node.nodeId ?? '';
   const name = node.name ?? id;
+  const token = isTokenNodeId(id);
   const changed = whatChanged(node);
+  const modes = token && node.changeType === 'modified' ? tokenModeChanges(node) : [];
   const categories = categoriesOf(node.changedProps ?? []);
   return (
     <Table.Row
@@ -225,10 +268,12 @@ function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeR
       <Table.Cell className="w-88 py-lg">
         <NodeCell
           name={name}
-          meta={nodeMeta(node, via)}
+          meta={token ? tokenMeta(node) : nodeMeta(node, via)}
+          badges={node.library ? <Badge color="gray">Library</Badge> : undefined}
           depth={depth}
           expandable={expandable}
           expanded={expanded}
+          reserveToggle
           onToggle={onToggle}
           toggleLabel={`${expanded ? 'Collapse' : 'Expand'} ${name}`}
         />
@@ -239,7 +284,9 @@ function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeR
         <Table.Cell>{categories.length ? <CategoryBadges categories={categories} max={2} /> : <Dash />}</Table.Cell>
       )}
       {columns.has('changed') &&
-        (changed ? (
+        (modes.length ? (
+          <TokenChanges modes={modes} />
+        ) : changed ? (
           <TextCell className="max-w-45" supportingText={changed.supportingText}>
             {changed.text}
           </TextCell>
@@ -253,6 +300,7 @@ function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeR
           <AgentColumn node={node} />
         </Table.Cell>
       )}
+      {columns.has('notes') && <FileTypeCell label={node.notes?.length ? plural(node.notes.length, 'open note', 'open notes') : undefined} />}
     </Table.Row>
   );
 }
@@ -272,11 +320,16 @@ function StatusRow({ children, depth = 0 }: { children: ReactNode; depth?: numbe
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : 'Something went wrong.');
 
+/** A row's expansion key: its node id, prefixed by the instances it was reached through (`1:2>1:50`). */
+const rowKeyOf = (instances: string, nodeId: string) => `${instances}${nodeId}`;
+
 interface TreeRowProps {
   node: NodeItem;
   depth: number;
   /** The instance this main-component row was reached through. */
   via?: string;
+  /** The instances (`<id>>` each) the row was reached through under *Expand instances*. */
+  instances?: string;
   /** Children already loaded with this row (the scope root's page, a main component's subtree). */
   preloaded?: NodeItem[];
   more?: ReactNode;
@@ -284,9 +337,10 @@ interface TreeRowProps {
 }
 
 /** A row and, once expanded, its lazily loaded children. */
-function TreeRow({ node, depth, via, preloaded, more, defaultExpanded = false }: TreeRowProps) {
-  const { filters } = useRowContext();
-  const [expanded, setExpanded] = useState(defaultExpanded);
+function TreeRow({ node, depth, via, instances = '', preloaded, more, defaultExpanded = false }: TreeRowProps) {
+  const { filters, expansion, setExpanded } = useRowContext();
+  const rowKey = rowKeyOf(instances, node.nodeId ?? '');
+  const expanded = expansion.get(rowKey) ?? defaultExpanded;
   const followMain = !!filters.expandInstances && !!node.isInstance && !!node.mainComponentId && !via;
   const expandable = preloaded ? preloaded.length > 0 : followMain || (node.descendants?.total ?? 0) > 0;
   let children: ReactNode = null;
@@ -295,17 +349,24 @@ function TreeRow({ node, depth, via, preloaded, more, defaultExpanded = false }:
       children = (
         <>
           {preloaded.map(child => (
-            <TreeRow key={child.nodeId} node={child} depth={depth + 1} />
+            <TreeRow key={child.nodeId} node={child} depth={depth + 1} instances={instances} />
           ))}
           {more}
         </>
       );
-    } else if (followMain) children = <MainComponentRows instance={node} depth={depth + 1} />;
-    else children = <ChildRows parentId={node.nodeId ?? ''} depth={depth + 1} />;
+    } else if (followMain) children = <MainComponentRows instance={node} depth={depth + 1} instances={instances} />;
+    else children = <ChildRows parentId={node.nodeId ?? ''} depth={depth + 1} instances={instances} />;
   }
   return (
     <>
-      <NodeRowView node={node} depth={depth} via={via} expandable={expandable} expanded={expanded && expandable} onToggle={setExpanded} />
+      <NodeRowView
+        node={node}
+        depth={depth}
+        via={via}
+        expandable={expandable}
+        expanded={expanded && expandable}
+        onToggle={open => setExpanded(rowKey, open)}
+      />
       {children}
     </>
   );
@@ -334,7 +395,7 @@ function MoreRow({ loading, onMore }: { loading: boolean; onMore: () => void }) 
   );
 }
 
-function ChildRows({ parentId, depth }: { parentId: string; depth: number }) {
+function ChildRows({ parentId, depth, instances }: { parentId: string; depth: number; instances: string }) {
   const { query, nodes, more } = useLevel(parentId);
   const children = nodes.filter(n => n.nodeId !== parentId);
   if (query.isPending) return <StatusRow depth={depth}>Loading…</StatusRow>;
@@ -343,7 +404,7 @@ function ChildRows({ parentId, depth }: { parentId: string; depth: number }) {
   return (
     <>
       {children.map(n => (
-        <TreeRow key={n.nodeId} node={n} depth={depth} />
+        <TreeRow key={n.nodeId} node={n} depth={depth} instances={instances} />
       ))}
       {more}
     </>
@@ -351,21 +412,22 @@ function ChildRows({ parentId, depth }: { parentId: string; depth: number }) {
 }
 
 /** *Expand instances*: an instance's main component (`↳ … via <instanceId>`) and its children. */
-function MainComponentRows({ instance, depth }: { instance: NodeItem; depth: number }) {
+function MainComponentRows({ instance, depth, instances }: { instance: NodeItem; depth: number; instances: string }) {
   const mainId = instance.mainComponentId ?? '';
+  const through = rowKeyOf(instances, `${instance.nodeId ?? ''}>`);
   const { query, nodes, more } = useLevel(mainId);
   if (query.isPending) return <StatusRow depth={depth}>Loading main component…</StatusRow>;
   if (query.isError) return <StatusRow depth={depth}>Couldn’t load main component {mainId}: {errorText(query.error)}</StatusRow>;
   const main = nodes.find(n => n.nodeId === mainId);
   const children = nodes.filter(n => n.nodeId !== mainId);
   if (main) {
-    return <TreeRow node={main} depth={depth} via={instance.nodeId} preloaded={children} more={more} defaultExpanded />;
+    return <TreeRow node={main} depth={depth} via={instance.nodeId} instances={through} preloaded={children} more={more} defaultExpanded />;
   }
   if (!children.length) return <StatusRow depth={depth}>Main component {mainId} has no nodes that match the filters.</StatusRow>;
   return (
     <>
       {children.map(n => (
-        <TreeRow key={n.nodeId} node={n} depth={depth} />
+        <TreeRow key={n.nodeId} node={n} depth={depth} instances={through} />
       ))}
       {more}
     </>
@@ -379,17 +441,22 @@ interface PagedRowsProps {
   colSpan: number;
 }
 
-/** The top level, one cursor page at a time; remounted (back to page 1) when the filters change. */
+/** The top level, one cursor page at a time; remounted (back to page 1) when the filters change. Row expansion lives in `NodeTable`. */
 function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const page = cursors.length;
   const query = useNodePage(fileKey, scopeId, filters, cursors[page - 1]);
-  const under = nodePageParams(scopeId, filters).under as string | undefined;
+  const params = nodePageParams(scopeId, filters);
+  const under = params.under as string | undefined;
+  const tree = params.depth === 1;
   const nodes = query.data?.nodes ?? [];
-  const root = page === 1 ? nodes.find(n => n.nodeId === under) : undefined;
-  const rest = nodes.filter(n => n.nodeId !== under);
-  const depth = under && page > 1 ? 1 : 0;
+  const root = tree && page === 1 ? nodes.find(n => n.nodeId === under) : undefined;
+  const rest = tree ? nodes.filter(n => n.nodeId !== under) : nodes;
+  const depth = tree && page > 1 ? 1 : 0;
   const nextCursor = query.data?.nextCursor ?? null;
+  const total = query.data?.total;
+  const pageCount = typeof total === 'number' ? Math.max(Math.ceil(total / PAGE_SIZE), page + (nextCursor ? 1 : 0)) : undefined;
+  const queryClient = useQueryClient();
 
   let body: ReactNode;
   if (query.isPending) body = <StatusRow>Loading nodes…</StatusRow>;
@@ -398,9 +465,16 @@ function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
   else if (root) body = <TreeRow node={root} depth={0} preloaded={rest} defaultExpanded />;
   else body = rest.map(n => <TreeRow key={n.nodeId} node={n} depth={depth} />);
 
-  const onPageChange = (next: number) => {
-    if (next < page) setCursors(c => c.slice(0, Math.max(1, next)));
-    else if (next > page && nextCursor) setCursors(c => [...c, nextCursor]);
+  const onPageChange = async (next: number) => {
+    if (next < page) return setCursors(c => c.slice(0, Math.max(1, next)));
+    let walked = cursors;
+    while (walked.length < next) {
+      const params = nodePageParams(scopeId, filters, walked[walked.length - 1]);
+      const data = await queryClient.ensureQueryData({ queryKey: nodeKeys.page(fileKey, params), queryFn: ({ signal }) => listNodes(fileKey, params, signal) });
+      if (!data.nextCursor) break;
+      walked = [...walked, data.nextCursor];
+    }
+    setCursors(walked);
   };
 
   return (
@@ -409,7 +483,11 @@ function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
       <tfoot>
         <tr>
           <td colSpan={colSpan} className="p-0">
-            <Pagination label="Node pages" page={page} onPageChange={onPageChange} hasNext={!!nextCursor} className="border-t-0" />
+            {pageCount !== undefined ? (
+              <Pagination label="Node pages" page={page} pageCount={pageCount} onPageChange={next => void onPageChange(next)} className="border-t-0" />
+            ) : (
+              <Pagination label="Node pages" page={page} onPageChange={next => void onPageChange(next)} hasNext={!!nextCursor} className="border-t-0" />
+            )}
           </td>
         </tr>
       </tfoot>
@@ -436,6 +514,7 @@ export interface NodeTableProps {
 /**
  * Figma *Team View* content: the filter row and the Nodes table card — the scope's tree in
  * document order, expanded lazily, paged by cursor, and kept live from the file's event stream.
+ * Opened and closed rows stay so across filter changes and pages; switching scope resets them.
  */
 export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNode, selectedNodeId, filtersAddon, className }: NodeTableProps) {
   const live = useNodeLiveUpdates(fileKey);
@@ -444,6 +523,10 @@ export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNo
   const { scope, selected } = useScope(fileKey, scopeId);
   const now = useNow(30_000);
   const [columns, setColumns] = useState<ReadonlySet<NodeColumn>>(() => new Set(COLUMNS.map(c => c.id)));
+  const [expansion, setExpansion] = useState<{ scopeId?: string; rows: ReadonlyMap<string, boolean> }>(() => ({ scopeId, rows: new Map() }));
+  if (expansion.scopeId !== scopeId) setExpansion({ scopeId, rows: new Map() });
+  const setExpanded = (rowKey: string, open: boolean) =>
+    setExpansion(prev => ({ ...prev, rows: new Map(prev.rows).set(rowKey, open) }));
 
   const claims = new Map((claimsQuery.data?.claims ?? []).flatMap(c => (c.claimId ? [[c.claimId, c] as const] : [])));
   const several = selected.length > 1 && selected.length === splitUnder(scopeId).length;
@@ -500,7 +583,7 @@ export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNo
                 </Table.HeaderCell>
               ))}
             </Table.Header>
-            <RowContext value={{ fileKey, filters, columns, onOpenNode, selectedNodeId, live, claims, now }}>
+            <RowContext value={{ fileKey, filters, columns, onOpenNode, selectedNodeId, live, claims, now, expansion: expansion.rows, setExpanded }}>
               <PagedRows key={pageKey} fileKey={fileKey} scopeId={scopeId} filters={filters} colSpan={visible.length + 1} />
             </RowContext>
           </Table>

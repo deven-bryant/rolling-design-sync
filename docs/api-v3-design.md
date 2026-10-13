@@ -114,9 +114,146 @@ A dirty node's `changes` is a property-level diff against what was built:
   `styleDefinitions` the plugin already captures. Unbound values are raw.
 - `added` nodes have `built: null` for every property; `deleted` nodes have
   `now: null` and keep their last-known attributes.
+
+### Removed design
+
+- **Never-built deletions resolve themselves.** A sync that tombstones a node
+  whose `implemented_hash` is null (it was never built) stores it as a
+  **clean** tombstone (`dirty = false`, change columns cleared): it is not
+  work. The sync result and the `sync.completed` event count them as
+  `autoResolved`; they are not in `counts.dirty` (nor in trends' `dirtied`). If
+  the node reappears in a later sync it is `added` again. Dirty never-built
+  tombstones stored before this rule are resolved by migration
+  `20261012000000_api_v3_auto_resolve_never_built.sql` (Postgres, and the
+  local PGlite store, which applies migrations at startup); the memory store
+  keeps no data across restarts, so it has none to migrate.
+- **Removed work items.** With `group=component` and `group=set`, a deleted
+  node's **removed root** is the topmost tombstoned node on its path (its
+  parent is live or not stored). Deleted nodes whose removed root is not inside
+  a live `COMPONENT` / `COMPONENT_SET` form one item per removed root:
+  `kind: "removed"`, `key` = the root's id, the root's `name` / `type`,
+  `nodeCount`, `nodeIds` (document order, root first), `changedProps` /
+  `categories`, `progress` with `include=progress`, and
+  - `uses: [{ componentId, name, set?, remote?, placementsRemoved, livePlacements }]`
+    — the main components referenced by instance rows inside the removed
+    subtree; `livePlacements` counts the file's non-tombstoned instance rows of
+    that main. Those with `livePlacements: 0` come first, then by name and id.
+  - `warnings: [{ code: "main_removed_with_live_placements", componentId, livePlacements }]`
+    — a COMPONENT / COMPONENT_SET inside the removed subtree (the root
+    included) that still has live instances elsewhere; empty when none.
+
+  Removed items come after the component (and set) items and before the
+  `key: null` item, in the document order of their roots. Other items have no
+  `kind`. A layer deleted inside a live component stays in that component's
+  item; `group=frame` is unchanged; `expand=instances` never expands removed
+  design (only live instances reach main components).
+- **Subtree clear.** A `clear` item with `subtree: true` on a tombstoned root
+  clears, when the root's `contentHash` matches, the root and every dirty
+  tombstoned descendant (live descendants are untouched) and reports
+  `subtreeCleared: n` on the root's result; the `nodes.cleared` event lists
+  and counts them all. `subtree: true` on a live node is the per-item status
+  `not_removed` (nothing cleared). `MAX_CLEAR_ITEMS` still bounds the items per
+  request, and each request is one transaction.
+
+An agent handling a removed item removes the code that rendered the root,
+keeps the components in `uses` with `livePlacements > 0`, considers removing
+those with `0`, and then clears the root with `subtree: true`.
 - **Categories** come from one static map in `packages/core` (shared with the
   plugin): `layout`, `color`, `typography`, `effects`, `component`, `content`,
   `structure`, `prototype`, `other`.
+
+### Library components
+
+- **Library nodes.** `node.library` (migration
+  `20261013000000_api_v3_library_components.sql`) flags a **remote** (library)
+  main component / component set and every row inside it. A sync upsert may
+  send `library: true`; the server also flags COMPONENT / COMPONENT_SET rows
+  whose own `componentReference.remote` is true and the subtrees of the mains
+  (and sets) that instance rows with a remote reference point at. The flag is
+  never unset by a later sync. The migration backfills rows stored before it
+  (Postgres and PGlite); the memory store has no stored data to backfill.
+  Instances (placements, overrides) are never library nodes.
+- **File settings.** `file.settings` (jsonb); one setting,
+  `trackLibraryComponents` (default `true` when absent). `GET /v3/files`,
+  `GET /v3/files/{fileKey}` and the plugin's `…/hashes` return `settings` with
+  defaults filled in. `PATCH /v3/files/{fileKey}` with
+  `{ settings: { trackLibraryComponents }, worker? }` (agent token or agent
+  session; viewers `403`; unknown setting `invalid_parameter`; unknown file
+  `file_not_found`) emits `file.settings_changed` (`data: { settings }`) when a
+  setting changes; its actor follows the clear rules.
+- **Tracking off.** Library nodes are left out of node listings, summaries,
+  file and scope counts, work-item `progress` and trends (`sync.completed`
+  `counts.libraryDirty` and `nodes.cleared` `data.libraryCount`, present when
+  non-zero, are subtracted); nothing is deleted and turning it back on restores
+  them. The `library=include|exclude|only` filter (default: include when on,
+  exclude when off) still reaches them. With `expand=instances`
+  (`group=component` or `set`) every library main the expansion reaches is a
+  **reference item**: `kind: "library"`, `tracked: false`, `nodeCount: 0`, no
+  `nodeIds`, no `progress`, `placements` / `placementsInScope` as usual.
+  Clearing or claiming library nodes by id still works.
+- **Library links.** With `RDS_FIGMA_TOKEN` (optional, server-side only) a
+  library component key resolves through `GET /v1/components/{key}` /
+  `/v1/component_sets/{key}` (`meta.file_key`, `meta.node_id`) into the
+  `library_component` cache — in the background after a sync commits and on
+  read, never blocking or failing a request, with a short timeout and at most
+  one retry per hour for failures. Library nodes and items carry
+  `library: { key, fileKey?, resolved }`; `figmaUrl` is the library file + the
+  main's node id when resolved, else `null`. `GET /v3/status` reports
+  `libraryLinks: true|false`.
+
+### Design tokens
+
+Figma variables are tracked as nodes in the `node` table, so dirty, claim,
+clear, block, history and events work for them unchanged.
+
+- **Ids.** One scope per file, root **`tokens`** (type `TOKENS`, name "Design
+  tokens"); one node per collection, **`tokens:<collectionKey>`**
+  (`VARIABLE_COLLECTION`; attrs `name`, `modes`, `remote`); one node per
+  variable, **`token:<variableKey>`** (`VARIABLE`; attrs `name`,
+  `resolvedType`, `description`, `scopes`, `codeSyntax`, `variableId`,
+  `remote` and one **`value:<Mode name>`** per mode — a normalized value or an
+  alias `{ alias: "token:<key>", name }`). They are never rewritten like
+  `1-2` → `1:2`, are URL-safe as path segments, and have `figmaUrl: null`
+  (also on the scope and on token work items).
+- **Sync.** The plugin uploads tokens through `POST …/sync` with
+  `rootNodeId: "tokens"` and reads `GET …/hashes?under=tokens`, which also
+  carries `tokens: { "<nodeId>": { variableId, remote, collectionId } }` for
+  every live variable (in place of the root's own hash: the plugin re-sends the
+  root on every tokens sync). A token is tombstoned only through
+  `deletedNodeIds` — a local variable gone from the file's local variables;
+  never a library one, nor one a sync did not mention — and a collection only
+  once all its tokens are tombstoned.
+- **Identity.** A token is its variable key; `variableId` is the Figma id of
+  the imported copy the sync reached, which a library re-import can change.
+  When a token's attrs differ from its implemented attrs only in `variableId`,
+  the sync keeps it clean and moves its baseline (`implemented_hash` /
+  `implemented_attrs`) to the new attrs, counted as `rebaselined` in the sync
+  result and `sync.completed` counts (not dirty, not changed, no clear event);
+  a batch that upserts the `tokens` root does the same for every stored token
+  dirty only by its id. `variableId` is never listed in `changedProps` or
+  `changes`. The content hash is unchanged.
+- **Scope.** `GET …/scopes` lists it as "Design tokens" (`TOKENS`) with counts.
+  Document order: collections by name, then each collection's variables by
+  name, compared `/`-group by group so a group's tokens stay together.
+- **Diffs.** A `value:<Mode>` change is category **`token`** (an alias diffs as
+  its `{ alias, name }` target); `description` is `content`, `name` is
+  `structure`, `codeSyntax` / `scopes` / `resolvedType` are `other`. Markdown
+  lines read `bg-active (VARIABLE) — value:Dark #202527 → #2b3033`, an alias
+  as `{gray/900}`.
+- **Work items.** With `group=component` and `group=set`, token nodes form one
+  item per collection: `kind: "tokens"`, `key` = the collection node id,
+  `name` = the collection name, `nodeIds` = its dirty tokens, `changedProps`
+  (e.g. `value:Dark`), `progress`; a changed root forms its own item (`key:
+  "tokens"`). Token items come after the component and removed items, before
+  `key: null`; deleted tokens stay in their collection's item (never a removed
+  item). `group=frame` with `under=tokens` groups by collection the same way.
+  For each token: update the code variable named by `codeSyntax` (WEB, else the
+  token name) for each changed mode, then clear it.
+- **Usage.** `usage: { layers }` on a token — the number of live (not
+  tombstoned) nodes whose stored `attrs.resolvedVariables` has an entry whose
+  `key` is the token's variable key (whichever imported id it is under) — on `GET …/nodes/{nodeId}`, and with `include=usage` on token
+  listings and token work items (`usage: { nodeId: { layers } }`). One store
+  query per request (a jsonb scan of the file's live rows; no index).
 
 ### Diff rules
 
@@ -141,9 +278,10 @@ listed is `other`.
 | `typography` | `fontName` `fontSize` `fontWeight` `textCase` `textDecoration*` `letterSpacing` `lineHeight` `textAlign*` `textAutoResize` `paragraph*` `list*` `hanging*` `textTruncation` `maxLines` `textStyleId` `openTypeFeatures` `leadingTrim` `textWrapStyle` `indentation` `textSegments` |
 | `effects` | `effects` `effectStyleId` `cornerRadius` `*Radius` `cornerSmoothing` `isMask` `visible` |
 | `component` | `componentProperties` `componentPropertyReferences` `componentPropertyDefinitions` `variantProperties` `mainComponentId` `isInstance` `overrides` |
-| `content` | `characters` `hyperlink` `vectorPaths` `vectorNetwork` `booleanOperation` `arcData` `pointCount` `innerRadius` |
+| `content` | `characters` `hyperlink` `vectorPaths` `vectorNetwork` `booleanOperation` `arcData` `pointCount` `innerRadius` `description` |
 | `structure` | `parentId` `childIds` `children` `name` |
 | `prototype` | `reactions` `overflowDirection` `numberOfFixedChildren` `overlay*` |
+| `token` | `value:*` (a design token's value in one mode) |
 | — (token lookups; not diffed) | `boundVariables` `explicitVariableModes` |
 
 Patterns ending in `*` are prefix matches; `*Radius` is a suffix match. The map
@@ -247,10 +385,39 @@ otherwise). Compact nodes carry: `nodeId`, `name`, `type`, `parentId`,
 - Renew/release act on the nodes still pointing at that `claim_id`; a node that
   was cleared or re-claimed since is left alone.
 
+### Node notes
+
+A person (viewer) or agent can note that a built node does not match the
+design: `POST …/nodes/{nodeId}/notes { body, worker? }` (body 1–4000 chars).
+
+- **State.** A node is dirty when its `content_hash` differs from its
+  `implemented_hash` *or* it has open notes. A design-clean node with open
+  notes reads `changeType: "requested"`, `changeCategories: ["note"]`,
+  `changedProps: []`; with design changes too, the design `changeType` wins
+  and `note` is added to its categories. Re-sync never cleans a node with open
+  notes; tombstoned nodes take no notes.
+- **Resolution.** Clearing a node resolves its open notes in the same
+  transaction (`resolved_by`, `commit_ref`); a stale clear resolves nothing.
+  Dismissing (author or any agent) or deleting (author only) the last open
+  note recomputes the node's state. Only the author edits an open note.
+- **Reads.** Nodes carry their open `notes: [{ noteId, body, author,
+  createdAt }]` (listing, detail, outline, markdown); `get_node` adds
+  `notesResolved`. `state=requested`, `changeType=requested` and
+  `hasNotes=true|false` filter; work items count open `notes`; summary counts
+  `requested`, and a note on a clean node counts as dirtied in trends.
+- **Events.** `note.added` (with `dirtied`), `note.resolved`, `note.dismissed`
+  (with `reason`) carry `{ nodeId, noteId, author }` — never the body.
+- **Storage.** `node_note` (`note_id`, `file_key`, `node_id`, `body`, `author`,
+  `worker`, `status` open | resolved | dismissed, `created_at`, `updated_at`,
+  `resolved_at`, `resolved_by`, `commit_ref`), with a partial index on open
+  notes per node.
+- **Auth.** These are the only writes viewer tokens and sessions may make;
+  session writes follow the usual CSRF rules.
+
 ## Supporting data
 
 - **`sync_event`** — one row per plugin sync: `file_key`, `root_node_id`,
-  `counts` (`uploaded`, `changed`, `added`, `deleted`, `baselined`), `created_at`. Powers
+  `counts` (`uploaded`, `changed`, `added`, `deleted`, `baselined`, `autoResolved`), `created_at`. Powers
   `/scopes`, "last sync" times, and the events stream, and is the raw material
   for activity history.
 - **`file`** — `file_key` (PK), `name`, `last_sync_at`, `created_at`. The name

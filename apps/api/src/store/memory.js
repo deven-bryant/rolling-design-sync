@@ -7,6 +7,8 @@
 const { randomUUID } = require('node:crypto');
 const { isDescendant, pathNodeIds } = require('../ltree');
 const { documentSortKey } = require('../documentOrder');
+const { removedUses, removedWarnings, REMOVED_K } = require('./removed');
+const { TOKENS_K, tokensKeyPath, isTokensItemPath } = require('./tokens');
 
 const now = () => new Date().toISOString();
 const clone = v => (v === undefined ? undefined : structuredClone(v));
@@ -55,14 +57,29 @@ function v3Counts(nodes) {
   return counts;
 }
 
-/** `roots`: the `under` nodes (none: the whole file). */
-function v3Matches(n, f, roots) {
-  if (!f.states.includes(v3State(n))) return false;
+/** `n` is in one of `states`; `requested` is the dirty nodes whose change type is `requested`. */
+const inStates = (n, states) => {
+  const state = v3State(n);
+  return states.includes(state) || (state === 'dirty' && n.changeType === 'requested' && states.includes('requested'));
+};
+
+/**
+ * `roots`: the `under` nodes (none: the whole file); `noted`: ids of the nodes with open notes (needed for `hasNotes`).
+ * @param {any} n
+ * @param {any} f
+ * @param {any[]} roots
+ * @param {Set<string> | null} [noted]
+ */
+function v3Matches(n, f, roots, noted = null) {
+  if (!inStates(n, f.states)) return false;
+  if (typeof f.hasNotes === 'boolean' && !!noted && noted.has(n.nodeId) !== f.hasNotes) return false;
   if (f.regions) {
     if (regionOf(n, f.regions) < 0) return false;
   } else if (roots.length) {
     if (!roots.some(root => inSubtree(n, root, f.depth))) return false;
   }
+  if (f.library === 'exclude' && n.library) return false;
+  if (f.library === 'only' && !n.library) return false;
   if (f.types.length && !f.types.includes(n.nodeType)) return false;
   if (f.changeTypes.length && !f.changeTypes.includes(n.changeType)) return false;
   if (f.categories.length && !(n.changeCategories || []).some(c => f.categories.includes(c))) return false;
@@ -82,6 +99,11 @@ function v3Matches(n, f, roots) {
   return true;
 }
 
+/** A file row's trackLibraryComponents setting; true when absent (mirrors trackingSql in store/postgres.js). */
+const tracking = file => !file || !file.settings || file.settings.trackLibraryComponents !== false;
+/** `n` counts towards its file's metrics: not a library node, or the file tracks library components. */
+const counted = (n, file) => !n.library || tracking(file);
+
 /** @typedef {import('./types').Store} Store */
 
 /** @implements {Store} */
@@ -92,6 +114,9 @@ class MemoryStore {
     this.syncEvents = new Map(); // id -> sync_event row
     this.claims = new Map(); // claimId -> v3 claim row
     this.events = new Map(); // id -> event row
+    this.libraryComponents = new Map(); // component key -> library_component row
+    this.notes = new Map(); // noteId -> node_note row
+    this._noteSeq = 0; // creation order of notes (newest first on reads)
     this._eventSeq = 0; // like bigserial: never rolled back
     this._lock = Promise.resolve();
   }
@@ -109,7 +134,7 @@ class MemoryStore {
   }
 
   _dump() {
-    return ['nodes', 'files', 'syncEvents', 'claims', 'events'].map(k => [k, new Map(structuredClone(Array.from(this[k].entries())))]);
+    return ['nodes', 'files', 'syncEvents', 'claims', 'events', 'libraryComponents', 'notes'].map(k => [k, new Map(structuredClone(Array.from(this[k].entries())))]);
   }
 
   _restore(backup) { for (const [k, m] of backup) this[k] = m; }
@@ -177,6 +202,7 @@ class MemoryStore {
       changedProps: clone(row.changedProps) || [],
       changeCategories: clone(row.changeCategories) || [],
       deletedAt: null,
+      library: !!(existing && existing.library) || !!row.library,
       updatedAt: now(),
     };
     this.nodes.set(key, node);
@@ -201,13 +227,16 @@ class MemoryStore {
     return out;
   }
 
-  /** Tombstones existing rows (last-known attrs kept); unknown ids are ignored. */
+  /**
+   * Tombstones existing rows (last-known attrs kept); unknown ids are ignored.
+   * A row never implemented (`implementedHash` null) becomes a clean tombstone.
+   */
   async tombstoneNodes(fileKey, nodeIds, deletedAt) {
     const out = [];
     for (const nodeId of nodeIds) {
       const node = this.nodes.get(this._nodeKey(fileKey, nodeId));
       if (!node || node.deletedAt) continue;
-      Object.assign(node, { deletedAt, dirty: true, updatedAt: now() });
+      Object.assign(node, { deletedAt, dirty: node.implementedHash !== null && node.implementedHash !== undefined, updatedAt: now() });
       out.push(clone(node));
     }
     return out;
@@ -341,6 +370,7 @@ class MemoryStore {
       name: name ?? (existing ? existing.name : null),
       lastSyncAt: lastSyncAt ?? now(),
       createdAt: existing ? existing.createdAt : now(),
+      settings: existing ? existing.settings : {},
     };
     this.files.set(fileKey, file);
     return clone(file);
@@ -350,6 +380,47 @@ class MemoryStore {
     const event = { id: randomUUID(), fileKey, rootNodeId, counts: clone(counts), createdAt: createdAt ?? now() };
     this.syncEvents.set(event.id, event);
     return clone(event);
+  }
+
+  /** Marks every row in the subtree of each stored node in `rootIds` (the root included) as a library node; returns the ids newly marked. */
+  async markLibrarySubtrees(fileKey, rootIds) {
+    const roots = rootIds.map(id => this.nodes.get(this._nodeKey(fileKey, id))).filter(n => n && n.path);
+    const out = [];
+    for (const n of this._fileNodes(fileKey)) {
+      if (n.library || !n.path || !roots.some(r => isDescendant(n.path, r.path))) continue;
+      n.library = true;
+      out.push(n.nodeId);
+    }
+    return out;
+  }
+
+  /** Merges `settings` into the file's settings; null for an unknown file. */
+  async updateFileSettings(fileKey, settings) {
+    const file = this.files.get(fileKey);
+    if (!file) return null;
+    file.settings = { ...(file.settings || {}), ...clone(settings) };
+    return clone(file);
+  }
+
+  /** Cached library component resolutions for `keys`; unknown keys are skipped. */
+  async getLibraryComponents(keys) {
+    return [...new Set(keys)].sort().map(k => this.libraryComponents.get(k)).filter(Boolean).map(clone);
+  }
+
+  /** Inserts or replaces the cached resolution of one library component key. */
+  async upsertLibraryComponent({ componentKey, fileKey = null, nodeId = null, name = null, resolvedAt, error = null }) {
+    const row = { componentKey, fileKey, nodeId, name, resolvedAt, error };
+    this.libraryComponents.set(componentKey, row);
+    return clone(row);
+  }
+
+  /** Mirrors PostgresStore.placementCounts. */
+  async placementCounts(fileKey, mainIds, regions = null) {
+    const live = this._fileNodes(fileKey).filter(n => n.mainComponentId && !n.deletedAt);
+    return [...new Set(mainIds)].sort(cmp).map(id => {
+      const of = live.filter(n => n.mainComponentId === id);
+      return { mainComponentId: id, placements: of.length, placementsInScope: regions === null ? null : of.filter(n => regionOf(n, regions) >= 0).length };
+    });
   }
 
   // --- v3 reads (same contract as PostgresStore) ------------------------------
@@ -376,7 +447,8 @@ class MemoryStore {
     const tree = page.sort === 'path' || page.sort === 'document' ? V3_SORT_KEY[page.sort] : null;
     const key = ord && tree ? n => `${String(ord(n)).padStart(4, '0')} ${tree(n)}` : V3_SORT_KEY[page.sort];
     const dir = page.desc ? -1 : 1;
-    const matched = all.filter(n => v3Matches(n, filter, roots))
+    const noted = this._noted(fileKey, filter);
+    const matched = all.filter(n => v3Matches(n, filter, roots, noted))
       .map(n => ({ n, k: key(n) }))
       .sort((a, b) => dir * (cmp(a.k, b.k) || cmp(a.n.nodeId, b.n.nodeId)));
     const after = page.after;
@@ -399,7 +471,7 @@ class MemoryStore {
     return Array.from(this.files.values())
       .filter(f => fileKey === null || f.fileKey === fileKey)
       .sort((a, b) => cmp(b.lastSyncAt || '', a.lastSyncAt || '') || cmp(a.fileKey, b.fileKey))
-      .map(f => ({ ...clone(f), counts: v3Counts(this._fileNodes(f.fileKey)) }));
+      .map(f => ({ ...clone(f), counts: v3Counts(this._fileNodes(f.fileKey).filter(n => counted(n, f))) }));
   }
 
   async listScopes(fileKey) {
@@ -409,7 +481,8 @@ class MemoryStore {
       const seen = latest.get(e.rootNodeId);
       if (!seen || cmp(e.createdAt, seen.createdAt) > 0 || (e.createdAt === seen.createdAt && cmp(e.id, seen.id) > 0)) latest.set(e.rootNodeId, e);
     }
-    const all = this._fileNodes(fileKey);
+    const file = this.files.get(fileKey);
+    const all = this._fileNodes(fileKey).filter(n => counted(n, file));
     return Array.from(latest.values())
       .sort((a, b) => cmp(b.createdAt, a.createdAt) || cmp(a.rootNodeId, b.rootNodeId))
       .map(e => {
@@ -537,6 +610,89 @@ class MemoryStore {
     return { node: this._nodeV3(node, [], false), prior };
   }
 
+  // --- v3 notes (same contract as PostgresStore) ------------------------------
+  /** Ids of the file's nodes with open notes, when `filter.hasNotes` is set; else null. */
+  _noted(fileKey, filter) {
+    if (typeof filter.hasNotes !== 'boolean') return null;
+    const ids = new Set();
+    for (const n of this.notes.values()) if (n.fileKey === fileKey && n.status === 'open') ids.add(n.nodeId);
+    return ids;
+  }
+
+  _noteOut(note) { const { seq, ...rest } = note; return clone(rest); }
+
+  async insertNote({ fileKey, nodeId, body, author, worker = null, at }) {
+    this._noteSeq += 1;
+    const note = {
+      noteId: randomUUID(), fileKey, nodeId, body, author, worker, status: 'open',
+      createdAt: at, updatedAt: at, resolvedAt: null, resolvedBy: null, commitRef: null, seq: this._noteSeq,
+    };
+    this.notes.set(note.noteId, note);
+    return this._noteOut(note);
+  }
+
+  async getNote(fileKey, noteId) {
+    const note = this.notes.get(noteId);
+    return note && note.fileKey === fileKey ? this._noteOut(note) : null;
+  }
+
+  async listNotes(fileKey, nodeIds, { status = 'open' } = {}) {
+    const ids = new Set(nodeIds);
+    return Array.from(this.notes.values())
+      .filter(n => n.fileKey === fileKey && ids.has(n.nodeId) && (status === 'all' || n.status === status))
+      .sort((a, b) => cmp(b.createdAt, a.createdAt) || b.seq - a.seq)
+      .map(n => this._noteOut(n));
+  }
+
+  async noteCounts(fileKey, nodeIds) {
+    const ids = new Set(nodeIds);
+    const counts = new Map();
+    for (const n of this.notes.values()) {
+      if (n.fileKey !== fileKey || !ids.has(n.nodeId) || n.status === 'dismissed') continue;
+      const c = counts.get(n.nodeId) || { nodeId: n.nodeId, open: 0, resolved: 0 };
+      c[n.status] += 1;
+      counts.set(n.nodeId, c);
+    }
+    return Array.from(counts.values());
+  }
+
+  _openNote(fileKey, noteId) {
+    const note = this.notes.get(noteId);
+    return note && note.fileKey === fileKey && note.status === 'open' ? note : null;
+  }
+
+  async editNote(fileKey, noteId, { body, at }) {
+    const note = this._openNote(fileKey, noteId);
+    if (!note) return null;
+    Object.assign(note, { body, updatedAt: at });
+    return this._noteOut(note);
+  }
+
+  async closeNote(fileKey, noteId, { status, by, at, commitRef = null }) {
+    const note = this._openNote(fileKey, noteId);
+    if (!note) return null;
+    Object.assign(note, { status, updatedAt: at, resolvedAt: at, resolvedBy: by, commitRef });
+    return this._noteOut(note);
+  }
+
+  async deleteNote(fileKey, noteId) {
+    const note = this._openNote(fileKey, noteId);
+    if (!note) return null;
+    this.notes.delete(noteId);
+    return this._noteOut(note);
+  }
+
+  async resolveNotes(fileKey, nodeIds, { by, at, commitRef = null }) {
+    const ids = new Set(nodeIds);
+    const out = [];
+    for (const note of Array.from(this.notes.values()).sort((a, b) => a.seq - b.seq)) {
+      if (note.fileKey !== fileKey || note.status !== 'open' || !ids.has(note.nodeId)) continue;
+      Object.assign(note, { status: 'resolved', updatedAt: at, resolvedAt: at, resolvedBy: by, commitRef });
+      out.push(this._noteOut(note));
+    }
+    return out;
+  }
+
   // --- v3 events (same contract as PostgresStore) -----------------------------
   /** Appends an event; ids are monotonic per store. Returns the stored row. */
   // --- v3 insights (same contract as PostgresStore) ---------------------------
@@ -548,13 +704,14 @@ class MemoryStore {
     const roots = this._roots(fileKey, filter);
     const root = filter.under && filter.under.length === 1 ? roots[0] || null : null;
     if (filter.under && !roots.length) return { all, byPath, root, matched: [] };
-    return { all, byPath, root, matched: all.filter(n => v3Matches(n, filter, roots)) };
+    const noted = this._noted(fileKey, filter);
+    return { all, byPath, root, matched: all.filter(n => v3Matches(n, filter, roots, noted)) };
   }
 
   async summarizeNodes(fileKey, filter) {
     const { byPath, root, matched } = this._v3Match(fileKey, filter);
     const byState = { dirty: 0, clean: 0, blocked: 0 };
-    const byChangeType = { added: 0, modified: 0, deleted: 0 };
+    const byChangeType = { added: 0, modified: 0, deleted: 0, requested: 0 };
     /** @type {Record<string, number>} */
     const byCategory = {};
     /** @type {Record<string, number>} */
@@ -610,7 +767,35 @@ class MemoryStore {
       const ownRef = owner.attrs?.componentReference;
       return { id: owner.nodeId, key: ownRef?.key ?? owner.nodeId, name: owner.name };
     };
+    /** The removed root of a tombstone (topmost tombstone on its path) unless it sits inside a live component; else null. */
+    const removedRootOf = n => {
+      if (page.group === 'frame' || !n.deletedAt || !n.path) return null;
+      const parts = n.path.split('.');
+      let end = parts.length;
+      while (end > 1) {
+        const parent = byPath.get(parts.slice(0, end - 1).join('.'));
+        if (!parent || !parent.deletedAt) break;
+        end -= 1;
+      }
+      for (let i = end - 1; i > 0; i -= 1) {
+        const a = byPath.get(parts.slice(0, i).join('.'));
+        if (a && !a.deletedAt && COMPONENT_TYPES.includes(a.nodeType)) return null;
+      }
+      return parts.slice(0, end).join('.');
+    };
     const groupOf = n => {
+      const tokensPath = page.group === 'frame' ? null : tokensKeyPath(n.path);
+      if (tokensPath !== null) {
+        const keyNode = byPath.get(tokensPath) || null;
+        return { identity: tokensPath, k: `${TOKENS_K}${keyNode ? documentSortKey(keyNode) : ''} ${tokensPath}`, keyPath: tokensPath, keyNode, set: null, tokens: true };
+      }
+      const removedPath = removedRootOf(n);
+      if (removedPath !== null) {
+        const keyNode = byPath.get(removedPath) || null;
+        const identity = `removed:${removedPath}`;
+        const k = `${REMOVED_K}${keyNode ? documentSortKey(keyNode) : ''} ${page.group === 'set' ? identity : removedPath}`;
+        return { identity, k, keyPath: removedPath, keyNode, set: null, removed: true };
+      }
       const keyPath = keyOf(n);
       const keyNode = keyPath === null ? null : byPath.get(keyPath);
       const set = setOf(keyNode);
@@ -639,7 +824,7 @@ class MemoryStore {
     }
     const rest = page.after ? all.filter(g => g.k > page.after.k) : all;
     const pageRows = rest.slice(0, page.limit);
-    const items = pageRows.map(({ k, keyPath, nodes, identity, set }) => {
+    const items = pageRows.map(({ k, keyPath, nodes, identity, set, removed, tokens }) => {
       const keyNode = keyPath === null ? null : byPath.get(keyPath) || null;
       const keyId = keyPath === null ? null : pathNodeIds(keyPath).pop();
       const sorted = nodes.slice().sort((a, b) => cmp(documentSortKey(a), documentSortKey(b)) || cmp(a.nodeId, b.nodeId));
@@ -665,6 +850,14 @@ class MemoryStore {
         }
         item.variants = [...variants.values()];
       }
+      if (removed) {
+        Object.assign(item, { kind: 'removed' }, this._removedDetails(fileKey, keyPath));
+        return item;
+      }
+      if (tokens || (keyPath !== null && isTokensItemPath(keyPath))) {
+        item.kind = 'tokens';
+        return item;
+      }
       if (page.group === 'component') {
         item.placements = keyNode
           ? this._fileNodes(fileKey).filter(x => x.mainComponentId === keyNode.nodeId && !x.deletedAt).length
@@ -679,6 +872,43 @@ class MemoryStore {
     });
     const last = items[items.length - 1];
     return { items, total: all.length, next: rest.length > page.limit ? { k: last.k, id: last.keyId ?? '' } : null };
+  }
+
+  /**
+   * Live layer nodes whose `attrs.resolvedVariables` has an entry with each
+   * variable key (any imported id of it; mirrors PostgresStore.tokenUsage).
+   *
+   * @param {string} fileKey
+   * @param {string[]} variableKeys
+   */
+  async tokenUsage(fileKey, variableKeys) {
+    const keys = [...new Set(variableKeys)];
+    /** @type {Map<string, number>} */
+    const counts = new Map(keys.map(k => [k, 0]));
+    if (!keys.length) return [];
+    for (const n of this._fileNodes(fileKey)) {
+      const vars = n.attrs && n.attrs.resolvedVariables;
+      if (n.deletedAt || !vars || typeof vars !== 'object' || Array.isArray(vars)) continue;
+      const used = new Set(Object.values(vars).map(v => (v && typeof v === 'object' ? v.key : null)));
+      for (const k of keys) if (used.has(k)) counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    return keys.map(variableKey => ({ variableKey, layers: counts.get(variableKey) ?? 0 }));
+  }
+
+  /** `{ uses, warnings }` of the removed item rooted at `rootPath` (mirrors PostgresStore.removedDetails). */
+  _removedDetails(fileKey, rootPath) {
+    const all = this._fileNodes(fileKey);
+    const live = id => all.filter(x => x.mainComponentId === id && !x.deletedAt).length;
+    const inside = all.filter(x => x.deletedAt && x.path && isDescendant(x.path, rootPath));
+    const removedCounts = new Map();
+    for (const x of inside) if (x.mainComponentId) removedCounts.set(x.mainComponentId, (removedCounts.get(x.mainComponentId) || 0) + 1);
+    const uses = removedUses([...removedCounts].map(([componentId, placementsRemoved]) => {
+      const main = this.nodes.get(this._nodeKey(fileKey, componentId));
+      return { componentId, name: main ? main.name : null, ref: main ? main.attrs?.componentReference : null, placementsRemoved, livePlacements: live(componentId) };
+    }));
+    const warnings = removedWarnings(inside.filter(x => COMPONENT_TYPES.includes(x.nodeType))
+      .map(x => ({ componentId: x.nodeId, docKey: documentSortKey(x), livePlacements: live(x.nodeId) })));
+    return { uses, warnings };
   }
 
   /** `expand=instances`, step 1 (mirrors PostgresStore.expansionReach): reachable mains, breadth-first, with hop count and path. */
@@ -785,11 +1015,14 @@ class MemoryStore {
       const row = out.get(e.fileKey);
       const at = Date.parse(e.createdAt);
       if (!row || at < lo || at >= hi) continue;
+      const hidden = !tracking(this.files.get(e.fileKey));
       if (e.type === 'nodes.cleared') {
-        const n = eventClearedCount(e.data);
+        const n = eventClearedCount(e.data) - (hidden && isCount(e.data.libraryCount) ? e.data.libraryCount : 0);
         if (at >= mid) row.cleared += n; else row.clearedPrevious += n;
       } else if (e.type === 'sync.completed' && at >= mid) {
-        row.dirtied += eventDirtyCount(e.data);
+        row.dirtied += eventDirtyCount(e.data) - (hidden && e.data.counts && isCount(e.data.counts.libraryDirty) ? e.data.counts.libraryDirty : 0);
+      } else if (e.type === 'note.added' && at >= mid && e.data && e.data.dirtied === true) {
+        row.dirtied += 1;
       }
     }
     return [...out.values()];

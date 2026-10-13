@@ -26,7 +26,7 @@ const ROOT = '1:1';
 const CHILD = '2:1';
 const GRANDCHILD = '3:1';
 
-const BATCH_KEYS = ['dirty', 'fileKey', 'skippedInstances', 'tombstoned', 'upserted'];
+const BATCH_KEYS = ['autoResolved', 'dirty', 'fileKey', 'skippedInstances', 'tombstoned', 'upserted'];
 
 const CLEAN = { changeType: null, changedProps: [], changeCategories: [] };
 
@@ -157,11 +157,16 @@ for (const [kind, open] of Object.entries(STORES)) {
       assert.deepEqual(changesOf(await node(fk, GRANDCHILD)), CLEAN);
     });
 
-    test('tombstoned never-implemented node is deleted with no built props; revival recomputes', async () => {
+    test('tombstoned never-implemented node resolves itself (clean tombstone); revival recomputes', async () => {
       const fk = newFile();
       await batch(fk, { upserts: TREE() });
-      await batch(fk, { deletedNodeIds: [GRANDCHILD] });
-      assert.deepEqual(changesOf(await node(fk, GRANDCHILD)), { changeType: 'deleted', changedProps: [], changeCategories: [] });
+      const res = await batch(fk, { deletedNodeIds: [GRANDCHILD] });
+      assert.equal(res.tombstoned, 1);
+      assert.equal(res.autoResolved, 1);
+      const gone = await node(fk, GRANDCHILD);
+      assert.ok(gone.deletedAt);
+      assert.equal(gone.dirty, false);
+      assert.deepEqual(changesOf(gone), CLEAN);
 
       await batch(fk, { upserts: [grandchildUp()] });
       assert.deepEqual(changesOf(await node(fk, GRANDCHILD)),
@@ -235,7 +240,7 @@ for (const [kind, open] of Object.entries(STORES)) {
       let meta = await syncMeta(store, fk);
       assert.equal(meta.file.name, 'Design System');
       assert.equal(meta.events.length, 1);
-      assert.deepEqual(meta.events[0].counts, { uploaded: 3, changed: 0, added: 3, deleted: 0, baselined: 0 });
+      assert.deepEqual(meta.events[0].counts, { uploaded: 3, changed: 0, added: 3, deleted: 0, baselined: 0, autoResolved: 0 });
       assert.equal(meta.events[0].rootNodeId, ROOT);
       assert.equal(meta.events[0].createdAt, meta.file.lastSyncAt);
 
@@ -246,12 +251,12 @@ for (const [kind, open] of Object.entries(STORES)) {
       meta = await syncMeta(store, fk);
       assert.equal(meta.file.name, 'Design System v2');
       assert.equal(meta.events.length, 2);
-      assert.deepEqual(meta.events[1].counts, { uploaded: 2, changed: 1, added: 0, deleted: 1, baselined: 0 });
+      assert.deepEqual(meta.events[1].counts, { uploaded: 2, changed: 1, added: 0, deleted: 1, baselined: 0, autoResolved: 1 });
 
       await batch(fk, { upserts: [upsert('4:1', { x: 1 }, { parentId: ROOT, path: [ROOT] })], markImplemented: true, rootNodeId: ROOT });
       meta = await syncMeta(store, fk);
       assert.equal(meta.file.name, 'Design System v2', 'a batch without fileName keeps the stored name');
-      assert.deepEqual(meta.events[2].counts, { uploaded: 1, changed: 0, added: 0, deleted: 0, baselined: 1 });
+      assert.deepEqual(meta.events[2].counts, { uploaded: 1, changed: 0, added: 0, deleted: 0, baselined: 1, autoResolved: 0 });
     });
 
     test('without fileName / rootNodeId only file.last_sync_at is bumped', async () => {
@@ -281,7 +286,7 @@ for (const [kind, open] of Object.entries(STORES)) {
       const fk = newFile();
       const res = await batch(fk, { upserts: TREE(), fileName: 'F', rootNodeId: ROOT });
       assert.deepEqual(Object.keys(res).sort(), BATCH_KEYS);
-      assert.deepEqual(res, { fileKey: fk, upserted: 3, dirty: 3, tombstoned: 0, skippedInstances: 0 });
+      assert.deepEqual(res, { fileKey: fk, upserted: 3, dirty: 3, tombstoned: 0, autoResolved: 0, skippedInstances: 0 });
       const baseline = await batch(newFile(), { upserts: TREE(), markImplemented: true, fileName: 'F', rootNodeId: ROOT });
       assert.deepEqual(Object.keys(baseline).sort(), [...BATCH_KEYS, 'baselined'].sort());
     });

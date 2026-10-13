@@ -11,6 +11,7 @@ import { actorInitials, describeEvent, eventNodeIds, type ActivityEvent } from '
 import { useNow } from '../../api/hooks/useNow';
 import { minuteOf, relativeTime } from './time';
 import { useActivityEvents } from './useActivityEvents';
+import { useNoteList } from '../nodes';
 
 export interface EventGroup {
   key: string;
@@ -69,6 +70,17 @@ function fileNamesOf(events: ActivityEvent[]): Map<string, string> {
   return names;
 }
 
+function NoteBody({ fileKey, nodeId, noteId }: { fileKey: string; nodeId: string; noteId: string }) {
+  const notes = useNoteList(fileKey, nodeId);
+  const body = notes.data?.notes?.find(note => note.noteId === noteId)?.body;
+  if (!body) return null;
+  return (
+    <Text as="span" color="tertiary" className="mt-xs block border-l-2 border-secondary pl-md whitespace-pre-wrap">
+      {body}
+    </Text>
+  );
+}
+
 function EventLine({
   event,
   fileName,
@@ -113,6 +125,9 @@ function EventLine({
           ))}
           {nodeIds.length > NODE_LINKS && <span>+{nodeIds.length - NODE_LINKS}</span>}
         </span>
+      )}
+      {event.type === 'note.added' && fileKey && nodeIds[0] && typeof event.data?.noteId === 'string' && (
+        <NoteBody fileKey={fileKey} nodeId={nodeIds[0]} noteId={event.data.noteId} />
       )}
     </span>
   );

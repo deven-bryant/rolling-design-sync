@@ -15,7 +15,11 @@ npm start -w @rolling-design-sync/api
 RDS_STORE=memory RDS_PLUGIN_TOKENS=p RDS_AGENT_TOKENS=a npm start -w @rolling-design-sync/api
 ```
 
-Env: `DATABASE_URL` (Postgres, schema from `supabase/migrations`), `PORT`
+Env: `DATABASE_URL` (Postgres, schema from `supabase/migrations`; startup
+refuses while a migration's probe fails, listing the missing files),
+`RDS_AUTO_MIGRATE` (`true`: apply just the missing migrations at startup under
+an advisory lock; default `false`), `RDS_SCHEMA_CHECK` (`off` skips the check
+with a warning; not recommended), `PORT`
 (8787), `HOST`, `LOG_LEVEL`, `RDS_PLUGIN_TOKENS` / `RDS_AGENT_TOKENS`
 (comma-separated static bearer tokens; an entry may be `name:token`, name
 `[a-z0-9._-]{1,40}` unique per class, to give events a human label),
@@ -74,25 +78,31 @@ than the path is `400 url_mismatch`; a URL pasted as the key is
 
 | Route | Query / body | Returns |
 |-------|--------------|---------|
-| `GET /v3/status` | — | `{version, store, events, replayHours, plugin: {lastSyncAt, client}}` — newest retained sync; plugin fields null before any sync |
+| `GET /v3/status` | — | `{version, store, events, replayHours, libraryLinks, plugin: {lastSyncAt, client}}` — newest retained sync; plugin fields null before any sync; `libraryLinks`: `RDS_FIGMA_TOKEN` is set |
 | `GET /v3/tokens` | — | `[{class, label, lastUsedAt}]` — no values; last use tracks bearer/session requests in memory per instance and resets on restart |
 | `GET /v3/claims` | — | `{claims: [{fileKey, fileName, claimId, worker, label, expiresAt, createdAt, nodeCount, nodeIds, nodes: [{nodeId, name, type}]}]}` — active claims, soonest expiry first, at most 500 IDs each; `nodes` names the first 3 in document order |
 | `GET /v3/files/{fileKey}/claims` | `url?` | `{fileKey, claims: [{claimId, worker, label, expiresAt, createdAt, nodeCount, nodeIds, nodes}]}` — nodes still leased to each unexpired claim |
 | `GET /v3/files` | — | `{files: [file]}`, most recently synced first |
-| `GET /v3/files/{fileKey}` | `url?` | `file` |
+| `GET /v3/files/{fileKey}` | `url?` | `file` (with `settings`, defaults filled in) |
+| `PATCH /v3/files/{fileKey}` | `{settings: {trackLibraryComponents}, worker?}`, `url?` | `file`; emits `file.settings_changed`; unknown setting `400 invalid_parameter` |
 | `GET /v3/files/{fileKey}/scopes` | `url?` | `{fileKey, scopes: [{nodeId, name, type, deleted, figmaUrl, lastSyncAt, lastSyncCounts, counts}]}` — one per synced root, latest sync |
 | `GET /v3/files/{fileKey}/nodes` | filters (below), `view`, `changes`, `fields`, `include`, `sort`, `limit`, `cursor`, `format?`, `url?` | `{fileKey, nodes: [node], nextCursor, total, truncated?}` |
 | `GET /v3/files/{fileKey}/nodes/{nodeId}` | `fields?`, `changes?`, `url?` | detail node |
-| `POST /v3/files/{fileKey}/clear` | `{commitRef?, worker?, items: [{nodeId, contentHash}]}` (1–500) | `{fileKey, commitRef, results: [{nodeId, status, contentHash}], totals: {cleared, stale, notFound}}` |
+| `POST /v3/files/{fileKey}/clear` | `{commitRef?, worker?, items: [{nodeId, contentHash, subtree?}]}` (1–500) | `{fileKey, commitRef, results: [{nodeId, status, contentHash, subtreeCleared?}], totals: {cleared, stale, notFound, notRemoved}}` |
 | `POST /v3/files/{fileKey}/claims` | `{worker, label?, ttlSeconds?, limit?, nodeIds? \| filter?}` | `claim` |
 | `POST /v3/files/{fileKey}/claims/{claimId}/renew` | `{ttlSeconds?}` (body optional) | `claim` |
 | `DELETE /v3/files/{fileKey}/claims/{claimId}` | — | `{claimId, worker, label, released: [nodeId]}` |
 | `POST /v3/files/{fileKey}/nodes/{nodeId}/block` | `{reason, worker?}` (reason 1–500) | `{fileKey, node, released: {claimId, worker} \| null}` — releases any lease |
 | `POST /v3/files/{fileKey}/nodes/{nodeId}/unblock` | `{worker?}` (body optional) | `{fileKey, node, unblocked}` (`false` if it wasn't blocked) |
+| `POST /v3/files/{fileKey}/nodes/{nodeId}/notes` | `{body, worker?}` (body 1–4000; viewer or agent) | `{fileKey, note, node}` — the note and the node's new state |
+| `GET /v3/files/{fileKey}/nodes/{nodeId}/notes` | `status?` (`open` default \| `all`), `url?` | `{fileKey, nodeId, notes: [note]}`, newest first |
+| `PATCH /v3/files/{fileKey}/notes/{noteId}` | `{body}` (author only, open notes) | `{fileKey, note, node}` |
+| `DELETE /v3/files/{fileKey}/notes/{noteId}` | — (author only, open notes) | `{fileKey, noteId, deleted: true, node}` |
+| `POST /v3/files/{fileKey}/notes/{noteId}/dismiss` | `{reason?}` (author or any agent; body optional) | `{fileKey, note, node}` |
 | `GET /v3/files/{fileKey}/events` | `after?`, `order?` (`asc` \| `desc`), `before?`, `types?`, `nodeId?`, `since?`, `limit?`, `format?` (JSON); `Last-Event-ID` (SSE), `url?` | `{fileKey, events: [event], nextAfter}` (`order=desc`: newest first, `{fileKey, events, nextBefore}`; page older with `before`), or a `text/event-stream` with `Accept: text/event-stream` |
 | `GET /v3/events` | Same event parameters plus `fileKey?` | `{events: [event], nextAfter}` (or `nextBefore` with `order=desc`) or SSE across files; every event includes `fileKey`, and on JSON pages `fileName` |
 | `GET /v3/files/{fileKey}/summary` | listing filters, `url?` | `{fileKey, total, byState, byChangeType, byCategory, byType, byFrame?}` |
-| `GET /v3/files/{fileKey}/work` | listing filters, `group?` (`component` \| `set` \| `frame`), `changes?`, `include=progress?`, `limit`, `cursor`, `format?`, `url?` | `{fileKey, group, items: [item], nextCursor, total, truncated?}` |
+| `GET /v3/files/{fileKey}/work` | listing filters, `group?` (`component` \| `set` \| `frame`), `changes?`, `include?` (`progress`, `usage`; comma-separated), `limit`, `cursor`, `format?`, `url?` | `{fileKey, group, items: [item], nextCursor, total, truncated?}` |
 | `GET /v3/insights/trends` | `windowDays?` (1–14, default 7), `fileKey?` | `{windowDays, from, to, complete, retentionDays, total: trend, files: [{fileKey, fileName, …trend}]}`; trend is `{cleared, clearedPrevious, clearedChangePct, dirtied, netDirty}` |
 | `GET /v3/resolve` | `url` | `{fileKey, nodeId}` (`nodeId` null without `node-id`) |
 | `GET /v3/openapi.json` | — | OpenAPI 3.1 document (no token) |
@@ -113,6 +123,16 @@ a bearer token wins when both are sent. Cookie-authenticated writes need
 `403 csrf_rejected`, and their events record `portal:<label>` as the actor
 (and `blocked_by` for blocks).
 
+Node notes (`docs/api-v3-design.md`, "Node notes"): viewer tokens and
+sessions may add notes and edit, delete or dismiss their own — their only
+writes. An open note keeps its node dirty (`changeType: requested`, category
+`note`, when the design is otherwise built) across re-syncs; a successful
+clear resolves the node's open notes in the same transaction (a stale one
+resolves nothing). Notes are stored in `node_note`
+(`supabase/migrations/20261014000000_api_v3_node_notes.sql`); events
+`note.added` / `note.resolved` / `note.dismissed` carry
+`{nodeId, noteId, author}`, never the body.
+
 The API also serves the built portal: `GET /` redirects to `/ui/`, and
 `GET /ui`/`/ui/*` serves `RDS_PORTAL_DIR` (`apps/portal/dist`) — immutable
 caching for hashed `assets/`, `no-cache` for `index.html`, SPA fallback,
@@ -129,8 +149,8 @@ no `x-rds-mcp` / `x-rds-cli` annotations, so they are never agent tools.
 
 | Route | Query / body | Returns |
 |---|---|---|
-| `GET /v3/files/{fileKey}/hashes` | `under` (the scope root; defaults to the `?url=` link's node), `url?` | `{[nodeId]: contentHash}` for the live subtree, `{}` if never synced |
-| `POST /v3/files/{fileKey}/sync` | `{upserts: [{nodeId, parentId, path, nodeType, name, attrs, contentHash, isInstance?, mainComponentId?}], deletedNodeIds, markImplemented?, fileName?, rootNodeId?}`; `url?` | `{fileKey, upserted, dirty, tombstoned, skippedInstances, baselined?}` |
+| `GET /v3/files/{fileKey}/hashes` | `under` (the scope root; defaults to the `?url=` link's node), `url?` | `{[nodeId]: contentHash, settings}` for the live subtree plus the file's settings; only `settings` if never synced. `under=tokens` adds `tokens: {[nodeId]: {variableId, remote, collectionId}}` for every live variable (in place of the root's own hash) |
+| `POST /v3/files/{fileKey}/sync` | `{upserts: [{nodeId, parentId, path, nodeType, name, attrs, contentHash, isInstance?, mainComponentId?}], deletedNodeIds, markImplemented?, fileName?, rootNodeId?}`; `url?` | `{fileKey, upserted, dirty, tombstoned, autoResolved, skippedInstances, baselined?}` |
 | `POST /v3/files/{fileKey}/exists` | `{nodeIds}` (max 5000); `url?` | `{present, stale}` |
 
 `markImplemented: true` (boolean, default `false`) inserts never-seen nodes
@@ -173,10 +193,13 @@ Shapes:
 - `view=full` adds `attrs`, `implementedAttrs` and `path` (ancestor ids, root
   first, plus the node). `fields=a,b` returns exactly those fields.
   `include=counts` adds `descendants: {total, dirty, blocked}` (subtree,
-  excluding the node).
+  excluding the node); `include=usage` adds `usage: {layers}` to design
+  tokens. Both combine: `include=counts,usage`.
 - detail node — the full node plus `deleted`, `history: {createdAt, updatedAt,
   implementedAt, implementedCommit, implementedHash, deletedAt}` and
-  `descendants`.
+  `descendants`; a design token (`token:<variableKey>`) also has `usage:
+  {layers}` — the live layers whose `resolvedVariables` hold an entry with its
+  variable key (under any imported id).
 - `claim` — `{claimId, worker, label, expiresAt, nodes: [node]}`.
 
 Listing filters (AND across parameters, comma-separated values OR'd within
@@ -202,7 +225,10 @@ Actions:
   `contentHash` still matches (stores the attrs as built, resets the change
   columns, records `commitRef`, releases the node's lease), `stale` when the
   design changed since (the current `contentHash` is returned), `not_found`
-  for unknown ids. Always `200` for a valid body. `worker`, when given, is
+  for unknown ids. `subtree: true` on a tombstoned root also clears every
+  dirty tombstoned descendant (live ones are untouched; the root's result has
+  `subtreeCleared`, and `nodes.cleared` counts them all); on a live node the
+  item is `not_removed` and nothing is cleared. Always `200` for a valid body. `worker`, when given, is
   the `nodes.cleared` actor; otherwise the token label (or `portal:<label>`
   for a cookie-authenticated call).
 - Claims lease `nodeIds` (unknown ids skipped) or the nodes a `filter` of
@@ -253,6 +279,22 @@ every listing filter (default `state=dirty`) and aggregate in the store (SQL
   `include=progress` adds `{total, clean}` across all states of each item,
   independent of `state=` and the node ID cap; other filters still apply.
   Cleared tombstones are excluded from these counts.
+- Removed design (`group=component` and `group=set`): tombstones whose
+  removed root (the topmost tombstoned node on their path) is not inside a
+  live component form one `kind: "removed"` item per root (`key` = root id),
+  after the component items and before `key: null`, in the roots' document
+  order, with `uses: [{componentId, name, set?, remote?, placementsRemoved,
+  livePlacements}]` (zero live placements first) and `warnings: [{code:
+  "main_removed_with_live_placements", componentId, livePlacements}]`; no
+  `placements`. Other items have no `kind`. See `docs/api-v3-design.md`,
+  "Removed design".
+- Design tokens (`group=component` and `group=set`): token nodes form one
+  `kind: "tokens"` item per collection (`key` = `tokens:<collectionKey>`,
+  `name` = the collection name; a changed `tokens` root is its own item),
+  after the removed items and before `key: null`; no `placements`.
+  `include=usage` adds `usage: {nodeId: {layers}}` for the listed tokens.
+  `group=frame` with `under=tokens` gives the same per-collection items. See
+  `docs/api-v3-design.md`, "Design tokens".
 
 Formats (`docs/api-v3-phase2.md`, section 4): the listing, work items and the
 events JSON page take `format` (`outline`: the listing and work items only):
@@ -303,7 +345,9 @@ Events (`docs/api-v3-phase2.md`, section 1):
   type, actor, data, createdAt}`; `data` carries ids and counts only (node ids
   capped at 500), never design content. `nodes.cleared` has `count` (all
   cleared nodes, beyond the id cap); `sync.completed` `counts.dirty` is the
-  number of nodes the batch made dirty (new, or changed / deleted while clean).
+  number of nodes the batch made dirty (new, or changed / deleted while clean);
+  `counts.autoResolved` the never-built nodes it tombstoned as clean
+  tombstones (not work, not in `dirty`).
 - Trends (`GET /v3/insights/trends`) sum those counts over the half-open
   window `[from, to)` = the last `windowDays` days, and `clearedPrevious` over
   the window before. `clearedChangePct` is `round((cleared − clearedPrevious)
@@ -344,6 +388,12 @@ Events (`docs/api-v3-phase2.md`, section 1):
   plain Figma node ids (`path` as an array of ancestor ids, a dot-joined string
   of them, or omitted to derive it from `parentId`); `src/ltree.js` owns the
   id → ltree-label encoding.
+- On startup in Postgres mode, before anything else touches the database,
+  `src/schemaCheck.js` runs one read-only probe per `supabase/migrations/` file
+  (the `PROBES` map, keyed by filename; a test fails if a file has none). It
+  refuses to start while one fails, or with `RDS_AUTO_MIGRATE=true` applies just
+  the failing files under an advisory lock. Local mode keeps its
+  `schema_migrations` ledger. See `docs/setup.md`, "Apply the migrations".
 - On startup, before listening, `src/maintenance.js` runs idempotent repair
   steps in batches of 500, one log line each; a failing step is logged as a
   warning and startup continues. Step `change-data` recomputes the change
@@ -361,6 +411,7 @@ src/store/memory.js in-memory data layer (tests, RDS_STORE=memory)
 src/nodeService.js  NodeSyncService — per-node sync (hashes / sync / exists)
 src/ltree.js        Figma node id <-> ltree label/path helpers
 src/maintenance.js  startup repair steps (runMaintenance), run by server.js before listen
+src/schemaCheck.js  Postgres-mode startup schema probes + RDS_AUTO_MIGRATE (checkSchema)
 src/v3/             API v3: index (auth, problems, OpenAPI), read, actions, events, block, insights (summary, work items, trends), plugin (hashes, sync, exists), format (ndjson / md / outline), address, schemas, problem, legacy (hints for removed v1/v2 paths)
 src/events/         event outbox (withEvents), buses (memory, Postgres LISTEN/NOTIFY + polling), retention
 src/store/postgres.js node-postgres data layer (same interface)

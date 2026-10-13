@@ -77,6 +77,9 @@ const ChecklistCore = (() => {
     if (!m) throw new Error('Paste a Figma design file URL, starting with https://www.figma.com/design/ or /file/.');
     return m[1];
   }
+  /* Design-token node ids: the `tokens` scope root, `tokens:<collectionKey>` collections, `token:<variableKey>` variables. */
+  const TOKENS_ROOT_ID = 'tokens';
+  const isTokenNodeId = id => typeof id === 'string' && (id === TOKENS_ROOT_ID || id.startsWith('tokens:') || id.startsWith('token:'));
   const normalizeNodeId = id => typeof id === 'string' && /^\d+-\d+$/.test(id) ? id.replace('-', ':') : id;
   /* Figma link -> { fileKey, nodeId } (nodeId normalized, null without node-id); null for non-Figma input. */
   function parseFigmaUrl(url) {
@@ -105,9 +108,11 @@ const ChecklistCore = (() => {
     effects: Object.freeze(['effects', 'effectStyleId', 'cornerRadius', '*Radius', 'cornerSmoothing', 'isMask', 'visible']),
     component: Object.freeze(['componentProperties', 'componentPropertyReferences', 'componentPropertyDefinitions', 'variantProperties',
       'mainComponentId', 'isInstance', 'overrides']),
-    content: Object.freeze(['characters', 'hyperlink', 'vectorPaths', 'vectorNetwork', 'booleanOperation', 'arcData', 'pointCount', 'innerRadius']),
+    content: Object.freeze(['characters', 'hyperlink', 'vectorPaths', 'vectorNetwork', 'booleanOperation', 'arcData', 'pointCount', 'innerRadius',
+      'description']),
     structure: Object.freeze(['parentId', 'childIds', 'children', 'name']),
     prototype: Object.freeze(['reactions', 'overflowDirection', 'numberOfFixedChildren', 'overlay*']),
+    token: Object.freeze(['value:*']),
   });
   /* Exact names win over patterns (e.g. strokesIncludedInLayout is layout, innerRadius is content); then patterns in map order. */
   function categoryOf(prop) {
@@ -148,6 +153,7 @@ const ChecklistCore = (() => {
       Object.keys(bindingsOf(attrs)).forEach(k => keys.add(k));
     }
     LOOKUP_KEYS.forEach(k => keys.delete(k));
+    keys.delete('variableId'); // a token's Figma id, not its design
     const changes = {}, changedProps = [], categories = new Set();
     const at = (attrs, k) => own(attrs, k) ? attrs[k] : undefined;
     for (const k of Array.from(keys).sort()) {
@@ -223,6 +229,6 @@ const ChecklistCore = (() => {
     return lines.join('\n');
   }
   return { SCHEMA, normalize, stable, sha256, sha256Fallback, contentHash, fileKey, link, diff, sameDesign, markdown,
-    CATEGORY_RULES, categoryOf, diffAttrs, normalizeNodeId, parseFigmaUrl };
+    CATEGORY_RULES, categoryOf, diffAttrs, normalizeNodeId, parseFigmaUrl, TOKENS_ROOT_ID, isTokenNodeId };
 })();
 if (typeof module !== 'undefined') module.exports = ChecklistCore;

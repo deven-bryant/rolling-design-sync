@@ -59,6 +59,11 @@ export const figmaButton = {
       key: 'aa8fdc25db3faf5803607753f61fea1829ca77bc',
       props: { size: 'md', hierarchy: 'secondary' },
     },
+    'Size=md, Hierarchy=Link color, State=Default, Icon only=False': {
+      nodeId: '111:11170',
+      key: '29110720e99656a1849f9be4676dbb04afac5826',
+      props: { size: 'md', hierarchy: 'link-color' },
+    },
     'Size=sm, Hierarchy=Link color, State=Default, Icon only=False': {
       nodeId: '111:11290',
       key: '26f64c92e8ecd3bf0e9ce1165a669beb22854305',

@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { FakeEventSource } from '../../test/fake-event-source';
-import { itemClaim, itemProgress, nodesSummary, WorkFiltersBar, WorkGroupSwitch, WorkTable, type FileClaim, type WorkGroup, type WorkItem } from '.';
+import { isLibraryItem, isReference, isTokensItem, itemClaim, itemProgress, nodesSummary, WorkFiltersBar, WorkGroupSwitch, WorkTable, type FileClaim, type WorkGroup, type WorkItem } from '.';
 
 const NOW = Date.parse('2026-10-01T12:00:00.000Z');
 const FILE = 'AbCdEf123456GhIjKl7890';
@@ -214,14 +214,16 @@ describe('features/work', () => {
     renderScreen();
     await waitFor(() => expect(row('Table cell')).toBeDefined());
     const nav = within(screen.getByRole('navigation', { name: 'Work items pages' }));
-    expect(nav.getByText('Page 1')).toBeDefined();
+    expect(nav.getByRole('button', { name: 'Page 1' }).getAttribute('aria-current')).toBe('page');
+    expect(nav.getByRole('button', { name: 'Page 2' }).getAttribute('aria-current')).toBeNull();
 
     fireEvent.click(nav.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(row('Checkbox')).toBeDefined());
     expect(screen.queryByRole('row', { name: 'Table cell' })).toBeNull();
     expect(workCalls().at(-1)?.searchParams.get('cursor')).toBe('c2');
     expect(within(row('Checkbox')).getByText('50%')).toBeDefined();
-    expect(nav.getByText('Page 2')).toBeDefined();
+    expect(nav.getByRole('button', { name: 'Page 2' }).getAttribute('aria-current')).toBe('page');
+    expect(nav.getByRole('button', { name: 'Page 1' })).toBeDefined();
     expect((nav.getByRole('button', { name: 'Next' }) as HTMLButtonElement).disabled).toBe(true);
 
     const before = workCalls().length;
@@ -264,6 +266,126 @@ describe('features/work', () => {
   });
 });
 
+describe('WorkTable removed and library items', () => {
+  const removed: WorkItem = {
+    kind: 'removed',
+    key: '12:345',
+    name: 'Files',
+    type: 'FRAME',
+    nodeCount: 41,
+    categories: ['structure', 'layout', 'color', 'content'],
+    changedProps: [],
+    placements: null,
+    placementsInScope: null,
+    nodeIds: ['12:345'],
+    uses: [{ componentId: '1:10', name: 'Button', livePlacements: 4 }],
+    warnings: [],
+    progress: { total: 41, clean: 0 },
+  };
+  const library = component('9:1', 'Lib button', { library: { key: 'LIBKEY', resolved: false }, figmaUrl: null, progress: { total: 2, clean: 1 } });
+  const reference: WorkItem = {
+    kind: 'library',
+    tracked: false,
+    key: '9:2',
+    name: 'Lib card',
+    type: 'COMPONENT',
+    nodeCount: 0,
+    categories: [],
+    changedProps: [],
+    placements: 7,
+    placementsInScope: 3,
+    library: { key: 'LIBKEY2', resolved: false },
+    figmaUrl: null,
+  };
+  const items = [library, reference, removed];
+  const fetchMock = vi.fn<typeof fetch>();
+
+  beforeEach(() => {
+    FakeEventSource.reset();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockImplementation(async input => {
+      const url = new URL(String(input), 'http://portal.test');
+      if (url.pathname === `/v3/files/${FILE}/claims`) return json({ fileKey: FILE, claims: [] });
+      if (url.pathname === `/v3/files/${FILE}/work`) return json({ fileKey: FILE, group: 'component', items, nextCursor: null, total: items.length });
+      return new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } });
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fetchMock.mockReset();
+  });
+
+  const renderTable = (props: { group?: WorkGroup; onOpenComponent?: (key: string) => void; onOpenRemoved?: (id: string) => void; onOpenPlacements?: (key: string) => void }) =>
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <WorkTable fileKey={FILE} under={SCOPE} group="component" page={1} onPageChange={() => {}} onOpenComponent={props.onOpenComponent ?? vi.fn()} {...props} />
+      </QueryClientProvider>,
+    );
+
+  it('summarises removed and reference items', () => {
+    expect(nodesSummary(removed)).toEqual({ text: '41 layers removed' });
+    expect(nodesSummary({ ...removed, progress: { total: 41, clean: 41 } })).toEqual({ text: 'Done', supporting: '41 nodes cleared' });
+    expect(nodesSummary(reference)).toEqual({ text: 'Library · not tracked' });
+    expect([isReference(reference), isReference(library), isLibraryItem(library), isLibraryItem(removed)]).toEqual([true, false, true, false]);
+    const unkeyed = { ...library, key: null, name: null };
+    expect([isLibraryItem(unkeyed), isLibraryItem(library, 'frame'), isLibraryItem(reference, 'frame')]).toEqual([false, false, true]);
+  });
+
+  it('never badges frame items or the Not in a frame item as Library', async () => {
+    const frame: WorkItem = { ...library, key: '3:1', name: 'Screen', type: 'FRAME' };
+    const notInFrame: WorkItem = { ...library, key: null, name: null, type: null };
+    items.splice(0, items.length, frame, notInFrame);
+    try {
+      renderTable({ group: 'frame' });
+      expect(within(await screen.findByRole('row', { name: 'Screen' })).queryByText('Library')).toBeNull();
+      expect(within(screen.getByRole('row', { name: 'Not in a frame' })).queryByText('Library')).toBeNull();
+    } finally {
+      items.splice(0, items.length, library, reference, removed);
+    }
+  });
+
+  it('renders a removed row: Removed badge, no placements, layers removed, and opens its root', async () => {
+    const onOpenRemoved = vi.fn();
+    const onOpenComponent = vi.fn();
+    const { container } = renderTable({ onOpenRemoved, onOpenComponent });
+    const row = within(await screen.findByRole('row', { name: 'Files' }));
+    expect(row.getByText('Removed').className).toContain('bg-utility-error-50');
+    expect(row.queryByText('Library')).toBeNull();
+    expect(row.getByText('FRAME · 12:345')).toBeDefined();
+    expect(row.getAllByText('—')).toHaveLength(2);
+    expect(row.getByText('41 layers removed')).toBeDefined();
+    expect(row.getByText('structure')).toBeDefined();
+    expect(row.getByRole('progressbar', { name: 'Files progress' }).getAttribute('aria-valuenow')).toBe('0');
+    expect(row.getByText('unclaimed')).toBeDefined();
+    fireEvent.click(row.getByText('Files'));
+    expect(onOpenRemoved).toHaveBeenCalledWith('12:345');
+    expect(onOpenComponent).not.toHaveBeenCalled();
+    await expectNoAxeViolations(container);
+  });
+
+  it('badges library items and shows reference items as not tracked, still clickable', async () => {
+    const onOpenPlacements = vi.fn();
+    const onOpenComponent = vi.fn();
+    renderTable({ onOpenPlacements, onOpenComponent });
+    const lib = within(await screen.findByRole('row', { name: 'Lib button' }));
+    expect(lib.getByText('Library').className).toContain('bg-utility-gray-50');
+    expect(lib.getByText('1 dirty')).toBeDefined();
+    const ref = within(screen.getByRole('row', { name: 'Lib card' }));
+    expect(ref.getByText('Library')).toBeDefined();
+    expect(ref.queryByText('Removed')).toBeNull();
+    expect(ref.queryByText(/dirty/)).toBeNull();
+    expect(ref.getByText('Library · not tracked')).toBeDefined();
+    expect(ref.getByText('3 in this screen')).toBeDefined();
+    expect(ref.queryByRole('progressbar')).toBeNull();
+    expect(ref.getAllByText('—')).toHaveLength(2);
+    fireEvent.click(ref.getByText('Lib card'));
+    expect(onOpenPlacements).toHaveBeenCalledWith('9:2');
+    fireEvent.click(lib.getByText('Lib button'));
+    expect(onOpenComponent).toHaveBeenCalledWith('9:1');
+  });
+});
+
 describe('WorkFiltersBar', () => {
   it('debounces the node search and toggles Expand instances', async () => {
     const onChange = vi.fn();
@@ -283,5 +405,84 @@ describe('WorkGroupSwitch with one root required', () => {
     expect((screen.getByRole('radio', { name: 'By frame' }) as HTMLButtonElement).disabled).toBe(true);
     const group = screen.getByRole('radiogroup', { name: 'Group work items' });
     expect(document.getElementById(group.getAttribute('aria-describedby') ?? '')?.textContent).toBe('Select one scope to group by frame.');
+  });
+
+  it('shows the reason in a tooltip on hover without crashing', async () => {
+    const user = userEvent.setup();
+    render(<WorkGroupSwitch group="component" onGroupChange={vi.fn()} frameDisabledReason="Select one scope to group by frame." />);
+    await user.hover(screen.getByRole('radio', { name: 'By frame' }).parentElement!);
+    expect((await screen.findByRole('tooltip')).textContent).toBe('Select one scope to group by frame.');
+    await user.unhover(screen.getByRole('radio', { name: 'By frame' }).parentElement!);
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+  });
+});
+
+describe('WorkTable token items', () => {
+  const COLLECTION = `tokens:${'a'.repeat(40)}`;
+  const tokens: WorkItem = {
+    kind: 'tokens',
+    key: COLLECTION,
+    name: 'Semantic',
+    type: 'VARIABLE_COLLECTION',
+    nodeCount: 3,
+    categories: ['token'],
+    changedProps: ['value:Dark'],
+    placements: null,
+    placementsInScope: null,
+    figmaUrl: null,
+    nodeIds: [`token:${'1'.repeat(40)}`],
+    progress: { total: 5, clean: 2 },
+  };
+  const fetchMock = vi.fn<typeof fetch>();
+
+  beforeEach(() => {
+    FakeEventSource.reset();
+    vi.stubGlobal('EventSource', FakeEventSource);
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockImplementation(async input => {
+      const url = new URL(String(input), 'http://portal.test');
+      if (url.pathname === `/v3/files/${FILE}/claims`) return json({ fileKey: FILE, claims: [] });
+      if (url.pathname === `/v3/files/${FILE}/work`) return json({ fileKey: FILE, group: 'component', items: [tokens], nextCursor: null, total: 1 });
+      return new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } });
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fetchMock.mockReset();
+  });
+
+  it('summarises token items in tokens', () => {
+    expect(isTokensItem(tokens)).toBe(true);
+    expect(nodesSummary(tokens)).toEqual({ text: '3 tokens changed', supporting: 'of 5 tokens' });
+    expect(nodesSummary({ ...tokens, progress: { total: 1, clean: 0 } })).toEqual({ text: '1 token changed', supporting: 'of 1 token' });
+    expect(nodesSummary({ ...tokens, progress: { total: 5, clean: 5 } })).toEqual({ text: 'Done', supporting: '5 tokens cleared' });
+  });
+
+  it('renders a token item: Tokens badge, collection type, no placements, progress, and opens the collection', async () => {
+    const onOpenComponent = vi.fn();
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <WorkTable fileKey={FILE} under="tokens" group="component" page={1} onPageChange={() => {}} onOpenComponent={onOpenComponent} />
+      </QueryClientProvider>,
+    );
+    const row = within(await screen.findByRole('row', { name: 'Semantic' }));
+    expect(row.getByText('Tokens').className).toContain('bg-utility-gray-50');
+    expect(row.queryByText('Library')).toBeNull();
+    expect(row.getByText('VARIABLE_COLLECTION')).toBeDefined();
+    expect(row.getAllByText('—')).toHaveLength(2);
+    expect(row.getByText('3 tokens changed')).toBeDefined();
+    expect(row.getByText('token')).toBeDefined();
+    expect(row.getByRole('progressbar', { name: 'Semantic progress' }).getAttribute('aria-valuenow')).toBe('40');
+    fireEvent.click(row.getByText('Semantic'));
+    expect(onOpenComponent).toHaveBeenCalledWith(COLLECTION);
+    await expectNoAxeViolations(container);
+  });
+});
+
+describe('nodesSummary notes', () => {
+  it('adds the open notes count to the supporting text', () => {
+    const item = component('k', 'Card', { progress: { total: 30, clean: 3 }, notes: 2 } as Partial<WorkItem>);
+    expect(nodesSummary(item)).toEqual({ text: '27 dirty', supporting: 'of 30 nodes · 2 notes' });
+    expect(nodesSummary({ ...item, notes: 0 })).toEqual({ text: '27 dirty', supporting: 'of 30 nodes' });
   });
 });

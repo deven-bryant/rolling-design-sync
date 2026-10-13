@@ -1,13 +1,13 @@
 import { Badge, type BadgeProps } from '../../Badge';
 
-export type ChangeType = 'added' | 'modified' | 'deleted';
+export type ChangeType = 'added' | 'modified' | 'deleted' | 'requested';
 
-export const changeBadgeColors = { added: 'blue', modified: 'brand', deleted: 'gray' } as const satisfies Record<
+export const changeBadgeColors = { added: 'blue', modified: 'brand', deleted: 'gray', requested: 'orange' } as const satisfies Record<
   ChangeType,
   BadgeProps['color']
 >;
 
-const labels: Record<ChangeType, string> = { added: 'Added', modified: 'Modified', deleted: 'Deleted' };
+const labels: Record<ChangeType, string> = { added: 'Added', modified: 'Modified', deleted: 'Deleted', requested: 'Requested' };
 
 export interface ChangeBadgeProps extends Omit<BadgeProps, 'color' | 'children'> {
   change: ChangeType;
@@ -15,7 +15,7 @@ export interface ChangeBadgeProps extends Omit<BadgeProps, 'color' | 'children'>
   children?: BadgeProps['children'];
 }
 
-/** A node's `changeType` as a Badge: added → blue, modified → brand, deleted → gray. */
+/** A node's `changeType` as a Badge: added → blue, modified → brand, deleted → gray, requested (open notes) → orange. */
 export function ChangeBadge({ change, children, ...rest }: ChangeBadgeProps) {
   return (
     <Badge {...rest} color={changeBadgeColors[change]}>

@@ -1,4 +1,4 @@
-/** The API's change categories, in its rule order (`packages/core` CATEGORY_RULES, then `other`). */
+/** The API's change categories, in its rule order (`packages/core` CATEGORY_RULES, then `other`), and `note` for open notes. */
 export const CATEGORIES = [
   'layout',
   'color',
@@ -8,12 +8,14 @@ export const CATEGORIES = [
   'content',
   'structure',
   'prototype',
+  'token',
   'other',
+  'note',
 ] as const;
 
 export type Category = (typeof CATEGORIES)[number];
 
-const RULES: Record<Exclude<Category, 'other'>, readonly string[]> = {
+const RULES: Record<Exclude<Category, 'other' | 'note'>, readonly string[]> = {
   layout: [
     'width', 'height', 'x', 'y', 'rotation', 'layoutMode', 'layoutWrap', 'layoutPositioning', 'layoutAlign', 'layoutGrow',
     'layoutSizingHorizontal', 'layoutSizingVertical', 'primaryAxis*', 'counterAxis*', 'itemSpacing', 'counterAxisSpacing', 'padding*',
@@ -31,12 +33,13 @@ const RULES: Record<Exclude<Category, 'other'>, readonly string[]> = {
     'componentProperties', 'componentPropertyReferences', 'componentPropertyDefinitions', 'variantProperties',
     'mainComponentId', 'isInstance', 'overrides',
   ],
-  content: ['characters', 'hyperlink', 'vectorPaths', 'vectorNetwork', 'booleanOperation', 'arcData', 'pointCount', 'innerRadius'],
+  content: ['characters', 'hyperlink', 'vectorPaths', 'vectorNetwork', 'booleanOperation', 'arcData', 'pointCount', 'innerRadius', 'description'],
   structure: ['parentId', 'childIds', 'children', 'name'],
   prototype: ['reactions', 'overflowDirection', 'numberOfFixedChildren', 'overlay*'],
+  token: ['value:*'],
 };
 
-const ruleCategories = Object.keys(RULES) as Exclude<Category, 'other'>[];
+const ruleCategories = Object.keys(RULES) as Exclude<Category, 'other' | 'note'>[];
 
 /** A property's change category, as the API assigns it: exact names first, then patterns in rule order. */
 export function categoryOf(prop: string): Category {

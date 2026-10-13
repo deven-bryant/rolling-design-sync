@@ -139,6 +139,7 @@ Generated from the API's OpenAPI document (API 3.0.0) — one command per `x-rds
 |---------|---------|---------|
 | [`files ls`](#rds-agent-files-ls) | `GET /v3/files` | List tracked files |
 | [`files show`](#rds-agent-files-show) | `GET /v3/files/{fileKey}` | Get a file |
+| [`files settings`](#rds-agent-files-settings) | `PATCH /v3/files/{fileKey}` | Change file settings |
 | [`scopes ls`](#rds-agent-scopes-ls) | `GET /v3/files/{fileKey}/scopes` | List synced scopes |
 | [`nodes ls`](#rds-agent-nodes-ls) | `GET /v3/files/{fileKey}/nodes` | List nodes |
 | [`nodes show`](#rds-agent-nodes-show) | `GET /v3/files/{fileKey}/nodes/{nodeId}` | Get a node |
@@ -151,6 +152,9 @@ Generated from the API's OpenAPI document (API 3.0.0) — one command per `x-rds
 | [`events`](#rds-agent-events) | `GET /v3/files/{fileKey}/events` | List file events |
 | [`block`](#rds-agent-block) | `POST /v3/files/{fileKey}/nodes/{nodeId}/block` | Block a node |
 | [`unblock`](#rds-agent-unblock) | `POST /v3/files/{fileKey}/nodes/{nodeId}/unblock` | Unblock a node |
+| [`notes list`](#rds-agent-notes-list) | `GET /v3/files/{fileKey}/nodes/{nodeId}/notes` | List a node's notes |
+| [`notes add`](#rds-agent-notes-add) | `POST /v3/files/{fileKey}/nodes/{nodeId}/notes` | Add a note to a node |
+| [`notes dismiss`](#rds-agent-notes-dismiss) | `POST /v3/files/{fileKey}/notes/{noteId}/dismiss` | Dismiss a note |
 | [`summary`](#rds-agent-summary) | `GET /v3/files/{fileKey}/summary` | Summarize changes |
 | [`trends`](#rds-agent-trends) | `GET /v3/insights/trends` | Weekly trends |
 | [`work`](#rds-agent-work) | `GET /v3/files/{fileKey}/work` | List work items |
@@ -172,6 +176,19 @@ One tracked file's node counts and last sync time: a quick check of how much is 
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 
+### rds-agent files settings
+
+`PATCH /v3/files/{fileKey}`
+
+Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+| `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
+| `--track-library-components` | boolean | body `settings.trackLibraryComponents` | Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. |
+| `--worker` | string | body `worker` | Your worker id; recorded as the event actor (default: the token label). |
+
 ### rds-agent scopes ls
 
 `GET /v3/files/{fileKey}/scopes`
@@ -192,24 +209,26 @@ Nodes of a file with their property-level changes — by default the dirty ones 
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
-| `--state` | string | query `state` | Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. |
+| `--state` | string | query `state` | Comma-separated: dirty, clean, blocked, requested, all. Default dirty (changed since last built or with open notes, not blocked); `requested`: dirty only by open notes; `all` for every state. |
 | `--under` | string | query `under` | Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. |
 | `--depth` | integer | query `depth` | Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children). |
 | `--type` | string | query `type` | Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. |
-| `--change-type` | string | query `changeType` | Comma-separated: added, modified, deleted (dirty nodes only). |
+| `--change-type` | string | query `changeType` | Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes). |
+| `--has-notes` | true\|false | query `hasNotes` | true: only nodes with open notes; false: only nodes without. |
 | `--changed` | string | query `changed` | Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). |
-| `--category` | string | query `category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other. |
+| `--category` | string | query `category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. |
 | `--component` | string | query `component` | Comma-separated main component ids: the components and all their instances. |
 | `--name` | string | query `name` | Comma-separated case-insensitive name globs (`*`, `?`), e.g. Button*. |
 | `--since` | string | query `since` | ISO 8601 time: only nodes changed at or after it. |
 | `--claimed` | string | query `claimed` | Comma-separated: true (leased), false (free), mine (leased to `worker`). |
 | `--worker` | string | query `worker` | Your worker id; needed with `claimed=mine`. |
 | `--instance` | true\|false | query `instance` | true: only component instances (`isInstance`); false: only other nodes. |
+| `--library` | include\|exclude\|only | query `library` | Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. |
 | `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
 | `--view` | compact\|full | query `view` | compact (default: state, changes, hash, claim, block) or full (adds attrs, implementedAttrs, path; change values never truncated). |
 | `--changes` | auto\|diff\|names | query `changes` | auto (default): the built→now diff for modified and deleted nodes, omitted for added ones (their property names are in `changedProps`) — keeps fresh-sync pages small; diff: the diff for every node, including added ones' full values; names: never `changes`, only `changedProps`. Ask for `changes=diff` (or `get_node`) when you need the values of added nodes. |
-| `--fields` | string | query `fields` | Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, via (`via` needs `expand=instances`). |
-| `--include` | counts | query `include` | `counts` adds subtree counts (`descendants`) to each node. |
+| `--fields` | string | query `fields` | Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage, via (`via` needs `expand=instances`). |
+| `--include` | string | query `include` | Comma-separated: counts, usage. `counts` adds subtree counts (`descendants`) to each node; `usage` adds `usage: { layers }` to each design token (`token:<variableKey>`). |
 | `--sort` | document\|path\|updatedAt\|name\|-document\|-path\|-updatedAt\|-name | query `sort` | document (default: the design's layer order — auto-layout flow order, else top-to-bottom, left-to-right), path (node-id path order), updatedAt or name; prefix `-` for descending. |
 | `--limit` | integer | query `limit` | Page size (default 100, max 1000). With format=outline: rendered lines per page (default: every line). |
 | `--cursor` | string | query `cursor` | The previous page's `nextCursor`, unchanged, with all other parameters the same (else `invalid_cursor`). With format=outline: the previous response's `X-RDS-Next-Cursor` header (a line position in the rendered outline). |
@@ -228,7 +247,7 @@ One node in full: state, property changes (whole values, never truncated), compo
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
-| `--fields` | string | query `fields` | Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants. |
+| `--fields` | string | query `fields` | Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage. |
 | `--changes` | auto\|diff\|names | query `changes` | diff (default): the whole built→now diff, never truncated — the way to read an added node's values; auto: omitted for added nodes; names: never `changes`, only `changedProps`. |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 
@@ -269,23 +288,25 @@ Leases nodes to `worker` so parallel agents do not implement the same nodes. Cla
 | `--limit` | integer | body `limit` | At most this many nodes (default 100 with a filter; every listed id with nodeIds). |
 | `--node-ids` | string,… | body `nodeIds` | Exact node ids to claim (1:2 or 1-2); unknown ids are skipped. |
 | `--q` | string | body `filter.q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
-| `--state` | string | body `filter.state` | Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. |
+| `--state` | string | body `filter.state` | Comma-separated: dirty, clean, blocked, requested, all. Default dirty (changed since last built or with open notes, not blocked); `requested`: dirty only by open notes; `all` for every state. |
 | `--under` | string | body `filter.under` | Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. |
 | `--depth` | integer | body `filter.depth` | Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children). |
 | `--type` | string | body `filter.type` | Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. |
-| `--change-type` | string | body `filter.changeType` | Comma-separated: added, modified, deleted (dirty nodes only). |
+| `--change-type` | string | body `filter.changeType` | Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes). |
 | `--changed` | string | body `filter.changed` | Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). |
-| `--category` | string | body `filter.category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other. |
+| `--category` | string | body `filter.category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. |
 | `--component` | string | body `filter.component` | Comma-separated main component ids: the components and all their instances. |
 | `--instance` | true\|false | body `filter.instance` | true: only component instances (`isInstance`); false: only other nodes. |
 | `--name` | string | body `filter.name` | Comma-separated case-insensitive name globs (`*`, `?`), e.g. Button*. |
 | `--since` | string | body `filter.since` | ISO 8601 time: only nodes changed at or after it. |
+| `--library` | include\|exclude\|only | body `filter.library` | Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. |
+| `--has-notes` | true\|false | body `filter.hasNotes` | true: only nodes with open notes; false: only nodes without. |
 
 ### rds-agent clear
 
 `POST /v3/files/{fileKey}/clear` — arguments: `<nodeId>=<contentHash> … | -`
 
-Records nodes as implemented (up to 500 per call) once your code matches the design: they become clean, their current design becomes the new baseline, and their leases are released. Send each node with the `contentHash` you implemented (from `list_nodes` / `get_node`). Each item is checked on its own and the call is 200 even when some fail: `cleared`; `stale` — the design changed since you read it, so re-read that node with `get_node`, implement the new changes and clear it with the returned `contentHash`; `not_found` — a wrong id. Clear only what you actually built; never clear to hide changes (use `block_node` for nodes you cannot implement). The `nodes.cleared` event's actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
+Records nodes as implemented (up to 500 per call) once your code matches the design: they become clean, their current design becomes the new baseline, and their leases are released. Send each node with the `contentHash` you implemented (from `list_nodes` / `get_node`). Each item is checked on its own and the call is 200 even when some fail: `cleared`; `stale` — the design changed since you read it, so re-read that node with `get_node`, implement the new changes and clear it with the returned `contentHash`; `not_found` — a wrong id; `not_removed` — `subtree: true` on a node that is not deleted (nothing cleared). Removed design (a `kind: "removed"` work item): once its code is gone, clear just its root with `subtree: true` — that also clears every dirty deleted node below it (`subtreeCleared`); live nodes below are untouched. Clear only what you actually built; never clear to hide changes (use `block_node` for nodes you cannot implement). The `nodes.cleared` event's actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
 
 Arguments: The nodes to clear (1–500), each with the `contentHash` you implemented. (body `items`)
 
@@ -323,7 +344,7 @@ Ends the claim and frees the nodes still under it, so other agents can take them
 
 `GET /v3/files/{fileKey}/events`
 
-The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
+The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
 
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
@@ -331,7 +352,7 @@ The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, count
 | `--after` | integer | query `after` | Only events with a greater id: the previous page's `nextAfter` (default 0 = from the start of the log). |
 | `--before` | integer | query `before` | Only events with a smaller id: with order=desc, the previous page's `nextBefore` (default: from the newest event). JSON pages only. |
 | `--order` | asc\|desc | query `order` | Default `"asc"`. `asc` (default): oldest first, page with `after` / `nextAfter`. `desc`: newest first, page with `before` / `nextBefore`. JSON pages only; SSE is unchanged. |
-| `--types` | string | query `types` | Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked. |
+| `--types` | string | query `types` | Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. |
 | `--limit` | integer | query `limit` | JSON page size (default 100, max 1000). |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--node-id` | string | query `nodeId` | Only events mentioning this node in data.nodeId or data.nodeIds (1:2 or 1-2); JSON and SSE. |
@@ -364,6 +385,42 @@ Removes a node's block once its blocker is resolved: it is dirty again (back in 
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--worker` | string | body `worker` | Your worker id; recorded as `by` (default: the token label). |
 
+### rds-agent notes list
+
+`GET /v3/files/{fileKey}/nodes/{nodeId}/notes` — arguments: `<nodeId>`
+
+The notes on a node, newest first: its open ones (default), or `status=all` for resolved and dismissed ones too.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+| `--status` | open\|all | query `status` | open (default) or all. |
+| `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
+
+### rds-agent notes add
+
+`POST /v3/files/{fileKey}/nodes/{nodeId}/notes` — arguments: `<nodeId>`
+
+Records that the built node does not match the design, with what is wrong. An open note makes the node dirty — `changeType: requested` (category `note`) when its design is otherwise built, or its design change plus category `note` — and keeps it dirty across re-syncs. The node is listed with its open `notes` until it is cleared (`clear_nodes` resolves its notes) or the note is dismissed. Viewer tokens and sessions may add notes too. Returns the note and the node's new state; a tombstoned node cannot take notes.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+| `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
+| `--body` | string | body `body` | **Required.** What does not match the design, as a person would say it (1–4000 chars). |
+| `--worker` | string | body `worker` | Your worker id, recorded on the note. |
+
+### rds-agent notes dismiss
+
+`POST /v3/files/{fileKey}/notes/{noteId}/dismiss` — arguments: `<noteId>`
+
+Closes an open note without changing the build (e.g. it is wrong or already handled); the node's state is recomputed without it. Its author or any agent may dismiss it. To resolve a note by fixing the code, clear the node instead.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+| `--reason` | string | body `reason` | Why it was dismissed. |
+
 ### rds-agent summary
 
 `GET /v3/files/{fileKey}/summary`
@@ -373,19 +430,21 @@ Counts of the nodes the `list_nodes` filters match (default: dirty) by state, ch
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
-| `--state` | string | query `state` | Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. |
+| `--state` | string | query `state` | Comma-separated: dirty, clean, blocked, requested, all. Default dirty (changed since last built or with open notes, not blocked); `requested`: dirty only by open notes; `all` for every state. |
 | `--under` | string | query `under` | Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. |
 | `--depth` | integer | query `depth` | Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children). |
 | `--type` | string | query `type` | Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. |
-| `--change-type` | string | query `changeType` | Comma-separated: added, modified, deleted (dirty nodes only). |
+| `--change-type` | string | query `changeType` | Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes). |
 | `--changed` | string | query `changed` | Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). |
-| `--category` | string | query `category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other. |
+| `--category` | string | query `category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. |
 | `--component` | string | query `component` | Comma-separated main component ids: the components and all their instances. |
 | `--instance` | true\|false | query `instance` | true: only component instances (`isInstance`); false: only other nodes. |
 | `--name` | string | query `name` | Comma-separated case-insensitive name globs (`*`, `?`), e.g. Button*. |
 | `--since` | string | query `since` | ISO 8601 time: only nodes changed at or after it. |
 | `--claimed` | string | query `claimed` | Comma-separated: true (leased), false (free), mine (leased to `worker`). |
 | `--worker` | string | query `worker` | Your worker id; needed with `claimed=mine`. |
+| `--library` | include\|exclude\|only | query `library` | Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. |
+| `--has-notes` | true\|false | query `hasNotes` | true: only nodes with open notes; false: only nodes without. |
 | `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--expand` | instances | query `expand` | `instances`: also include the subtree of every main component the scope's instances use (the scope is `under`, or the whole file) — transitively through instances inside those components, breadth-first, each component once. Use it for "everything this screen uses" / "which components do I build for this screen". Other filters apply after expansion; `depth` cannot be combined with it. |
@@ -406,24 +465,26 @@ How fast the backlog moves: nodes cleared and nodes newly dirtied by syncs in th
 
 `GET /v3/files/{fileKey}/work`
 
-The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design's layer order, by each item's key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories. `group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last. `group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged. `group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item. `include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar. `expand=instances` answers "which components do I need to build for this screen, and how often does it use each?": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`. Each item's `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.
+The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design's layer order, by each item's key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories. `group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last. Removed design (group=component and group=set): deleted nodes that were built are grouped under their removed root — the topmost deleted node — into one `kind: "removed"` item (after the component items, before `key: null`, in the roots' document order), unless that root sits inside a live component (then they are part of that component's item). For a removed item: remove the code that rendered the root; keep components in `uses` with `livePlacements > 0` (still used elsewhere), consider removing those with 0; heed `warnings`; then clear the root with `subtree: true` (`clear_nodes`) — one item clears the whole removed subtree. Deleted nodes that were never built are not work (they resolve at sync). Design tokens (group=component and group=set): the dirty tokens of each collection form one `kind: "tokens"` item (key = the collection node id, after the component and removed items, before `key: null`). For each token, update the code variable named by its `codeSyntax` (WEB, else the token name) for every changed `value:<Mode>`, then clear it. `include=usage` adds how many layers use each token. `group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged. `group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item. `include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar. `expand=instances` answers "which components do I need to build for this screen, and how often does it use each?": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`. Notes: a node someone noted as not matching the design is dirty with `changeType: requested` (category `note`) when its design is otherwise built, and grouped like any dirty node; `notes` counts an item's open notes. Read the notes (`get_node` or `list_notes`), fix the code to match the design as they describe, then clear the node — clearing resolves its notes. Each item's `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.
 
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
-| `--state` | string | query `state` | Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state. |
+| `--state` | string | query `state` | Comma-separated: dirty, clean, blocked, requested, all. Default dirty (changed since last built or with open notes, not blocked); `requested`: dirty only by open notes; `all` for every state. |
 | `--under` | string | query `under` | Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id. |
 | `--depth` | integer | query `depth` | Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children). |
 | `--type` | string | query `type` | Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. |
-| `--change-type` | string | query `changeType` | Comma-separated: added, modified, deleted (dirty nodes only). |
+| `--change-type` | string | query `changeType` | Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes). |
 | `--changed` | string | query `changed` | Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). |
-| `--category` | string | query `category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, other. |
+| `--category` | string | query `category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. |
 | `--component` | string | query `component` | Comma-separated main component ids: the components and all their instances. |
 | `--instance` | true\|false | query `instance` | true: only component instances (`isInstance`); false: only other nodes. |
 | `--name` | string | query `name` | Comma-separated case-insensitive name globs (`*`, `?`), e.g. Button*. |
 | `--since` | string | query `since` | ISO 8601 time: only nodes changed at or after it. |
 | `--claimed` | string | query `claimed` | Comma-separated: true (leased), false (free), mine (leased to `worker`). |
 | `--worker` | string | query `worker` | Your worker id; needed with `claimed=mine`. |
+| `--library` | include\|exclude\|only | query `library` | Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude. |
+| `--has-notes` | true\|false | query `hasNotes` | true: only nodes with open notes; false: only nodes without. |
 | `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--expand` | instances | query `expand` | `instances`: also include the subtree of every main component the scope's instances use (the scope is `under`, or the whole file) — transitively through instances inside those components, breadth-first, each component once. Use it for "everything this screen uses" / "which components do I build for this screen". Other filters apply after expansion; `depth` cannot be combined with it. |
@@ -432,7 +493,7 @@ The nodes the `list_nodes` filters match (default: dirty) bundled into work item
 | `--changes` | auto\|diff\|names | query `changes` | auto (default): each item's `changes` has the diffs of its modified and deleted nodes; diff: of every listed node, added ones included (their full values); names: no `changes`, only `changedProps`. |
 | `--limit` | integer | query `limit` | Items per page (default 100, max 1000). With format=outline: rendered lines per page (default: every line). |
 | `--cursor` | string | query `cursor` | The previous page's `nextCursor`, unchanged, with all other parameters the same (else `invalid_cursor`). With format=outline: the previous response's `X-RDS-Next-Cursor` header (a line position in the rendered outline). |
-| `--include` | progress | query `include` | progress: add total and clean node counts across all states for each work item. |
+| `--include` | string | query `include` | Comma-separated: progress, usage. progress: add total and clean node counts across all states for each work item; usage: add `usage: { nodeId: { layers } }` to token items. |
 
 `--format`: also `ndjson`, `md`, `outline` (from the server); `--all`: follows `nextCursor`.
 
