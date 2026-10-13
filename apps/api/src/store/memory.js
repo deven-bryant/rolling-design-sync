@@ -57,9 +57,22 @@ function v3Counts(nodes) {
   return counts;
 }
 
-/** `roots`: the `under` nodes (none: the whole file). */
-function v3Matches(n, f, roots) {
-  if (!f.states.includes(v3State(n))) return false;
+/** `n` is in one of `states`; `requested` is the dirty nodes whose change type is `requested`. */
+const inStates = (n, states) => {
+  const state = v3State(n);
+  return states.includes(state) || (state === 'dirty' && n.changeType === 'requested' && states.includes('requested'));
+};
+
+/**
+ * `roots`: the `under` nodes (none: the whole file); `noted`: ids of the nodes with open notes (needed for `hasNotes`).
+ * @param {any} n
+ * @param {any} f
+ * @param {any[]} roots
+ * @param {Set<string> | null} [noted]
+ */
+function v3Matches(n, f, roots, noted = null) {
+  if (!inStates(n, f.states)) return false;
+  if (typeof f.hasNotes === 'boolean' && !!noted && noted.has(n.nodeId) !== f.hasNotes) return false;
   if (f.regions) {
     if (regionOf(n, f.regions) < 0) return false;
   } else if (roots.length) {
@@ -102,6 +115,8 @@ class MemoryStore {
     this.claims = new Map(); // claimId -> v3 claim row
     this.events = new Map(); // id -> event row
     this.libraryComponents = new Map(); // component key -> library_component row
+    this.notes = new Map(); // noteId -> node_note row
+    this._noteSeq = 0; // creation order of notes (newest first on reads)
     this._eventSeq = 0; // like bigserial: never rolled back
     this._lock = Promise.resolve();
   }
@@ -119,7 +134,7 @@ class MemoryStore {
   }
 
   _dump() {
-    return ['nodes', 'files', 'syncEvents', 'claims', 'events', 'libraryComponents'].map(k => [k, new Map(structuredClone(Array.from(this[k].entries())))]);
+    return ['nodes', 'files', 'syncEvents', 'claims', 'events', 'libraryComponents', 'notes'].map(k => [k, new Map(structuredClone(Array.from(this[k].entries())))]);
   }
 
   _restore(backup) { for (const [k, m] of backup) this[k] = m; }
@@ -432,7 +447,8 @@ class MemoryStore {
     const tree = page.sort === 'path' || page.sort === 'document' ? V3_SORT_KEY[page.sort] : null;
     const key = ord && tree ? n => `${String(ord(n)).padStart(4, '0')} ${tree(n)}` : V3_SORT_KEY[page.sort];
     const dir = page.desc ? -1 : 1;
-    const matched = all.filter(n => v3Matches(n, filter, roots))
+    const noted = this._noted(fileKey, filter);
+    const matched = all.filter(n => v3Matches(n, filter, roots, noted))
       .map(n => ({ n, k: key(n) }))
       .sort((a, b) => dir * (cmp(a.k, b.k) || cmp(a.n.nodeId, b.n.nodeId)));
     const after = page.after;
@@ -594,6 +610,89 @@ class MemoryStore {
     return { node: this._nodeV3(node, [], false), prior };
   }
 
+  // --- v3 notes (same contract as PostgresStore) ------------------------------
+  /** Ids of the file's nodes with open notes, when `filter.hasNotes` is set; else null. */
+  _noted(fileKey, filter) {
+    if (typeof filter.hasNotes !== 'boolean') return null;
+    const ids = new Set();
+    for (const n of this.notes.values()) if (n.fileKey === fileKey && n.status === 'open') ids.add(n.nodeId);
+    return ids;
+  }
+
+  _noteOut(note) { const { seq, ...rest } = note; return clone(rest); }
+
+  async insertNote({ fileKey, nodeId, body, author, worker = null, at }) {
+    this._noteSeq += 1;
+    const note = {
+      noteId: randomUUID(), fileKey, nodeId, body, author, worker, status: 'open',
+      createdAt: at, updatedAt: at, resolvedAt: null, resolvedBy: null, commitRef: null, seq: this._noteSeq,
+    };
+    this.notes.set(note.noteId, note);
+    return this._noteOut(note);
+  }
+
+  async getNote(fileKey, noteId) {
+    const note = this.notes.get(noteId);
+    return note && note.fileKey === fileKey ? this._noteOut(note) : null;
+  }
+
+  async listNotes(fileKey, nodeIds, { status = 'open' } = {}) {
+    const ids = new Set(nodeIds);
+    return Array.from(this.notes.values())
+      .filter(n => n.fileKey === fileKey && ids.has(n.nodeId) && (status === 'all' || n.status === status))
+      .sort((a, b) => cmp(b.createdAt, a.createdAt) || b.seq - a.seq)
+      .map(n => this._noteOut(n));
+  }
+
+  async noteCounts(fileKey, nodeIds) {
+    const ids = new Set(nodeIds);
+    const counts = new Map();
+    for (const n of this.notes.values()) {
+      if (n.fileKey !== fileKey || !ids.has(n.nodeId) || n.status === 'dismissed') continue;
+      const c = counts.get(n.nodeId) || { nodeId: n.nodeId, open: 0, resolved: 0 };
+      c[n.status] += 1;
+      counts.set(n.nodeId, c);
+    }
+    return Array.from(counts.values());
+  }
+
+  _openNote(fileKey, noteId) {
+    const note = this.notes.get(noteId);
+    return note && note.fileKey === fileKey && note.status === 'open' ? note : null;
+  }
+
+  async editNote(fileKey, noteId, { body, at }) {
+    const note = this._openNote(fileKey, noteId);
+    if (!note) return null;
+    Object.assign(note, { body, updatedAt: at });
+    return this._noteOut(note);
+  }
+
+  async closeNote(fileKey, noteId, { status, by, at, commitRef = null }) {
+    const note = this._openNote(fileKey, noteId);
+    if (!note) return null;
+    Object.assign(note, { status, updatedAt: at, resolvedAt: at, resolvedBy: by, commitRef });
+    return this._noteOut(note);
+  }
+
+  async deleteNote(fileKey, noteId) {
+    const note = this._openNote(fileKey, noteId);
+    if (!note) return null;
+    this.notes.delete(noteId);
+    return this._noteOut(note);
+  }
+
+  async resolveNotes(fileKey, nodeIds, { by, at, commitRef = null }) {
+    const ids = new Set(nodeIds);
+    const out = [];
+    for (const note of Array.from(this.notes.values()).sort((a, b) => a.seq - b.seq)) {
+      if (note.fileKey !== fileKey || note.status !== 'open' || !ids.has(note.nodeId)) continue;
+      Object.assign(note, { status: 'resolved', updatedAt: at, resolvedAt: at, resolvedBy: by, commitRef });
+      out.push(this._noteOut(note));
+    }
+    return out;
+  }
+
   // --- v3 events (same contract as PostgresStore) -----------------------------
   /** Appends an event; ids are monotonic per store. Returns the stored row. */
   // --- v3 insights (same contract as PostgresStore) ---------------------------
@@ -605,13 +704,14 @@ class MemoryStore {
     const roots = this._roots(fileKey, filter);
     const root = filter.under && filter.under.length === 1 ? roots[0] || null : null;
     if (filter.under && !roots.length) return { all, byPath, root, matched: [] };
-    return { all, byPath, root, matched: all.filter(n => v3Matches(n, filter, roots)) };
+    const noted = this._noted(fileKey, filter);
+    return { all, byPath, root, matched: all.filter(n => v3Matches(n, filter, roots, noted)) };
   }
 
   async summarizeNodes(fileKey, filter) {
     const { byPath, root, matched } = this._v3Match(fileKey, filter);
     const byState = { dirty: 0, clean: 0, blocked: 0 };
-    const byChangeType = { added: 0, modified: 0, deleted: 0 };
+    const byChangeType = { added: 0, modified: 0, deleted: 0, requested: 0 };
     /** @type {Record<string, number>} */
     const byCategory = {};
     /** @type {Record<string, number>} */
@@ -921,6 +1021,8 @@ class MemoryStore {
         if (at >= mid) row.cleared += n; else row.clearedPrevious += n;
       } else if (e.type === 'sync.completed' && at >= mid) {
         row.dirtied += eventDirtyCount(e.data) - (hidden && e.data.counts && isCount(e.data.counts.libraryDirty) ? e.data.counts.libraryDirty : 0);
+      } else if (e.type === 'note.added' && at >= mid && e.data && e.data.dirtied === true) {
+        row.dirtied += 1;
       }
     }
     return [...out.values()];

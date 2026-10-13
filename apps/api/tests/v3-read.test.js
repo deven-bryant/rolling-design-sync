@@ -730,6 +730,8 @@ test('/v3/openapi.json is an OpenAPI 3 document listing every v3 route', async t
     '/v3/files/{fileKey}/claims/{claimId}/renew': ['post'], '/v3/files/{fileKey}/claims/{claimId}': ['delete'],
     '/v3/files/{fileKey}/events': ['get'],
     '/v3/files/{fileKey}/nodes/{nodeId}/block': ['post'], '/v3/files/{fileKey}/nodes/{nodeId}/unblock': ['post'],
+    '/v3/files/{fileKey}/nodes/{nodeId}/notes': ['get', 'post'], '/v3/files/{fileKey}/notes/{noteId}': ['delete', 'patch'],
+    '/v3/files/{fileKey}/notes/{noteId}/dismiss': ['post'],
     '/v3/files/{fileKey}/summary': ['get'], '/v3/files/{fileKey}/work': ['get'], '/v3/insights/trends': ['get'],
     '/v3/files/{fileKey}/hashes': ['get'], '/v3/files/{fileKey}/sync': ['post'], '/v3/files/{fileKey}/exists': ['post'],
     '/v3/session': ['get', 'delete', 'post'],
@@ -757,8 +759,9 @@ test('/v3/openapi.json is an OpenAPI 3 document listing every v3 route', async t
         // Sign-in itself takes no credential; GET reads the session cookie.
         assert.deepEqual(op.security ?? null, method === 'get' ? [{ sessionCookie: [] }] : null, route);
       } else {
+        const viewerWrite = route.includes('/notes');
         const security = pluginRoutes.includes(route) ? [{ pluginToken: [] }]
-          : method === 'get' ? [{ agentToken: [] }, { viewerToken: [] }, { sessionCookie: [] }] : [{ agentToken: [] }, { sessionCookie: [] }];
+          : method === 'get' || viewerWrite ? [{ agentToken: [] }, { viewerToken: [] }, { sessionCookie: [] }] : [{ agentToken: [] }, { sessionCookie: [] }];
         assert.deepEqual(op.security, security, route);
         assert.ok(op.responses['403'], `${route} documents 403`);
       }
@@ -805,6 +808,9 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     'delete /v3/files/{fileKey}/claims/{claimId}': ['release_claim', 'release'],
     'post /v3/files/{fileKey}/nodes/{nodeId}/block': ['block_node', 'block'],
     'post /v3/files/{fileKey}/nodes/{nodeId}/unblock': ['unblock_node', 'unblock'],
+    'post /v3/files/{fileKey}/nodes/{nodeId}/notes': ['add_note', 'notes add'],
+    'get /v3/files/{fileKey}/nodes/{nodeId}/notes': ['list_notes', 'notes list'],
+    'post /v3/files/{fileKey}/notes/{noteId}/dismiss': ['dismiss_note', 'notes dismiss'],
     'get /v3/files/{fileKey}/events': ['list_events', 'events'],
     'get /v3/resolve': ['resolve_url', 'resolve'],
   };
@@ -827,8 +833,8 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     assert.equal(op['x-rds-mcp'], undefined, key);
     assert.equal(op['x-rds-cli'], undefined, key);
   }
-  assert.equal(new Set(Object.values(expected).map(([tool]) => tool)).size, 18);
-  assert.equal(new Set(Object.values(expected).map(([, command]) => command)).size, 18);
+  assert.equal(new Set(Object.values(expected).map(([tool]) => tool)).size, 21);
+  assert.equal(new Set(Object.values(expected).map(([, command]) => command)).size, 21);
 
   const described = s => typeof s === 'string' && s.trim().length > 0;
   for (const [key, op] of ops.filter(([k]) => expected[k])) {

@@ -319,10 +319,17 @@ mode, then clear it like any node (`clear_nodes` with its `contentHash`).
    `contentHash`. Re-read that node (`get_node` /
    `node scripts/rds-agent.js nodes show 5:2 --file-key AbC123`), implement the
    newer change, and clear it with the new hash — never retry the old one.
-5. **Block** a node you can't implement instead of clearing it:
+5. **Notes.** A node with open `notes` (`changeType: "requested"` when the
+   design is otherwise built; work items count them) was noted by a person or
+   agent as not matching the design. Read the notes, fix the code to match the
+   design as they describe, then clear the node — clearing resolves its notes.
+   Add one yourself with `add_note` /
+   `node scripts/rds-agent.js notes add 5:2 --file-key AbC123 --body "…"`;
+   dismiss a wrong one with `dismiss_note` (it does not clear the node).
+6. **Block** a node you can't implement instead of clearing it:
    `block_node` / `node scripts/rds-agent.js block 5:2 --file-key AbC123 --reason "…"`.
 
-6. **Removed design.** A work item with `kind: "removed"` is a built screen
+7. **Removed design.** A work item with `kind: "removed"` is a built screen
    (or layer) that was deleted in Figma — one item per removed root, cleared
    once. Remove the code that rendered the root; keep the components in its
    `uses` with `livePlacements > 0` (still used elsewhere), consider removing

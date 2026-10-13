@@ -113,7 +113,7 @@ const clear = async (app, items) => ok(await app.inject({ method: 'POST', url: `
 const dirtyIds = async app => ok(await get(app, `/v3/files/${FK}/nodes?state=dirty&fields=nodeId&limit=200`)).nodes.map(n => n.nodeId).sort();
 
 const OLD_SCREEN = {
-  kind: 'removed', key: '2:1', name: 'Old screen', type: 'FRAME', nodeCount: 5,
+  kind: 'removed', key: '2:1', name: 'Old screen', type: 'FRAME', nodeCount: 5, notes: 0,
   categories: ['color', 'content', 'other'], changedProps: ['characters', 'childOrder', 'componentReference', 'fills'],
   uses: [
     { componentId: '6:5', name: 'Only', placementsRemoved: 1, livePlacements: 0 },

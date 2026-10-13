@@ -243,6 +243,17 @@ test('every tool round-trips: inputs → HTTP request → JSON result', async t 
   await expectCall('unblock_node', { nodeId: ROOT }, { method: 'POST', path: `${file}/nodes/${encodeURIComponent(ROOT)}/unblock`, body: {} });
   assert.equal((await get(`${file}/nodes/${encodeURIComponent(ROOT)}`)).state, 'dirty');
 
+  const noted = await expectCall('add_note', { nodeId: ROOT, body: 'The icon should be 24px', worker: 'agent-a' },
+    { method: 'POST', path: `${file}/nodes/${encodeURIComponent(ROOT)}/notes`, body: { body: 'The icon should be 24px', worker: 'agent-a' } });
+  assert.equal(noted.note.status, 'open');
+  assert.deepEqual(noted.node.notes.map(n => n.noteId), [noted.note.noteId]);
+  const notes = await same('list_notes', { nodeId: ROOT }, `${file}/nodes/${encodeURIComponent(ROOT)}/notes`);
+  assert.deepEqual(notes.notes.map(n => n.body), ['The icon should be 24px']);
+  const dismissed = await expectCall('dismiss_note', { noteId: noted.note.noteId, reason: 'Duplicate' },
+    { method: 'POST', path: `${file}/notes/${noted.note.noteId}/dismiss`, body: { reason: 'Duplicate' } });
+  assert.equal(dismissed.note.status, 'dismissed');
+  assert.deepEqual(dismissed.node.notes, []);
+
   const settings = await expectCall('update_file_settings', { settings: { trackLibraryComponents: true } },
     { method: 'PATCH', path: file, body: { settings: { trackLibraryComponents: true } } });
   assert.deepEqual(settings.settings, { trackLibraryComponents: true });

@@ -18,7 +18,7 @@ const TOKENS_TYPE = 'TOKENS';
 
 const isAbsolute = n => !!n.attrs && n.attrs.layoutPositioning === 'ABSOLUTE';
 
-const FILTER_KEYS = ['state', 'under', 'depth', 'type', 'changeType', 'changed', 'category', 'component', 'instance', 'name', 'since', 'claimed', 'worker', 'library'];
+const FILTER_KEYS = ['state', 'under', 'depth', 'type', 'changeType', 'changed', 'category', 'component', 'instance', 'name', 'since', 'claimed', 'worker', 'library', 'hasNotes'];
 const CLAIMED = ['true', 'false', 'mine'];
 const BOOLEANS = ['true', 'false'];
 
@@ -112,6 +112,7 @@ function buildFilter(p, nowIso) {
     since = new Date(t).toISOString();
   }
   const instance = p.instance === undefined ? [] : [...new Set(oneOf('instance', csv(p.instance), BOOLEANS))];
+  const hasNotes = p.hasNotes === undefined ? [] : [...new Set(oneOf('hasNotes', csv(p.hasNotes), BOOLEANS))];
   return {
     states: states.includes('all') ? ['dirty', 'clean', 'blocked'] : [...new Set(states)],
     under: p.under === undefined ? null : parseUnder(p.under),
@@ -128,7 +129,32 @@ function buildFilter(p, nowIso) {
     worker,
     now: nowIso,
     library: p.library === undefined ? null : /** @type {'include' | 'exclude' | 'only'} */ (oneOf('library', [String(p.library).trim()], schemas.LIBRARY_MODES)[0]),
+    hasNotes: hasNotes.length === 1 ? hasNotes[0] === 'true' : null,
   };
+}
+
+/**
+ * Annotates `rows` with their open `notes` (newest first) — and, with
+ * `resolved`, `notesResolved` (how many clears resolved) — from one batched
+ * read; returns `rows`.
+ *
+ * @param {import('../store/types').Store} store
+ */
+async function withNotes(store, fileKey, rows, { resolved = false } = {}) {
+  const live = rows.filter(Boolean);
+  if (!live.length) return rows;
+  const ids = [...new Set(live.map(n => n.nodeId))];
+  const byNode = new Map();
+  for (const note of await store.listNotes(fileKey, ids, { status: 'open' })) {
+    if (!byNode.has(note.nodeId)) byNode.set(note.nodeId, []);
+    byNode.get(note.nodeId).push(note);
+  }
+  const counts = resolved ? new Map((await store.noteCounts(fileKey, ids)).map(c => [c.nodeId, c.resolved])) : null;
+  for (const n of live) {
+    n.notes = byNode.get(n.nodeId) || [];
+    if (counts) n.notesResolved = counts.get(n.nodeId) || 0;
+  }
+  return rows;
 }
 
 /** Sets an unset `filter.library` to the file's default: include library nodes when it tracks them, else exclude them. */
@@ -483,6 +509,8 @@ function nodeFields(fileKey, n, nowIso, changes = 'diff') {
       deletedAt: n.deletedAt ?? null,
     },
   };
+  if (n.notes) out.notes = n.notes.map(note => ({ noteId: note.noteId, body: note.body, author: note.author, createdAt: note.createdAt }));
+  if (n.notesResolved !== undefined) out.notesResolved = n.notesResolved;
   if (n.descendants) out.descendants = n.descendants;
   if (n.usage) out.usage = n.usage;
   return out;
@@ -601,6 +629,7 @@ function registerReadRoutes(app, { store, now, libraryLinks = null }) {
     const list = async options => {
       const r = await store.listNodes(fileKey, filter, options);
       await withLibraryRefs(store, libraryLinks, fileKey, r.nodes);
+      await withNotes(store, fileKey, r.nodes);
       if (usage) await withUsage(store, fileKey, r.nodes);
       return r;
     };
@@ -666,6 +695,7 @@ function registerReadRoutes(app, { store, now, libraryLinks = null }) {
     await trackedFile(fileKey);
     const node = await findNode(fileKey, raw, { counts: true });
     await withLibraryRefs(store, libraryLinks, fileKey, [node]);
+    await withNotes(store, fileKey, [node], { resolved: true });
     await withUsage(store, fileKey, [node]);
     const all = { fileKey, ...nodeFields(fileKey, node, nowIso(), changes) };
     return fields ? pick(all, ['fileKey', ...fields]) : pick(all, ['fileKey', ...schemas.DETAIL_FIELDS, 'descendants', 'usage']);
@@ -675,6 +705,6 @@ function registerReadRoutes(app, { store, now, libraryLinks = null }) {
 }
 
 module.exports = {
-  registerReadRoutes, parseQ, filterParams, buildFilter, applyLibraryDefault, withLibraryRefs, withUsage, parseInclude, isVariableToken, libraryOut, nodeUrl, parseChanges, nodeFields, truncateChanges, pick, FILTER_KEYS, MAX_UNDER,
+  registerReadRoutes, parseQ, filterParams, buildFilter, applyLibraryDefault, withLibraryRefs, withNotes, withUsage, parseInclude, isVariableToken, libraryOut, nodeUrl, parseChanges, nodeFields, truncateChanges, pick, FILTER_KEYS, MAX_UNDER,
   singleRoot, resolveUnder, mergeReach, queryFingerprint, encodeCursor, decodeCursor, encodeOutlineCursor, decodeOutlineCursor, offsetAfter, parseExpand, planExpansion, expandScope, isAbsolute,
 };

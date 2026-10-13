@@ -11,7 +11,7 @@ const { withEvents, capIds } = require('../events/outbox');
 const { problem } = require('./problem');
 const address = require('./address');
 const schemas = require('./schemas');
-const { filterParams, buildFilter, applyLibraryDefault, withLibraryRefs, nodeFields, pick, FILTER_KEYS } = require('./read');
+const { filterParams, buildFilter, applyLibraryDefault, withLibraryRefs, withNotes, nodeFields, pick, FILTER_KEYS } = require('./read');
 
 const MAX_CLEAR_ITEMS = 500;
 const MAX_CLAIM_NODES = schemas.MAX_LIMIT;
@@ -270,6 +270,8 @@ function registerActionRoutes(app, { store, now, config, bus = null, libraryLink
           actor,
           data: { nodeIds: capIds(clearedIds), count: clearedIds.length, commitRef: commitRef || null, worker, ...(libraryCount ? { libraryCount } : {}) },
         });
+        const resolved = await tx.resolveNotes(fileKey, clearedIds, { by: actor, at: patch.implementedAt, commitRef: commitRef || null });
+        for (const note of resolved) await emit(fileKey, 'note.resolved', { actor, data: { nodeId: note.nodeId, noteId: note.noteId, author: note.author } });
       }
       return items.map((item, i) => {
         const node = nodes[i];
@@ -328,6 +330,7 @@ function registerActionRoutes(app, { store, now, config, bus = null, libraryLink
       return { claim: taken.claim, nodes: leased };
     });
     await withLibraryRefs(store, libraryLinks, fileKey, nodes);
+    await withNotes(store, fileKey, nodes);
     return {
       claimId: claim.claimId, worker: claim.worker, label: claim.label, expiresAt: claim.expiresAt,
       nodes: nodes.map(n => compact(fileKey, n, at)),
@@ -352,6 +355,7 @@ function registerActionRoutes(app, { store, now, config, bus = null, libraryLink
     if (!result) throw claimNotFound(claimId);
     const { claim, nodes } = result;
     await withLibraryRefs(store, libraryLinks, fileKey, nodes);
+    await withNotes(store, fileKey, nodes);
     return { claimId: claim.claimId, worker: claim.worker, label: claim.label, expiresAt: claim.expiresAt, nodes: nodes.map(n => compact(fileKey, n, at)) };
   });
 

@@ -195,7 +195,7 @@ for (const kind of Object.keys(STORES)) {
     assert.deepEqual(items.map(i => [i.kind ?? null, i.key]), [[null, '2:5'], ['removed', '2:3'], ['tokens', PRIMITIVES], ['tokens', SEMANTIC]]);
     const [, , primitives, semantic] = items;
     assert.deepEqual(semantic, {
-      kind: 'tokens', key: SEMANTIC, name: 'Semantic', type: 'VARIABLE_COLLECTION', nodeCount: 2,
+      kind: 'tokens', key: SEMANTIC, name: 'Semantic', type: 'VARIABLE_COLLECTION', nodeCount: 2, notes: 0,
       categories: ['token'], changedProps: ['value:Dark'], progress: { total: 4, clean: 2 },
       usage: { [ACTIVE]: { layers: 2 }, [HOVER]: { layers: 1 } }, nodeIds: [ACTIVE, HOVER], more: 0,
     });

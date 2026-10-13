@@ -90,6 +90,11 @@ than the path is `400 url_mismatch`; a URL pasted as the key is
 | `DELETE /v3/files/{fileKey}/claims/{claimId}` | — | `{claimId, worker, label, released: [nodeId]}` |
 | `POST /v3/files/{fileKey}/nodes/{nodeId}/block` | `{reason, worker?}` (reason 1–500) | `{fileKey, node, released: {claimId, worker} \| null}` — releases any lease |
 | `POST /v3/files/{fileKey}/nodes/{nodeId}/unblock` | `{worker?}` (body optional) | `{fileKey, node, unblocked}` (`false` if it wasn't blocked) |
+| `POST /v3/files/{fileKey}/nodes/{nodeId}/notes` | `{body, worker?}` (body 1–4000; viewer or agent) | `{fileKey, note, node}` — the note and the node's new state |
+| `GET /v3/files/{fileKey}/nodes/{nodeId}/notes` | `status?` (`open` default \| `all`), `url?` | `{fileKey, nodeId, notes: [note]}`, newest first |
+| `PATCH /v3/files/{fileKey}/notes/{noteId}` | `{body}` (author only, open notes) | `{fileKey, note, node}` |
+| `DELETE /v3/files/{fileKey}/notes/{noteId}` | — (author only, open notes) | `{fileKey, noteId, deleted: true, node}` |
+| `POST /v3/files/{fileKey}/notes/{noteId}/dismiss` | `{reason?}` (author or any agent; body optional) | `{fileKey, note, node}` |
 | `GET /v3/files/{fileKey}/events` | `after?`, `order?` (`asc` \| `desc`), `before?`, `types?`, `nodeId?`, `since?`, `limit?`, `format?` (JSON); `Last-Event-ID` (SSE), `url?` | `{fileKey, events: [event], nextAfter}` (`order=desc`: newest first, `{fileKey, events, nextBefore}`; page older with `before`), or a `text/event-stream` with `Accept: text/event-stream` |
 | `GET /v3/events` | Same event parameters plus `fileKey?` | `{events: [event], nextAfter}` (or `nextBefore` with `order=desc`) or SSE across files; every event includes `fileKey`, and on JSON pages `fileName` |
 | `GET /v3/files/{fileKey}/summary` | listing filters, `url?` | `{fileKey, total, byState, byChangeType, byCategory, byType, byFrame?}` |
@@ -113,6 +118,16 @@ a bearer token wins when both are sent. Cookie-authenticated writes need
 `X-RDS-Client: portal/…` and an `Origin` equal to the API's own origin, else
 `403 csrf_rejected`, and their events record `portal:<label>` as the actor
 (and `blocked_by` for blocks).
+
+Node notes (`docs/api-v3-design.md`, "Node notes"): viewer tokens and
+sessions may add notes and edit, delete or dismiss their own — their only
+writes. An open note keeps its node dirty (`changeType: requested`, category
+`note`, when the design is otherwise built) across re-syncs; a successful
+clear resolves the node's open notes in the same transaction (a stale one
+resolves nothing). Notes are stored in `node_note`
+(`supabase/migrations/20261014000000_api_v3_node_notes.sql`); events
+`note.added` / `note.resolved` / `note.dismissed` carry
+`{nodeId, noteId, author}`, never the body.
 
 The API also serves the built portal: `GET /` redirects to `/ui/`, and
 `GET /ui`/`/ui/*` serves `RDS_PORTAL_DIR` (`apps/portal/dist`) — immutable

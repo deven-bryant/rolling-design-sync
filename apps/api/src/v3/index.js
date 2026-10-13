@@ -23,6 +23,7 @@ const { registerStatusRoutes } = require('./status');
 const { registerTokenRoutes } = require('./tokens');
 const { registerClaimRoutes } = require('./claims');
 const { registerFileRoutes } = require('./files');
+const { registerNoteRoutes } = require('./notes');
 const schemas = require('./schemas');
 const { version: SERVER_VERSION } = require('../../package.json');
 
@@ -47,8 +48,12 @@ function checkSessionCsrf(request) {
   });
 }
 
+/** A viewer token or session may call this route: every read, and the writes flagged `config.viewerWrite` (notes). */
+const viewerMay = request => READ_METHODS.has(request.method) || !!(request.routeOptions && request.routeOptions.config && request.routeOptions.config.viewerWrite);
+
 /**
- * v3 auth: agent tokens call every route, viewer tokens the reads. A valid
+ * v3 auth: agent tokens call every route, viewer tokens the reads and the
+ * note writes. A valid
  * `rds_session` cookie (a minted portal session) does the same when no
  * `Authorization` header was sent — the bearer token wins when both are
  * present — and writes through a session pass `checkSessionCsrf`.
@@ -60,7 +65,7 @@ function v3Auth(config) {
       const found = readSession(request, config);
       if (found.status === 'ok') {
         const { session } = found;
-        if (session.role === AGENT || (session.role === VIEWER && READ_METHODS.has(request.method))) {
+        if (session.role === AGENT || (session.role === VIEWER && viewerMay(request))) {
           if (WRITE_METHODS.has(request.method)) checkSessionCsrf(request);
           request.auth = { role: session.role, label: session.label, session: true };
           return;
@@ -77,7 +82,7 @@ function v3Auth(config) {
       throw problem('unauthorized', 'Missing bearer token.', { hint: 'Send Authorization: Bearer <agent token>.' });
     }
     const role = roleOf(config, token, [AGENT, VIEWER]);
-    if (role === AGENT || (role === VIEWER && READ_METHODS.has(request.method))) {
+    if (role === AGENT || (role === VIEWER && viewerMay(request))) {
       request.auth = { role, token, label: authLabel(config, token) };
       return;
     }
@@ -100,7 +105,8 @@ function v3Auth(config) {
 /** Documents viewer access on the agent read routes: their `security` also lists `viewerToken`. */
 function documentViewerAccess(route) {
   const methods = [].concat(route.method);
-  if (!route.schema || !route.schema.security || !methods.every(m => READ_METHODS.has(m))) return;
+  const viewerWrite = !!(route.config && route.config.viewerWrite);
+  if (!route.schema || !route.schema.security || !(viewerWrite || methods.every(m => READ_METHODS.has(m)))) return;
   if (!route.schema.security.some(s => s.agentToken)) return;
   route.schema = { ...route.schema, security: [...route.schema.security, { viewerToken: [] }] };
 }
@@ -194,6 +200,7 @@ async function v3Routes(v3, { config, store, now, bus, nodes, libraryLinks }) {
     registerActionRoutes(authed, { store, now, config, bus, libraryLinks });
     registerEventRoutes(authed, { store, now, config, bus });
     registerBlockRoutes(authed, { store, now, bus, libraryLinks });
+    registerNoteRoutes(authed, { store, now, bus, libraryLinks });
     registerInsightRoutes(authed, { store, now, config, libraryLinks });
     registerStatusRoutes(authed, { store, config, bus, libraryLinks });
     tokenRoutes(authed);

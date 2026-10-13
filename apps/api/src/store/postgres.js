@@ -26,6 +26,11 @@ const mapFile = r => r && ({ fileKey: r.file_key, name: r.name, lastSyncAt: iso(
 const mapLibraryComponent = r => r && ({
   componentKey: r.component_key, fileKey: r.file_key ?? null, nodeId: r.node_id ?? null, name: r.name ?? null, resolvedAt: iso(r.resolved_at), error: r.error ?? null,
 });
+const mapNote = r => r && ({
+  noteId: r.note_id, fileKey: r.file_key, nodeId: r.node_id, body: r.body, author: r.author, worker: r.worker ?? null, status: r.status,
+  createdAt: iso(r.created_at), updatedAt: iso(r.updated_at), resolvedAt: iso(r.resolved_at), resolvedBy: r.resolved_by ?? null, commitRef: r.commit_ref ?? null,
+});
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const mapEvent = r => r && ({
   id: Number(r.id), fileKey: r.file_key, type: r.type, actor: r.actor ?? null, data: r.data ?? {}, createdAt: iso(r.created_at),
 });
@@ -71,7 +76,10 @@ const v3StateSql = a => ({
   dirty: `(${a}.dirty and ${a}.blocked_at is null)`,
   clean: `(not ${a}.dirty and ${a}.blocked_at is null and ${a}.deleted_at is null)`,
   blocked: `(${a}.blocked_at is not null)`,
+  requested: `(${a}.dirty and ${a}.blocked_at is null and ${a}.change_type = 'requested')`,
 });
+/** Node `a` has open notes. */
+const openNotesSql = a => `exists (select 1 from node_note nn where nn.file_key = ${a}.file_key and nn.node_id = ${a}.node_id and nn.status = 'open')`;
 const v3VisibleSql = a => `(${a}.dirty or ${a}.blocked_at is not null or ${a}.deleted_at is null)`;
 const v3CountsSql = a => {
   const s = v3StateSql(a);
@@ -113,6 +121,8 @@ function v3Where(fileKey, f, params) {
       where.push(`exists (select 1 from node u where u.file_key = ${fk} and u.node_id = any(${ids}::text[]) and n.path <@ u.path and nlevel(n.path) <= nlevel(u.path) + ${p(f.depth)}::int)`);
     }
   }
+  if (f.hasNotes === true) where.push(openNotesSql('n'));
+  else if (f.hasNotes === false) where.push(`not ${openNotesSql('n')}`);
   if (f.library === 'exclude') where.push('not n.library');
   else if (f.library === 'only') where.push('n.library');
   if (f.types.length) where.push(`n.node_type = any(${p(f.types)}::text[])`);
@@ -577,7 +587,7 @@ class PostgresStore {
          count(*) filter (where ${s.dirty})::int as dirty, count(*) filter (where ${s.clean})::int as clean,
          count(*) filter (where ${s.blocked})::int as blocked,
          count(*) filter (where ${ct} = 'added')::int as added, count(*) filter (where ${ct} = 'modified')::int as modified,
-         count(*) filter (where ${ct} = 'deleted')::int as deleted
+         count(*) filter (where ${ct} = 'deleted')::int as deleted, count(*) filter (where ${ct} = 'requested')::int as requested
        from node n where ${where}`, params);
     const { rows: categories } = await this.query(
       `select c as key, count(*)::int as count from node n cross join unnest(n.change_categories) c where ${where} group by c`, params);
@@ -599,7 +609,7 @@ class PostgresStore {
     return {
       total: t.total,
       byState: { dirty: t.dirty, clean: t.clean, blocked: t.blocked },
-      byChangeType: { added: t.added, modified: t.modified, deleted: t.deleted },
+      byChangeType: { added: t.added, modified: t.modified, deleted: t.deleted, requested: t.requested },
       byCategory: Object.fromEntries(categories.map(r => [r.key, r.count])),
       byType: Object.fromEntries(types.map(r => [r.key, r.count])),
       byFrame,
@@ -1029,6 +1039,69 @@ class PostgresStore {
     return { node: mapNodeV3(row), prior: { at: iso(row.prior_blocked_at), by: row.prior_blocked_by ?? null, reason: row.prior_blocked_reason ?? null } };
   }
 
+  // --- v3 notes ---------------------------------------------------------------
+  async insertNote({ fileKey, nodeId, body, author, worker = null, at }) {
+    const { rows: [row] } = await this.query(
+      `insert into node_note (file_key, node_id, body, author, worker, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $6) returning *`,
+      [fileKey, nodeId, body, author, worker, at]);
+    return mapNote(row);
+  }
+
+  async getNote(fileKey, noteId) {
+    if (!UUID_RE.test(noteId)) return null;
+    const { rows: [row] } = await this.query('select * from node_note where file_key = $1 and note_id = $2::uuid', [fileKey, noteId]);
+    return mapNote(row) || null;
+  }
+
+  async listNotes(fileKey, nodeIds, { status = 'open' } = {}) {
+    if (!nodeIds.length) return [];
+    const { rows } = await this.query(
+      `select * from node_note where file_key = $1 and node_id = any($2::text[]) and ($3::text is null or status = $3)
+       order by created_at desc, note_id desc`, [fileKey, nodeIds, status === 'all' ? null : status]);
+    return rows.map(mapNote);
+  }
+
+  async noteCounts(fileKey, nodeIds) {
+    if (!nodeIds.length) return [];
+    const { rows } = await this.query(
+      `select node_id, count(*) filter (where status = 'open')::int as open, count(*) filter (where status = 'resolved')::int as resolved
+       from node_note where file_key = $1 and node_id = any($2::text[]) and status <> 'dismissed' group by node_id`, [fileKey, nodeIds]);
+    return rows.map(r => ({ nodeId: r.node_id, open: r.open, resolved: r.resolved }));
+  }
+
+  async editNote(fileKey, noteId, { body, at }) {
+    if (!UUID_RE.test(noteId)) return null;
+    const { rows: [row] } = await this.query(
+      `update node_note set body = $3, updated_at = $4 where file_key = $1 and note_id = $2::uuid and status = 'open' returning *`,
+      [fileKey, noteId, body, at]);
+    return mapNote(row) || null;
+  }
+
+  async closeNote(fileKey, noteId, { status, by, at, commitRef = null }) {
+    if (!UUID_RE.test(noteId)) return null;
+    const { rows: [row] } = await this.query(
+      `update node_note set status = $3, updated_at = $5, resolved_at = $5, resolved_by = $4, commit_ref = $6
+       where file_key = $1 and note_id = $2::uuid and status = 'open' returning *`,
+      [fileKey, noteId, status, by, at, commitRef]);
+    return mapNote(row) || null;
+  }
+
+  async deleteNote(fileKey, noteId) {
+    if (!UUID_RE.test(noteId)) return null;
+    const { rows: [row] } = await this.query(
+      `delete from node_note where file_key = $1 and note_id = $2::uuid and status = 'open' returning *`, [fileKey, noteId]);
+    return mapNote(row) || null;
+  }
+
+  async resolveNotes(fileKey, nodeIds, { by, at, commitRef = null }) {
+    if (!nodeIds.length) return [];
+    const { rows } = await this.query(
+      `update node_note set status = 'resolved', updated_at = $3, resolved_at = $3, resolved_by = $4, commit_ref = $5
+       where file_key = $1 and node_id = any($2::text[]) and status = 'open' returning *`,
+      [fileKey, nodeIds, at, by, commitRef]);
+    return rows.map(mapNote).sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+  }
+
   // --- v3 events --------------------------------------------------------------
   /**
    * Appends an event. A transaction-scoped advisory lock per file makes a
@@ -1090,21 +1163,23 @@ class PostgresStore {
       `select f.file_key, f.name,
          coalesce(sum(e.n) filter (where e.type = 'nodes.cleared' and e.created_at >= $2), 0) as cleared,
          coalesce(sum(e.n) filter (where e.type = 'nodes.cleared' and e.created_at < $2), 0) as cleared_previous,
-         coalesce(sum(e.n) filter (where e.type = 'sync.completed' and e.created_at >= $2), 0) as dirtied
+         coalesce(sum(e.n) filter (where e.type in ('sync.completed', 'note.added') and e.created_at >= $2), 0) as dirtied
        from file f
        left join lateral (
          select ev.type, ev.created_at,
-           case when ev.type = 'nodes.cleared' then
+           case when ev.type = 'note.added' then case when ev.data->>'dirtied' = 'true' then 1 else 0 end
+           when ev.type = 'nodes.cleared' then
              case when jsonb_typeof(ev.data->'count') = 'number' then (ev.data->>'count')::numeric
                   when jsonb_typeof(ev.data->'nodeIds') = 'array' then jsonb_array_length(ev.data->'nodeIds') else 0 end
            else
              case when jsonb_typeof(ev.data->'counts'->'dirty') = 'number' then (ev.data->'counts'->>'dirty')::numeric else 0 end
            end - case when ${trackingSql('f')} then 0
+             when ev.type = 'note.added' then 0
              when ev.type = 'nodes.cleared' and jsonb_typeof(ev.data->'libraryCount') = 'number' then (ev.data->>'libraryCount')::numeric
              when ev.type = 'sync.completed' and jsonb_typeof(ev.data->'counts'->'libraryDirty') = 'number' then (ev.data->'counts'->>'libraryDirty')::numeric
              else 0 end as n
          from event ev
-         where ev.file_key = f.file_key and ev.type in ('nodes.cleared', 'sync.completed')
+         where ev.file_key = f.file_key and ev.type in ('nodes.cleared', 'sync.completed', 'note.added')
            and ev.created_at >= $1 and ev.created_at < $3
        ) e on true
        where ($4::text is null or f.file_key = $4)

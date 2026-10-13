@@ -41,23 +41,58 @@ function fileSettings(file) {
 const CAPTURE_VERSION = 2;
 
 const CLEAN_CHANGES = Object.freeze({ changeType: null, changedProps: [], changeCategories: [] });
+const REQUESTED_CHANGES = Object.freeze({ changeType: 'requested', changedProps: [], changeCategories: ['note'] });
 
 /**
  * The v3 change columns for a node row (docs/api-v3-design.md, "The change
  * model"): clean -> `null`/`[]`/`[]`; tombstoned -> `deleted`, diffed against
  * `null`; never implemented -> `added`; implemented -> `modified`, diffed
  * against `implementedAttrs` (empty when those are unknown, i.e. migrated).
+ * With `openNotes` (a live node's open note count): design-clean ->
+ * `requested`/`[]`/`['note']`; design-dirty -> its change plus category `note`.
  *
- * @param {{ dirty?: boolean, deletedAt?: string | null, implementedHash?: string | null, implementedAttrs?: object | null, attrs?: object | null }} row
+ * @param {{ dirty?: boolean, deletedAt?: string | null, implementedHash?: string | null, implementedAttrs?: object | null, attrs?: object | null, openNotes?: number }} row
  */
-function changeColumns({ dirty, deletedAt, implementedHash, implementedAttrs, attrs }) {
-  if (!dirty) return { ...CLEAN_CHANGES };
+function changeColumns({ dirty, deletedAt, implementedHash, implementedAttrs, attrs, openNotes = 0 }) {
+  const noted = openNotes > 0 && !deletedAt;
+  if (!dirty) return noted ? { ...REQUESTED_CHANGES, changedProps: [], changeCategories: ['note'] } : { ...CLEAN_CHANGES };
   const built = implementedAttrs ?? null;
   let changeType, diff;
   if (deletedAt) { changeType = 'deleted'; diff = core.diffAttrs(built, null); }
   else if (implementedHash === null || implementedHash === undefined) { changeType = 'added'; diff = core.diffAttrs(null, attrs ?? {}); }
   else { changeType = 'modified'; diff = built ? core.diffAttrs(built, attrs ?? {}) : null; }
-  return { changeType, changedProps: diff ? diff.changedProps : [], changeCategories: diff ? diff.categories : [] };
+  const categories = diff ? diff.categories : [];
+  return { changeType, changedProps: diff ? diff.changedProps : [], changeCategories: noted && !categories.includes('note') ? [...categories, 'note'] : categories };
+}
+
+/**
+ * A stored node's `dirty` and change columns given its `openNotes`: a live
+ * node is dirty when its content hash differs from its implemented hash or it
+ * has open notes; a tombstone keeps its stored `dirty`.
+ *
+ * @param {{ dirty?: boolean, deletedAt?: string | null, contentHash?: string | null, implementedHash?: string | null, implementedAttrs?: object | null, attrs?: object | null }} node
+ * @param {number} openNotes
+ */
+function noteState(node, openNotes) {
+  if (node.deletedAt) return { dirty: !!node.dirty, ...changeColumns(node) };
+  const dirty = node.contentHash !== node.implementedHash;
+  return { dirty: dirty || openNotes > 0, ...changeColumns({ ...node, dirty, openNotes }) };
+}
+
+/** Open note counts by node id for `nodeIds` (absent: none). */
+async function openNoteCounts(store, fileKey, nodeIds) {
+  if (!nodeIds.length) return new Map();
+  return new Map((await store.noteCounts(fileKey, nodeIds)).filter(c => c.open > 0).map(c => [c.nodeId, c.open]));
+}
+
+/** Rewrites a node's dirty / change columns after its open notes changed; returns the stored row (null if unknown). */
+async function refreshNoteState(store, fileKey, nodeId) {
+  const node = await store.getNode(fileKey, nodeId);
+  if (!node) return null;
+  const open = (await openNoteCounts(store, fileKey, [nodeId])).get(nodeId) || 0;
+  const want = noteState(node, open);
+  if (want.dirty === node.dirty && sameChanges(want, node)) return node;
+  return store.updateNode(fileKey, nodeId, want);
 }
 
 const sameChanges = (a, b) => (a.changeType ?? null) === (b.changeType ?? null)
@@ -244,6 +279,7 @@ class NodeSyncService {
       };
 
       const prior = new Map((await tx.getNodes(fileKey, [...new Set(rows.map(r => r.nodeId))])).map(n => [n.nodeId, n]));
+      const notes = await openNoteCounts(tx, fileKey, [...prior.keys()]);
       const counts = { uploaded: rows.length, changed: 0, added: 0, deleted: 0, baselined: 0, autoResolved: 0 };
       const upserted = [];
       const unblocked = [];
@@ -263,6 +299,7 @@ class NodeSyncService {
           implementedHash,
           implementedAttrs: existing ? existing.implementedAttrs : baselining ? row.attrs ?? {} : null,
           attrs: row.attrs ?? {},
+          openNotes: notes.get(row.nodeId) || 0,
         });
         let node = await tx.upsertNode(fileKey, {
           nodeId: row.nodeId,
@@ -279,8 +316,8 @@ class NodeSyncService {
           ...expected,
         }, markImplemented ? { implementedAt: nowIso } : null);
         // The upsert result is authoritative (a concurrent writer may have inserted the row meanwhile).
-        const actual = changeColumns(node);
-        if (!sameChanges(actual, node)) node = { ...(await tx.updateNode(fileKey, row.nodeId, actual)), baselined: node.baselined };
+        const actual = noteState(node, notes.get(row.nodeId) || 0);
+        if (actual.dirty !== node.dirty || !sameChanges(actual, node)) node = { ...(await tx.updateNode(fileKey, row.nodeId, actual)), baselined: node.baselined };
         prior.set(row.nodeId, node);
         upserted.push(node);
         if (node.parentId) reorderParents.add(node.parentId);
@@ -300,9 +337,11 @@ class NodeSyncService {
         }
       }
       let rebaselined = 0;
+      const tokenNotes = await openNoteCounts(tx, fileKey, [...tokenRows.values()].filter(idOnlyChange).map(n => n.nodeId));
       for (const n of tokenRows.values()) {
         if (!idOnlyChange(n)) continue;
-        const node = await tx.updateNode(fileKey, n.nodeId, { implementedHash: n.contentHash, implementedAttrs: n.attrs ?? {}, dirty: false, ...CLEAN_CHANGES });
+        const built = { ...n, implementedHash: n.contentHash, implementedAttrs: n.attrs ?? {} };
+        const node = await tx.updateNode(fileKey, n.nodeId, { implementedHash: n.contentHash, implementedAttrs: n.attrs ?? {}, ...noteState(built, tokenNotes.get(n.nodeId) || 0) });
         rebaselined += 1;
         dirtiedIds.delete(n.nodeId);
         if (changedIds.delete(n.nodeId)) counts.changed -= 1;
@@ -370,4 +409,4 @@ class NodeSyncService {
   }
 }
 
-module.exports = { NodeSyncService, changeColumns, sameChanges, fileSettings, DEFAULT_SETTINGS, EXISTS_MAX_IDS, CAPTURE_VERSION };
+module.exports = { NodeSyncService, changeColumns, noteState, openNoteCounts, refreshNoteState, sameChanges, fileSettings, DEFAULT_SETTINGS, EXISTS_MAX_IDS, CAPTURE_VERSION };

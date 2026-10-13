@@ -385,6 +385,35 @@ otherwise). Compact nodes carry: `nodeId`, `name`, `type`, `parentId`,
 - Renew/release act on the nodes still pointing at that `claim_id`; a node that
   was cleared or re-claimed since is left alone.
 
+### Node notes
+
+A person (viewer) or agent can note that a built node does not match the
+design: `POST …/nodes/{nodeId}/notes { body, worker? }` (body 1–4000 chars).
+
+- **State.** A node is dirty when its `content_hash` differs from its
+  `implemented_hash` *or* it has open notes. A design-clean node with open
+  notes reads `changeType: "requested"`, `changeCategories: ["note"]`,
+  `changedProps: []`; with design changes too, the design `changeType` wins
+  and `note` is added to its categories. Re-sync never cleans a node with open
+  notes; tombstoned nodes take no notes.
+- **Resolution.** Clearing a node resolves its open notes in the same
+  transaction (`resolved_by`, `commit_ref`); a stale clear resolves nothing.
+  Dismissing (author or any agent) or deleting (author only) the last open
+  note recomputes the node's state. Only the author edits an open note.
+- **Reads.** Nodes carry their open `notes: [{ noteId, body, author,
+  createdAt }]` (listing, detail, outline, markdown); `get_node` adds
+  `notesResolved`. `state=requested`, `changeType=requested` and
+  `hasNotes=true|false` filter; work items count open `notes`; summary counts
+  `requested`, and a note on a clean node counts as dirtied in trends.
+- **Events.** `note.added` (with `dirtied`), `note.resolved`, `note.dismissed`
+  (with `reason`) carry `{ nodeId, noteId, author }` — never the body.
+- **Storage.** `node_note` (`note_id`, `file_key`, `node_id`, `body`, `author`,
+  `worker`, `status` open | resolved | dismissed, `created_at`, `updated_at`,
+  `resolved_at`, `resolved_by`, `commit_ref`), with a partial index on open
+  notes per node.
+- **Auth.** These are the only writes viewer tokens and sessions may make;
+  session writes follow the usual CSRF rules.
+
 ## Supporting data
 
 - **`sync_event`** — one row per plugin sync: `file_key`, `root_node_id`,

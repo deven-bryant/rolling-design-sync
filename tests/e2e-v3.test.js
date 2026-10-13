@@ -576,7 +576,7 @@ test('v3 end to end: sync → files/scopes → listing → detail → claims →
     assert.ok(typo.validParameters.includes('state'));
 
     const badState = assertProblem(await files(fileKey, '/nodes', { query: { state: 'dirtyy' } }), 400, 'invalid_parameter');
-    assert.match(badState.hint, /dirty, clean, blocked, all/);
+    assert.match(badState.hint, /dirty, clean, blocked, requested, all/);
     assertProblem(await files(fileKey, '/nodes', { query: { limit: 0 } }), 400, 'invalid_parameter');
     assertProblem(await files('-', '/nodes'), 400, 'invalid_parameter');
 
@@ -712,13 +712,13 @@ test('v3 block: block releases the lease → listing shows blocked → unblock �
 test('v3 summary and work items after a sync; format=ndjson and format=md', async () => {
   const fileKey = newFileKey();
   await seed(fileKey);
-  const zero = { layout: 0, color: 0, typography: 0, effects: 0, component: 0, content: 0, structure: 0, prototype: 0, token: 0, other: 0 };
+  const zero = { layout: 0, color: 0, typography: 0, effects: 0, component: 0, content: 0, structure: 0, prototype: 0, token: 0, other: 0, note: 0 };
 
   assert.deepEqual(await ok(files(fileKey, '/summary')), {
     fileKey,
     total: 4,
     byState: { dirty: 4, clean: 0, blocked: 0 },
-    byChangeType: { added: 1, modified: 3, deleted: 0 },
+    byChangeType: { added: 1, modified: 3, deleted: 0, requested: 0 },
     byCategory: { ...zero, layout: 1, content: 1, typography: 1, effects: 1 },
     byType: { FRAME: 2, TEXT: 2 },
   });
@@ -736,7 +736,7 @@ test('v3 summary and work items after a sync; format=ndjson and format=md', asyn
     fileKey,
     group: 'component',
     items: [{
-      key: null, name: null, type: null, nodeCount: 4, categories: ['content', 'effects', 'layout', 'typography'],
+      key: null, name: null, type: null, nodeCount: 4, notes: 0, categories: ['content', 'effects', 'layout', 'typography'],
       changedProps: ['characters', 'cornerRadius', 'fontSize', 'paddingLeft'],
       changes: {
         '2:1': { paddingLeft: { built: 16, now: 24, category: 'layout' } },
@@ -794,7 +794,7 @@ test('v3 fresh sync: the default listing is compact — changedProps, no added v
   assert.equal(page.truncated, undefined);
   for (const n of page.nodes) {
     assert.deepEqual(Object.keys(n).sort(), ['blocked', 'changeType', 'changedProps', 'changesKnown', 'claim', 'component', 'contentHash', 'figmaUrl',
-      'isInstance', 'library', 'mainComponentId', 'name', 'nodeId', 'parentId', 'state', 'type']);
+      'isInstance', 'library', 'mainComponentId', 'name', 'nodeId', 'notes', 'parentId', 'state', 'type']);
     assert.equal(n.changeType, 'added');
   }
   assert.deepEqual(page.nodes.map(n => [n.nodeId, n.changedProps, n.isInstance, n.mainComponentId]), [
@@ -1435,4 +1435,31 @@ test('v3 design tokens: a tokens scope syncs, diffs per mode, groups per collect
   const gone = await batch(fileKey, { rootNodeId: 'tokens', deletedNodeIds: [active] });
   assert.equal(gone.tombstoned, 1);
   assert.deepEqual((await hashesUnder(fileKey, 'tokens')).tokens, {});
+});
+
+test('v3 notes: a viewer note makes a clean node requested, survives re-sync; only a real clear resolves it', async () => {
+  const fileKey = newFileKey();
+  await seed(fileKey);
+  const added = await ok(call('POST', `/v3/files/${fileKey}/nodes/3-1/notes`, { headers: viewer, body: { body: 'Label should be bold' } }));
+  assert.equal(added.node.state, 'dirty');
+  assert.equal(added.node.changeType, 'requested');
+  sameSet(await listIds(fileKey), [...DIRTY, '3:1']);
+  sameSet(await listIds(fileKey, { hasNotes: 'true' }), ['3:1']);
+  assert.equal((await node(fileKey, '3:1')).notes[0].body, 'Label should be bold');
+
+  await batch(fileKey, { fileName: 'E2E File', rootNodeId: ROOT, upserts: NOW });
+  assert.equal((await node(fileKey, '3:1')).changeType, 'requested');
+
+  const stale = await ok(call('POST', `/v3/files/${fileKey}/clear`, { body: { items: [{ nodeId: '3:1', contentHash: 'stale' }] } }));
+  assert.equal(stale.totals.cleared, 0);
+  assert.equal((await node(fileKey, '3:1')).notes.length, 1);
+  const cleared = await ok(call('POST', `/v3/files/${fileKey}/clear`, { body: { commitRef: 'e2e', items: [{ nodeId: '3:1', contentHash: hashOf(NOW, '3:1') }] } }));
+  assert.equal(cleared.totals.cleared, 1);
+  const after = await node(fileKey, '3:1');
+  assert.equal(after.state, 'clean');
+  assert.deepEqual(after.notes, []);
+  assert.equal(after.notesResolved, 1);
+  const [resolved] = (await ok(call('GET', `/v3/files/${fileKey}/nodes/3:1/notes`, { query: { status: 'all' } }))).notes;
+  assert.equal(resolved.status, 'resolved');
+  assert.equal(resolved.commitRef, 'e2e');
 });

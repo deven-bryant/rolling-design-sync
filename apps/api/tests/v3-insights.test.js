@@ -303,7 +303,7 @@ for (const kind of Object.keys(STORES)) {
       fileKey: FK,
       total: 5,
       byState: { dirty: 5, clean: 0, blocked: 0 },
-      byChangeType: { added: 1, modified: 4, deleted: 0 },
+      byChangeType: { added: 1, modified: 4, deleted: 0, requested: 0 },
       byCategory: cats({ color: 1, content: 2, typography: 1, effects: 1, layout: 1 }),
       byType: { COMPONENT: 1, FRAME: 1, INSTANCE: 1, TEXT: 2 },
     });
@@ -311,7 +311,7 @@ for (const kind of Object.keys(STORES)) {
     const all = ok(await get(app, `/v3/files/${FK}/summary?state=all`));
     assert.equal(all.total, 11);
     assert.deepEqual(all.byState, { dirty: 5, clean: 5, blocked: 1 });
-    assert.deepEqual(all.byChangeType, { added: 1, modified: 4, deleted: 0 });
+    assert.deepEqual(all.byChangeType, { added: 1, modified: 4, deleted: 0, requested: 0 });
     assert.deepEqual(all.byType, { COMPONENT: 2, COMPONENT_SET: 1, FRAME: 3, INSTANCE: 2, SECTION: 1, TEXT: 2 });
     assert.equal(all.byFrame, undefined);
 
@@ -357,9 +357,9 @@ for (const kind of Object.keys(STORES)) {
       fileKey: FK,
       group: 'component',
       items: [
-        { key: '6:1', name: 'Primary', type: 'COMPONENT', set: { id: '6:0', key: '6:0', name: 'Buttons' }, nodeCount: 2, categories: ['content', 'effects'], changedProps: ['characters', 'cornerRadius'],
+        { key: '6:1', name: 'Primary', type: 'COMPONENT', set: { id: '6:0', key: '6:0', name: 'Buttons' }, nodeCount: 2, notes: 0, categories: ['content', 'effects'], changedProps: ['characters', 'cornerRadius'],
           placements: 2, nodeIds: ['6:1', '7:1'], more: 0 },
-        { key: null, name: null, type: null, nodeCount: 3, categories: ['color', 'content', 'layout', 'typography'],
+        { key: null, name: null, type: null, nodeCount: 3, notes: 0, categories: ['color', 'content', 'layout', 'typography'],
           changedProps: ['characters', 'fills', 'fontSize', 'width'], placements: null, nodeIds: ['3:1', '3:2', '2:3'], more: 0 },
       ],
       nextCursor: null,
@@ -375,9 +375,9 @@ for (const kind of Object.keys(STORES)) {
     const byFrame = ok(await get(app, `/v3/files/${FK}/work?group=frame&under=1:1&changes=names`));
     assert.equal(byFrame.group, 'frame');
     assert.deepEqual(byFrame.items, [
-      { key: '2:1', name: 'Screen A', type: 'FRAME', nodeCount: 2, categories: ['color', 'content', 'typography'], changedProps: ['characters', 'fills', 'fontSize'], nodeIds: ['3:1', '3:2'], more: 0 },
-      { key: '2:3', name: 'Empty', type: 'FRAME', nodeCount: 1, categories: ['layout'], changedProps: ['width'], nodeIds: ['2:3'], more: 0 },
-      { key: '6:0', name: 'Buttons', type: 'COMPONENT_SET', set: { id: '6:0', key: '6:0', name: 'Buttons' }, nodeCount: 2, categories: ['content', 'effects'], changedProps: ['characters', 'cornerRadius'], nodeIds: ['6:1', '7:1'], more: 0 },
+      { key: '2:1', name: 'Screen A', type: 'FRAME', nodeCount: 2, notes: 0, categories: ['color', 'content', 'typography'], changedProps: ['characters', 'fills', 'fontSize'], nodeIds: ['3:1', '3:2'], more: 0 },
+      { key: '2:3', name: 'Empty', type: 'FRAME', nodeCount: 1, notes: 0, categories: ['layout'], changedProps: ['width'], nodeIds: ['2:3'], more: 0 },
+      { key: '6:0', name: 'Buttons', type: 'COMPONENT_SET', set: { id: '6:0', key: '6:0', name: 'Buttons' }, nodeCount: 2, notes: 0, categories: ['content', 'effects'], changedProps: ['characters', 'cornerRadius'], nodeIds: ['6:1', '7:1'], more: 0 },
     ]);
     const withRoot = ok(await get(app, `/v3/files/${FK}/work?group=frame&state=all&url=${encodeURIComponent(FIGMA(FK, '6:0'))}`));
     assert.deepEqual(withRoot.items.map(i => [i.key, i.nodeIds]), [['6:1', ['6:1', '7:1']], ['6:2', ['6:2']], [null, ['6:0']]]);
@@ -837,7 +837,7 @@ for (const kind of Object.keys(STORES)) {
     const s = ok(await get(app, `/v3/files/${XK}/summary?under=2:1&state=all&expand=instances`));
     assert.equal(s.total, EXPANDED.length);
     assert.deepEqual(s.byState, { dirty: 3, clean: 10, blocked: 0 });
-    assert.deepEqual(s.byChangeType, { added: 0, modified: 3, deleted: 0 });
+    assert.deepEqual(s.byChangeType, { added: 0, modified: 3, deleted: 0, requested: 0 });
     assert.deepEqual(s.byType, { COMPONENT: 3, FRAME: 1, INSTANCE: 6, RECTANGLE: 1, TEXT: 2 });
     assert.deepEqual(s.byFrame.map(f => [f.nodeId, f.count]), [['3:1', 1], ['3:2', 1], ['3:3', 1], ['3:4', 1]], 'byFrame counts only nodes under `under`');
     assert.deepEqual(s.expansion, { components: 3, truncated: false, unresolved: ['99:9'] });
