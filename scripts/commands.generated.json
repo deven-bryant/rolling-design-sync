@@ -118,7 +118,7 @@
           "in": "query",
           "name": "state",
           "type": "string",
-          "description": "Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state."
+          "description": "Comma-separated: dirty, clean, blocked, requested, all. Default dirty (changed since last built or with open notes, not blocked); `requested`: dirty only by open notes; `all` for every state."
         },
         {
           "flag": "under",
@@ -147,7 +147,18 @@
           "in": "query",
           "name": "changeType",
           "type": "string",
-          "description": "Comma-separated: added, modified, deleted (dirty nodes only)."
+          "description": "Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes)."
+        },
+        {
+          "flag": "has-notes",
+          "in": "query",
+          "name": "hasNotes",
+          "type": "string",
+          "enum": [
+            "true",
+            "false"
+          ],
+          "description": "true: only nodes with open notes; false: only nodes without."
         },
         {
           "flag": "changed",
@@ -161,7 +172,7 @@
           "in": "query",
           "name": "category",
           "type": "string",
-          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other."
+          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note."
         },
         {
           "flag": "component",
@@ -256,7 +267,7 @@
           "in": "query",
           "name": "fields",
           "type": "string",
-          "description": "Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, usage, via (`via` needs `expand=instances`)."
+          "description": "Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage, via (`via` needs `expand=instances`)."
         },
         {
           "flag": "include",
@@ -370,7 +381,7 @@
           "in": "query",
           "name": "fields",
           "type": "string",
-          "description": "Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, attrs, implementedAttrs, path, deleted, history, descendants, usage."
+          "description": "Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage."
         },
         {
           "flag": "changes",
@@ -510,7 +521,7 @@
           "name": "state",
           "object": "filter",
           "type": "string",
-          "description": "Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state."
+          "description": "Comma-separated: dirty, clean, blocked, requested, all. Default dirty (changed since last built or with open notes, not blocked); `requested`: dirty only by open notes; `all` for every state."
         },
         {
           "flag": "under",
@@ -543,7 +554,7 @@
           "name": "changeType",
           "object": "filter",
           "type": "string",
-          "description": "Comma-separated: added, modified, deleted (dirty nodes only)."
+          "description": "Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes)."
         },
         {
           "flag": "changed",
@@ -559,7 +570,7 @@
           "name": "category",
           "object": "filter",
           "type": "string",
-          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other."
+          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note."
         },
         {
           "flag": "component",
@@ -609,6 +620,18 @@
             "only"
           ],
           "description": "Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude."
+        },
+        {
+          "flag": "has-notes",
+          "in": "body",
+          "name": "hasNotes",
+          "object": "filter",
+          "type": "string",
+          "enum": [
+            "true",
+            "false"
+          ],
+          "description": "true: only nodes with open notes; false: only nodes without."
         }
       ],
       "body": true
@@ -735,7 +758,7 @@
     {
       "command": "events",
       "summary": "List file events",
-      "description": "The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).",
+      "description": "The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).",
       "method": "GET",
       "path": "/v3/files/{fileKey}/events",
       "flags": [
@@ -780,7 +803,7 @@
           "in": "query",
           "name": "types",
           "type": "string",
-          "description": "Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed."
+          "description": "Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed."
         },
         {
           "flag": "limit",
@@ -916,6 +939,124 @@
       "body": true
     },
     {
+      "command": "notes list",
+      "summary": "List a node's notes",
+      "description": "The notes on a node, newest first: its open ones (default), or `status=all` for resolved and dismissed ones too.",
+      "method": "GET",
+      "path": "/v3/files/{fileKey}/nodes/{nodeId}/notes",
+      "positionals": [
+        {
+          "name": "nodeId",
+          "description": "The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`."
+        }
+      ],
+      "flags": [
+        {
+          "flag": "file-key",
+          "in": "path",
+          "name": "fileKey",
+          "type": "string",
+          "required": true,
+          "description": "The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead."
+        },
+        {
+          "flag": "status",
+          "in": "query",
+          "name": "status",
+          "type": "string",
+          "enum": [
+            "open",
+            "all"
+          ],
+          "description": "open (default) or all."
+        },
+        {
+          "flag": "url",
+          "in": "query",
+          "name": "url",
+          "type": "string",
+          "description": "A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`."
+        }
+      ]
+    },
+    {
+      "command": "notes add",
+      "summary": "Add a note to a node",
+      "description": "Records that the built node does not match the design, with what is wrong. An open note makes the node dirty — `changeType: requested` (category `note`) when its design is otherwise built, or its design change plus category `note` — and keeps it dirty across re-syncs. The node is listed with its open `notes` until it is cleared (`clear_nodes` resolves its notes) or the note is dismissed. Viewer tokens and sessions may add notes too. Returns the note and the node's new state; a tombstoned node cannot take notes.",
+      "method": "POST",
+      "path": "/v3/files/{fileKey}/nodes/{nodeId}/notes",
+      "positionals": [
+        {
+          "name": "nodeId",
+          "description": "The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`."
+        }
+      ],
+      "flags": [
+        {
+          "flag": "file-key",
+          "in": "path",
+          "name": "fileKey",
+          "type": "string",
+          "required": true,
+          "description": "The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead."
+        },
+        {
+          "flag": "url",
+          "in": "query",
+          "name": "url",
+          "type": "string",
+          "description": "A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`."
+        },
+        {
+          "flag": "body",
+          "in": "body",
+          "name": "body",
+          "type": "string",
+          "required": true,
+          "description": "What does not match the design, as a person would say it (1–4000 chars)."
+        },
+        {
+          "flag": "worker",
+          "in": "body",
+          "name": "worker",
+          "type": "string",
+          "description": "Your worker id, recorded on the note."
+        }
+      ],
+      "body": true
+    },
+    {
+      "command": "notes dismiss",
+      "summary": "Dismiss a note",
+      "description": "Closes an open note without changing the build (e.g. it is wrong or already handled); the node's state is recomputed without it. Its author or any agent may dismiss it. To resolve a note by fixing the code, clear the node instead.",
+      "method": "POST",
+      "path": "/v3/files/{fileKey}/notes/{noteId}/dismiss",
+      "positionals": [
+        {
+          "name": "noteId",
+          "description": "The note id (`noteId` from `add_note` / `list_notes`)."
+        }
+      ],
+      "flags": [
+        {
+          "flag": "file-key",
+          "in": "path",
+          "name": "fileKey",
+          "type": "string",
+          "required": true,
+          "description": "The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead."
+        },
+        {
+          "flag": "reason",
+          "in": "body",
+          "name": "reason",
+          "type": "string",
+          "description": "Why it was dismissed."
+        }
+      ],
+      "body": true
+    },
+    {
       "command": "summary",
       "summary": "Summarize changes",
       "description": "Counts of the nodes the `list_nodes` filters match (default: dirty) by state, change type, change category and node type — a cheap overview before listing or planning work. With one `under` (e.g. a page), `byFrame` also counts per child frame of it (not with several `under` ids). With `expand=instances` the counts cover everything the scope uses — its nodes plus the main components its instances reach, transitively (`byFrame` still counts only nodes under `under`): how big is this screen, components included? Returns no nodes; use `list_nodes` or `list_work_items` for those.",
@@ -935,7 +1076,7 @@
           "in": "query",
           "name": "state",
           "type": "string",
-          "description": "Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state."
+          "description": "Comma-separated: dirty, clean, blocked, requested, all. Default dirty (changed since last built or with open notes, not blocked); `requested`: dirty only by open notes; `all` for every state."
         },
         {
           "flag": "under",
@@ -964,7 +1105,7 @@
           "in": "query",
           "name": "changeType",
           "type": "string",
-          "description": "Comma-separated: added, modified, deleted (dirty nodes only)."
+          "description": "Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes)."
         },
         {
           "flag": "changed",
@@ -978,7 +1119,7 @@
           "in": "query",
           "name": "category",
           "type": "string",
-          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other."
+          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note."
         },
         {
           "flag": "component",
@@ -1037,6 +1178,17 @@
             "only"
           ],
           "description": "Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude."
+        },
+        {
+          "flag": "has-notes",
+          "in": "query",
+          "name": "hasNotes",
+          "type": "string",
+          "enum": [
+            "true",
+            "false"
+          ],
+          "description": "true: only nodes with open notes; false: only nodes without."
         },
         {
           "flag": "q",
@@ -1102,7 +1254,7 @@
     {
       "command": "work",
       "summary": "List work items",
-      "description": "The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design's layer order, by each item's key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories. `group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last. Removed design (group=component and group=set): deleted nodes that were built are grouped under their removed root — the topmost deleted node — into one `kind: \"removed\"` item (after the component items, before `key: null`, in the roots' document order), unless that root sits inside a live component (then they are part of that component's item). For a removed item: remove the code that rendered the root; keep components in `uses` with `livePlacements > 0` (still used elsewhere), consider removing those with 0; heed `warnings`; then clear the root with `subtree: true` (`clear_nodes`) — one item clears the whole removed subtree. Deleted nodes that were never built are not work (they resolve at sync). Design tokens (group=component and group=set): the dirty tokens of each collection form one `kind: \"tokens\"` item (key = the collection node id, after the component and removed items, before `key: null`). For each token, update the code variable named by its `codeSyntax` (WEB, else the token name) for every changed `value:<Mode>`, then clear it. `include=usage` adds how many layers use each token. `group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged. `group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item. `include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar. `expand=instances` answers \"which components do I need to build for this screen, and how often does it use each?\": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`. Each item's `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.",
+      "description": "The nodes the `list_nodes` filters match (default: dirty) bundled into work items — the best way to plan: fix a component once and its instances follow. Items are in document order (the design's layer order, by each item's key node), paged by `cursor`; each has its node ids (`claim_nodes` takes them), changed properties and categories. `group=component` (default): by the nearest COMPONENT / COMPONENT_SET ancestor-or-self; nodes with none form one item with `key: null`, listed last. Removed design (group=component and group=set): deleted nodes that were built are grouped under their removed root — the topmost deleted node — into one `kind: \"removed\"` item (after the component items, before `key: null`, in the roots' document order), unless that root sits inside a live component (then they are part of that component's item). For a removed item: remove the code that rendered the root; keep components in `uses` with `livePlacements > 0` (still used elsewhere), consider removing those with 0; heed `warnings`; then clear the root with `subtree: true` (`clear_nodes`) — one item clears the whole removed subtree. Deleted nodes that were never built are not work (they resolve at sync). Design tokens (group=component and group=set): the dirty tokens of each collection form one `kind: \"tokens\"` item (key = the collection node id, after the component and removed items, before `key: null`). For each token, update the code variable named by its `codeSyntax` (WEB, else the token name) for every changed `value:<Mode>`, then clear it. `include=usage` adds how many layers use each token. `group=set`: merge variants of each known component set into one item named like the Figma set, with its Figma key, set reference and variants [{ key, name, nodeCount }]. Use this to build a design system. Standalone components and variants whose set is unavailable keep their component item; the default grouping is unchanged. `group=frame`: by the ancestor one level below `under` (required); the `under` node itself is in the `key: null` item. `include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar. `expand=instances` answers \"which components do I need to build for this screen, and how often does it use each?\": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`. Notes: a node someone noted as not matching the design is dirty with `changeType: requested` (category `note`) when its design is otherwise built, and grouped like any dirty node; `notes` counts an item's open notes. Read the notes (`get_node` or `list_notes`), fix the code to match the design as they describe, then clear the node — clearing resolves its notes. Each item's `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.",
       "method": "GET",
       "path": "/v3/files/{fileKey}/work",
       "flags": [
@@ -1119,7 +1271,7 @@
           "in": "query",
           "name": "state",
           "type": "string",
-          "description": "Comma-separated: dirty, clean, blocked, all. Default dirty (changed since last built, not blocked); `all` for every state."
+          "description": "Comma-separated: dirty, clean, blocked, requested, all. Default dirty (changed since last built or with open notes, not blocked); `requested`: dirty only by open notes; `all` for every state."
         },
         {
           "flag": "under",
@@ -1148,7 +1300,7 @@
           "in": "query",
           "name": "changeType",
           "type": "string",
-          "description": "Comma-separated: added, modified, deleted (dirty nodes only)."
+          "description": "Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes)."
         },
         {
           "flag": "changed",
@@ -1162,7 +1314,7 @@
           "in": "query",
           "name": "category",
           "type": "string",
-          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other."
+          "description": "Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note."
         },
         {
           "flag": "component",
@@ -1221,6 +1373,17 @@
             "only"
           ],
           "description": "Library nodes (remote main components / sets and their layers): include, exclude, or only them. Default: include when the file tracks library components (`settings.trackLibraryComponents`), else exclude."
+        },
+        {
+          "flag": "has-notes",
+          "in": "query",
+          "name": "hasNotes",
+          "type": "string",
+          "enum": [
+            "true",
+            "false"
+          ],
+          "description": "true: only nodes with open notes; false: only nodes without."
         },
         {
           "flag": "q",

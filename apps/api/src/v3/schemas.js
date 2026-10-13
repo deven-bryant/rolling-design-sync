@@ -7,9 +7,9 @@
  */
 const core = require('@rolling-design-sync/core');
 
-const CATEGORIES = [...Object.keys(core.CATEGORY_RULES), 'other'];
-const STATES = ['dirty', 'clean', 'blocked', 'all'];
-const CHANGE_TYPES = ['added', 'modified', 'deleted'];
+const CATEGORIES = [...Object.keys(core.CATEGORY_RULES), 'other', 'note'];
+const STATES = ['dirty', 'clean', 'blocked', 'requested', 'all'];
+const CHANGE_TYPES = ['added', 'modified', 'deleted', 'requested'];
 const SORTS = ['document', 'path', 'updatedAt', 'name'];
 const MAX_LIMIT = 1000;
 const DEFAULT_LIMIT = 100;
@@ -24,9 +24,9 @@ const MAX_EXPAND_DEPTH = 20;
 const EXPANSION_LIMIT = 500;
 
 const COMPACT_FIELDS = ['nodeId', 'name', 'type', 'parentId', 'isInstance', 'mainComponentId', 'component', 'state', 'changeType', 'changedProps',
-  'changes', 'changesKnown', 'contentHash', 'figmaUrl', 'library', 'claim', 'blocked'];
+  'changes', 'changesKnown', 'contentHash', 'figmaUrl', 'library', 'claim', 'blocked', 'notes'];
 const FULL_FIELDS = [...COMPACT_FIELDS, 'attrs', 'implementedAttrs', 'path'];
-const DETAIL_FIELDS = [...FULL_FIELDS, 'deleted', 'history'];
+const DETAIL_FIELDS = [...FULL_FIELDS, 'deleted', 'notesResolved', 'history'];
 const NODE_FIELDS = [...DETAIL_FIELDS, 'descendants', 'usage'];
 /** `include=` values of the node listing (comma-separated). */
 const LISTING_INCLUDES = ['counts', 'usage'];
@@ -123,6 +123,12 @@ const node = {
     blocked: nullable('object', {
       properties: { reason: nullable('string'), by: nullable('string'), at: { type: 'string' } },
     }),
+    notes: {
+      type: 'array',
+      description: 'Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built).',
+      items: { type: 'object', properties: { noteId: { type: 'string' }, body: { type: 'string' }, author: { type: 'string' }, createdAt: { type: 'string' } } },
+    },
+    notesResolved: { type: 'integer', description: '`get_node` only: how many of its notes clears have resolved.' },
     attrs: nullable('object', { additionalProperties: true }),
     implementedAttrs: nullable('object', { additionalProperties: true }),
     path: { type: 'array', items: { type: 'string' }, description: 'Ancestor node ids, root first, ending with this node.' },
@@ -206,11 +212,12 @@ const urlQuery = str("A Figma link (figma.com/design/<fileKey>/…?node-id=1-2).
 const listQuery = {
   type: 'object',
   properties: {
-    state: str(`Comma-separated: ${STATES.join(', ')}. Default dirty (changed since last built, not blocked); \`all\` for every state.`),
+    state: str(`Comma-separated: ${STATES.join(', ')}. Default dirty (changed since last built or with open notes, not blocked); \`requested\`: dirty only by open notes; \`all\` for every state.`),
     under: str("Only this node's subtree, the node included (1:2 or 1-2). Several subtrees: up to 50 comma-separated ids (1:2,1:5) for their union, each node once, in the order given. Defaults to the `url` link's node-id."),
     depth: { type: 'integer', minimum: 0, description: 'Needs `under`: at most this many levels below it — below each root when there are several (1 = direct children).' },
     type: str('Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME.'),
-    changeType: str(`Comma-separated: ${CHANGE_TYPES.join(', ')} (dirty nodes only).`),
+    changeType: str(`Comma-separated: ${CHANGE_TYPES.join(', ')} (dirty nodes only; \`requested\`: built as designed but with open notes).`),
+    hasNotes: { type: 'string', enum: ['true', 'false'], description: 'true: only nodes with open notes; false: only nodes without.' },
     changed: str('Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*).'),
     category: str(`Comma-separated change categories: ${CATEGORIES.join(', ')}.`),
     component: str('Comma-separated main component ids: the components and all their instances.'),

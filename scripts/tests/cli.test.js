@@ -453,6 +453,7 @@ test('every generated command sends its method and path to buildApp and succeeds
   const { cli, calls } = await server(t);
   const claim = await cli(['claim', '--file-key', FK, '--worker', 'w1', '--node-ids', '2:1']);
   const { claimId } = claim.json;
+  const noted = await cli(['notes', 'add', '2-1', '--file-key', FK, '--body', 'Padding is too tight']);
   const argv = {
     'files ls': ['files', 'ls'],
     'files show': ['files', 'show', '--file-key', FK],
@@ -469,6 +470,9 @@ test('every generated command sends its method and path to buildApp and succeeds
     events: ['events', '--file-key', FK, '--after', '0'],
     block: ['block', '2-2', '--file-key', FK, '--reason', 'Waiting on a token'],
     unblock: ['unblock', '2-2', '--url', FIGMA],
+    'notes add': ['notes', 'add', '2-2', '--file-key', FK, '--body', 'Wrong color'],
+    'notes list': ['notes', 'list', '2-2', '--file-key', FK, '--status', 'all'],
+    'notes dismiss': ['notes', 'dismiss', noted.json.note.noteId, '--file-key', FK, '--reason', 'Duplicate'],
     summary: ['summary', '--file-key', FK],
     work: ['work', '--file-key', FK, '--group', 'component'],
     trends: ['trends', '--window-days', '7', '--file-key', FK],

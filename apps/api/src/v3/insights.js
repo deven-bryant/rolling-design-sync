@@ -149,6 +149,7 @@ const workItem = {
       items: { type: 'object', properties: { key: { type: 'string', description: 'Figma component key (node id when unavailable).' }, name: nullableString, nodeCount: { type: 'integer' } } },
     },
     nodeCount: { type: 'integer' },
+    notes: { type: 'integer', description: 'Open notes on the listed `nodeIds`: read them on the nodes (`get_node` / `list_notes`), fix the code to match the design as they describe, then clear the nodes — clearing resolves them.' },
     categories: { type: 'array', items: { type: 'string' } },
     changedProps: { type: 'array', items: { type: 'string' } },
     changes: {
@@ -194,6 +195,7 @@ const work = format.withFormat({
     '`include=progress` adds { total, clean } for each returned item across all states, independent of state= and the nodeIds cap. Use clean / total for a progress bar.',
     '`expand=instances` answers "which components do I need to build for this screen, and how often does it use each?": with `under` = the screen, items also cover every main component its instances reach (transitively, each once; filters apply after expansion), and with `group=component` each item has `placementsInScope` beside the file-wide `placements`. '
       + 'Nodes of expanded components that are outside `under` fall in the `key: null` item with `group=frame`.',
+    'Notes: a node someone noted as not matching the design is dirty with `changeType: requested` (category `note`) when its design is otherwise built, and grouped like any dirty node; `notes` counts an item\'s open notes. Read the notes (`get_node` or `list_notes`), fix the code to match the design as they describe, then clear the node — clearing resolves its notes.',
     'Each item\'s `changes` maps its listed node ids to their diffs (`changes=auto`: modified and deleted nodes; `diff`: added ones too; `names`: none — `changedProps` only). Values over 1 KB are `{ truncated: true, bytes }` and the page has `truncated: true`; `get_node` returns them whole.',
   ].join(' '),
   tags, security,
@@ -242,6 +244,7 @@ const itemOut = (group, expanded) => i => ({
   ...(i.set ? { set: i.set } : {}),
   ...(i.variants ? { variants: i.variants } : {}),
   nodeCount: i.nodeCount,
+  ...(i.kind === 'library' ? {} : { notes: i.notes ?? 0 }),
   categories: i.categories,
   changedProps: i.changedProps,
   ...(i.changes ? { changes: i.changes } : {}),
@@ -334,6 +337,9 @@ function registerInsightRoutes(app, { store, now, config, libraryLinks = null })
     const keyRows = r.items.map((i, x) => (i.kind ? null : rows.get(keyIds[x][0]) || rows.get(keyIds[x][1]) || null));
     await withLibraryRefs(store, libraryLinks, fileKey, [...new Set(keyRows.filter(n => n && n.library))]);
     r.items.forEach((i, x) => { if (keyRows[x] && keyRows[x].library) i.libraryRef = keyRows[x].libraryRef; });
+    const listed = [...new Set(r.items.flatMap(i => i.nodeIds || []))];
+    const open = new Map((listed.length ? await store.noteCounts(fileKey, listed) : []).map(c => [c.nodeId, c.open]));
+    r.items.forEach(i => { i.notes = (i.nodeIds || []).reduce((sum, id) => sum + (open.get(id) || 0), 0); });
     if (!refs.length) return r;
     const pending = refs.filter(i => !page.after || i.k > page.after.k);
     const merged = [...r.items, ...pending].sort(byK);

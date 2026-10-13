@@ -138,7 +138,7 @@ const listed = (names, max = MAX_PROPS) => names.slice(0, max).join(', ') + (nam
 
 function changeText(n) {
   if (!n.changeType) return n.state === 'clean' ? 'clean' : 'no design changes';
-  if (n.changeType === 'added' || n.changeType === 'deleted') return n.changeType;
+  if (n.changeType === 'added' || n.changeType === 'deleted' || n.changeType === 'requested') return n.changeType;
   if (!n.changesKnown || !n.changes) return 'modified (changes unknown)';
   const parts = Object.entries(n.changes).map(([prop, c]) => `${escape(prop)} ${valueText(c.built)} → ${valueText(c.now)}`);
   if (!parts.length) return 'modified';
@@ -148,7 +148,8 @@ function changeText(n) {
 /** `- [ ] **Name** (TYPE) — paddingLeft 16 → 24; fills color/brand/500 → color/brand/600 · [Figma](url)` for a node (`nodeFields` shape). */
 function nodeLine(n) {
   const blocked = n.blocked ? ` · blocked: ${escape(truncate(n.blocked.reason || 'no reason'))}` : '';
-  return `- [${n.state === 'clean' ? 'x' : ' '}] **${escape(n.name ?? n.nodeId)}** (${escape(n.type ?? 'NODE')}) — ${changeText(n)}${blocked}${n.figmaUrl ? ` · [Figma](${n.figmaUrl})` : n.library ? ' · library' : ''}`;
+  const notes = n.notes && n.notes.length ? n.notes.map(note => ` · note by ${escape(note.author)}: ${escape(truncate(note.body))}`).join('') : '';
+  return `- [${n.state === 'clean' ? 'x' : ' '}] **${escape(n.name ?? n.nodeId)}** (${escape(n.type ?? 'NODE')}) — ${changeText(n)}${blocked}${notes}${n.figmaUrl ? ` · [Figma](${n.figmaUrl})` : n.library ? ' · library' : ''}`;
 }
 
 /** One checklist line for a work item (route shape). */
@@ -160,7 +161,8 @@ function itemLine(fileKey, group, i) {
   const url = i.key === null || i.kind === 'removed' || i.kind === 'tokens' || core.isTokenNodeId(i.key) ? null : i.library ? i.figmaUrl ?? null : core.link(fileKey, group === 'set' && i.set ? i.set.id : i.key);
   const link = i.key === null || i.kind === 'removed' || !url ? '' : ` · [Figma](${url})`;
   const nodes = i.kind === 'library' ? 'reference (not tracked)' : `${i.nodeCount} node${i.nodeCount === 1 ? '' : 's'}`;
-  return `- [${i.kind === 'library' ? 'x' : ' '}] ${title} — ${nodes}${props}${placements}${uses}${link}`;
+  const notes = i.notes ? ` · ${i.notes} note${i.notes === 1 ? '' : 's'}` : '';
+  return `- [${i.kind === 'library' ? 'x' : ' '}] ${title} — ${nodes}${props}${notes}${placements}${uses}${link}`;
 }
 
 /** One list line for an event (route shape). */
@@ -178,6 +180,7 @@ const firstProps = props => `${props.length}: ${props.slice(0, OUTLINE_PROPS).ma
 function outlineStatus(n) {
   let text = n.changeType ?? 'clean';
   if (n.changeType === 'modified' && n.changedProps.length) text += ` (${firstProps(n.changedProps)})`;
+  if (n.notes && n.notes.length) text += ` · ${plural(n.notes.length, 'note')}: ${plain(n.notes[0].body).slice(0, 80)}`;
   return n.state === 'blocked' ? `${text} · blocked` : text;
 }
 
@@ -276,7 +279,8 @@ function itemOutline(group, i) {
   const placements = i.placements === undefined || i.placements === null ? '' : ` · ${plural(i.placements, 'placement')}`;
   const inScope = i.placementsInScope === undefined || i.placementsInScope === null ? '' : ` · ${i.placementsInScope} in scope`;
   const uses = i.uses && i.uses.length ? ` · uses ${plural(i.uses.length, 'component')} (${i.uses.filter(u => u.livePlacements === 0).length} unused elsewhere)` : '';
-  return `${title} · ${nodes}${props}${placements}${inScope}${uses}`;
+  const notes = i.notes ? ` · ${plural(i.notes, 'note')}` : '';
+  return `${title} · ${nodes}${props}${notes}${placements}${inScope}${uses}`;
 }
 
 /**
