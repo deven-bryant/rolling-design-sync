@@ -7,6 +7,13 @@ are cut.
 
 ## [Unreleased]
 
+### Changed
+- **npm releases are staged.** The release workflow now stages
+  `@rolling-design-sync/core`, `agent-cli` and `mcp` with `npm stage publish`;
+  each version goes live only after a maintainer approves it with 2FA. 0.14.0
+  was not published to npm (its Docker image and GitHub release are
+  unaffected); this release carries the same code to npm.
+
 ## [0.14.0] - 2026-10-13
 
 Design tokens, node notes, removed-design and library-component handling, and

@@ -1,7 +1,8 @@
 name: Release
 
-# On a v* tag: test and build, publish the npm packages with trusted publishing
-# (OIDC, no stored token) and create the GitHub Release from CHANGELOG.md.
+# On a v* tag: test and build, stage the npm packages with trusted publishing
+# (OIDC, no stored token) for a maintainer to approve with 2FA, and create the
+# GitHub Release from CHANGELOG.md.
 # The container image is built by docker.yml. See RELEASING.md.
 
 on:
@@ -72,12 +73,12 @@ jobs:
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
-      - name: npm with trusted publishing (>= 11.5.1)
+      - name: npm with trusted publishing and staged publishing (>= 11.15.0)
         run: npm install -g npm@11.20.0
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - name: Publish core, agent-cli, mcp (skips versions already published)
+      - name: Stage core, agent-cli, mcp for maintainer approval (skips versions already published)
         run: bash .github/scripts/npm-publish.sh packages/core scripts apps/mcp
 
   npm-skipped:

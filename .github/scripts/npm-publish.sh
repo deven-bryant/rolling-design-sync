@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Publish each package directory to npm unless its version is already there.
+# Stage each package directory on npm unless its version is already published.
 #
 #   npm-publish.sh [--dry-run] <dir>...
 #
-# Directories are published in the order given (dependencies first). A
+# `npm stage publish` (npm >= 11.15) uploads the version to the package's
+# staging queue; it goes live only after a maintainer approves it with 2FA
+# (npmjs.com → the package → Staged Packages, or `npm stage approve`).
+# Directories are staged in the order given (dependencies first). A
 # prerelease version (X.Y.Z-tag) goes to the `next` dist-tag instead of
 # `latest`. --dry-run checks the registry the same way but runs
 # `npm publish --dry-run`, so it needs no npm credentials.
@@ -53,10 +56,10 @@ for dir in "$@"; do
     *-*) args+=(--tag next) ;;
   esac
   if [ "$dry_run" = true ]; then
-    echo "dry run: would publish $name@$version from $dir"
+    echo "dry run: would stage $name@$version from $dir"
     (cd "$dir" && npm publish --dry-run --provenance=false "${args[@]}")
   else
-    echo "publish: $name@$version from $dir"
-    (cd "$dir" && npm publish "${args[@]}")
+    echo "stage: $name@$version from $dir"
+    (cd "$dir" && npm stage publish "${args[@]}")
   fi
 done

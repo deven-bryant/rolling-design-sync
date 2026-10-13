@@ -61,7 +61,7 @@ jobs:
           echo "$out"
           grep -qx 'skip: npm@10.0.0 is already published' <<< "$out"
           for name in core agent-cli mcp; do
-            grep -Eq "^(skip: |dry run: would publish )@rolling-design-sync/$name@" <<< "$out"
+            grep -Eq "^(skip: |dry run: would stage )@rolling-design-sync/$name@" <<< "$out"
           done
       - name: CHANGELOG has a section for the current version
         run: bash .github/scripts/changelog-section.sh "$(node -p 'require("./package.json").version')" > /dev/null
