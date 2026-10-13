@@ -82,7 +82,7 @@ function childParams(under: string, filters: NodeFilters): NodeListParams {
 const clean = (params: NodeListParams) =>
   Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '')) as Record<string, string | number>;
 
-const listNodes = (fileKey: string, params: NodeListParams, signal?: AbortSignal) =>
+export const listNodes = (fileKey: string, params: NodeListParams, signal?: AbortSignal) =>
   api.get('/v3/files/{fileKey}/nodes', { path: { fileKey }, query: clean(params), signal });
 
 /** The file's header data: name, last sync and counts. */
