@@ -1436,3 +1436,30 @@ test('v3 design tokens: a tokens scope syncs, diffs per mode, groups per collect
   assert.equal(gone.tombstoned, 1);
   assert.deepEqual((await hashesUnder(fileKey, 'tokens')).tokens, {});
 });
+
+test('v3 notes: a viewer note makes a clean node requested, survives re-sync; only a real clear resolves it', async () => {
+  const fileKey = newFileKey();
+  await seed(fileKey);
+  const added = await ok(call('POST', `/v3/files/${fileKey}/nodes/3-1/notes`, { headers: viewer, body: { body: 'Label should be bold' } }));
+  assert.equal(added.node.state, 'dirty');
+  assert.equal(added.node.changeType, 'requested');
+  sameSet(await listIds(fileKey), [...DIRTY, '3:1']);
+  sameSet(await listIds(fileKey, { hasNotes: 'true' }), ['3:1']);
+  assert.equal((await node(fileKey, '3:1')).notes[0].body, 'Label should be bold');
+
+  await batch(fileKey, { fileName: 'E2E File', rootNodeId: ROOT, upserts: NOW });
+  assert.equal((await node(fileKey, '3:1')).changeType, 'requested');
+
+  const stale = await ok(call('POST', `/v3/files/${fileKey}/clear`, { body: { items: [{ nodeId: '3:1', contentHash: 'stale' }] } }));
+  assert.equal(stale.totals.cleared, 0);
+  assert.equal((await node(fileKey, '3:1')).notes.length, 1);
+  const cleared = await ok(call('POST', `/v3/files/${fileKey}/clear`, { body: { commitRef: 'e2e', items: [{ nodeId: '3:1', contentHash: hashOf(NOW, '3:1') }] } }));
+  assert.equal(cleared.totals.cleared, 1);
+  const after = await node(fileKey, '3:1');
+  assert.equal(after.state, 'clean');
+  assert.deepEqual(after.notes, []);
+  assert.equal(after.notesResolved, 1);
+  const [resolved] = (await ok(call('GET', `/v3/files/${fileKey}/nodes/3:1/notes`, { query: { status: 'all' } }))).notes;
+  assert.equal(resolved.status, 'resolved');
+  assert.equal(resolved.commitRef, 'e2e');
+});
