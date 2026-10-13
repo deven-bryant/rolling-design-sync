@@ -165,6 +165,9 @@ function loadConfig(env = process.env, envOptions = {}) {
     rateLimit: rateLimits(rds, embedded),
     // Optional Figma REST token for library links (library.js); never logged or returned.
     figmaToken: rds('FIGMA_TOKEN') || '',
+    // Postgres mode (schemaCheck.js): probe the schema at startup; optionally apply the missing migrations.
+    schemaCheck: !/^off$/i.test(rds('SCHEMA_CHECK') || ''),
+    autoMigrate: /^true$/i.test(rds('AUTO_MIGRATE') || ''),
   };
 }
 
