@@ -10,6 +10,7 @@ import type {
 } from 'react';
 import { cx, Text, VisuallyHidden } from '../primitives';
 import { Badge } from '../Badge';
+import { Icon } from '../primitives/Icon';
 import { Checkbox, type CheckboxProps } from '../Checkbox';
 import { ProgressBar } from '../ProgressBar';
 
@@ -305,6 +306,20 @@ export function ActionsCell({ children, className, ...rest }: ActionsCellProps) 
   return (
     <TableCell className={cx('w-0 px-xl', className)} {...rest}>
       <div className="flex items-center gap-xxs">{children}</div>
+    </TableCell>
+  );
+}
+
+export interface FileTypeCellProps extends Omit<TableCellProps, 'children'> {
+  /** Names the icon (e.g. `2 notes`); without it the cell is empty. */
+  label?: string;
+}
+
+/** `Type=File type icon`: a document glyph, e.g. a node's notes; empty without a `label`. */
+export function FileTypeCell({ label, className, ...rest }: FileTypeCellProps) {
+  return (
+    <TableCell className={cx('py-lg', className)} {...rest}>
+      {label && <Icon name="file-04" label={label} className="size-10 text-fg-quaternary" strokeWidth={1.5} />}
     </TableCell>
   );
 }
