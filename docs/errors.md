@@ -33,9 +33,11 @@ v1 and v2 routes keep their `{ "error": "..." }` bodies.
 | [`invalid_token`](#invalid-token) | 401 | Invalid bearer token |
 | [`wrong_token_class`](#wrong-token-class) | 403 | Wrong token class |
 | [`csrf_rejected`](#csrf-rejected) | 403 | Request rejected |
+| [`forbidden`](#forbidden) | 403 | Forbidden |
 | [`file_not_found`](#file-not-found) | 404 | File not found |
 | [`node_not_found`](#node-not-found) | 404 | Node not found |
 | [`claim_not_found`](#claim-not-found) | 404 | Claim not found |
+| [`note_not_found`](#note-not-found) | 404 | Note not found |
 | [`route_not_found`](#route-not-found) | 404 | Route not found |
 | [`rate_limited`](#rate-limited) | 429 | Too many requests |
 | [`internal_error`](#internal-error) | 500 | Internal server error |
@@ -170,6 +172,16 @@ the first layer and these headers are the second.
   set `Origin`; if your UI is served by something other than this API, use a
   bearer token instead of the cookie.
 
+<a id="forbidden"></a>
+## `forbidden`
+
+**403.** The token is valid for this route, but not for this note: only a note's author may
+edit or delete it, and only its author or an agent may dismiss it.
+
+- **Usual cause:** a viewer (or another agent) editing someone else's note.
+- **Fix:** ask the author, add a new note instead, or — for an agent — fix the code and
+  clear the node, which resolves its notes.
+
 <a id="file-not-found"></a>
 ## `file_not_found`
 
@@ -200,6 +212,15 @@ the first layer and these headers are the second.
 - **Fix:** use the `claimId` returned by `POST /v3/files/{fileKey}/claims` on the same
   file, or take a new claim. A released or expired claim still renews or releases, but
   only the nodes still under it; renew before `expiresAt` to keep a lease.
+
+<a id="note-not-found"></a>
+## `note_not_found`
+
+**404.** No note with this id exists on this file (or it was deleted).
+
+- **Usual cause:** a mistyped `noteId`, one from another file, or a note its author deleted.
+- **Fix:** use a `noteId` from `POST …/nodes/{nodeId}/notes` or
+  `GET …/nodes/{nodeId}/notes?status=all` on the same file.
 
 <a id="route-not-found"></a>
 ## `route_not_found`
