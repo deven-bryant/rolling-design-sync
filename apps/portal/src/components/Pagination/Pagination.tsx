@@ -1,5 +1,5 @@
 import type { HTMLAttributes, Ref } from 'react';
-import { cx, Icon, variants } from '../primitives';
+import { cx, Icon, variants, VisuallyHidden } from '../primitives';
 
 export const paginationStyles = variants({
   base: 'flex items-center gap-lg',
@@ -55,7 +55,7 @@ export interface CursorPaginationProps extends PaginationBaseProps {
 
 export type PaginationProps = NumberedPaginationProps | CursorPaginationProps;
 
-/** Figma `Pagination` (Type=Card default, Shape=Square): Previous / page numbers / Next, or cursor-only Previous / Page n / Next. */
+/** Figma `Pagination` (Type=Card default, Shape=Square): Previous / page numbers / Next, or cursor-only Previous / current page number / Next. */
 export function Pagination({
   page,
   onPageChange,
@@ -77,8 +77,9 @@ export function Pagination({
         </button>
       </div>
       {pageCount === undefined ? (
-        <span className="text-sm font-medium text-secondary" aria-live="polite">
-          Page {page}
+        <span className={cx(paginationNumberStyles({ current: true }), 'cursor-default')} aria-live="polite">
+          <VisuallyHidden>Page </VisuallyHidden>
+          {page}
         </span>
       ) : (
         <ul className="flex gap-xxs">
