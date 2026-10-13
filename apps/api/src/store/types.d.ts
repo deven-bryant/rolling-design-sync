@@ -70,6 +70,12 @@ export interface Claim { claimId: string; fileKey: string; worker: string; label
 export interface ClaimListing extends Claim { fileName: string | null; nodeCount: number; nodeIds: string[]; nodes: any }
 export interface ClaimResult { claim: Claim; nodes: V3Node[] }
 
+export interface NodeNote {
+  noteId: string; fileKey: string; nodeId: string; body: string; author: string; worker: string | null;
+  status: 'open' | 'resolved' | 'dismissed'; createdAt: string; updatedAt: string;
+  resolvedAt: string | null; resolvedBy: string | null; commitRef: string | null;
+}
+
 export interface StoredEvent { id: number; fileKey: string; type: string; actor: string | null; data: Record<string, any>; createdAt: string }
 
 /** A v3 listing filter (v3/read.js `buildFilter`, `states` expanded); `regions` comes from `expand=instances`. */
@@ -92,6 +98,8 @@ export interface V3Filter {
   now: string;
   /** Library nodes: `include` them, `exclude` them or list `only` them; null = the file's default (v3/read.js `applyLibraryDefault`). */
   library: 'include' | 'exclude' | 'only' | null;
+  /** Only nodes with (true) or without (false) open notes; null/absent = either. */
+  hasNotes?: boolean | null;
   /** Ltree paths of the scope (null = the whole file) and each expanded component, in order. */
   regions?: (string | null)[];
 }
@@ -171,6 +179,18 @@ export interface Store {
   blockNode(fileKey: string, nodeId: string, block: { reason: string | null; by: string | null; at: string }):
     Promise<{ node: V3Node; released: { claimId: string; worker: string } | null } | null>;
   unblockNode(fileKey: string, nodeId: string): Promise<{ node: V3Node; prior: { at: string | null; by: string | null; reason: string | null } } | null>;
+
+  // --- notes (newest first; edit / close / delete touch open notes only and return null otherwise)
+  insertNote(note: { fileKey: string; nodeId: string; body: string; author: string; worker?: string | null; at: string }): Promise<NodeNote>;
+  getNote(fileKey: string, noteId: string): Promise<NodeNote | null>;
+  listNotes(fileKey: string, nodeIds: string[], options?: { status?: 'open' | 'all' }): Promise<NodeNote[]>;
+  /** Open and resolved note counts of the nodes that have any (dismissed notes are not counted). */
+  noteCounts(fileKey: string, nodeIds: string[]): Promise<{ nodeId: string; open: number; resolved: number }[]>;
+  editNote(fileKey: string, noteId: string, edit: { body: string; at: string }): Promise<NodeNote | null>;
+  closeNote(fileKey: string, noteId: string, close: { status: 'resolved' | 'dismissed'; by: string; at: string; commitRef?: string | null }): Promise<NodeNote | null>;
+  deleteNote(fileKey: string, noteId: string): Promise<NodeNote | null>;
+  /** Resolves the open notes of `nodeIds`; returns them, oldest first. */
+  resolveNotes(fileKey: string, nodeIds: string[], resolve: { by: string; at: string; commitRef?: string | null }): Promise<NodeNote[]>;
 
   // --- events
   insertEvent(event: { fileKey: string; type: string; actor?: string | null; data?: Record<string, any>; createdAt?: string | null }): Promise<StoredEvent>;
