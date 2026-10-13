@@ -107,6 +107,10 @@ test(`portal screenshots (${theme})`, async ({ page }) => {
   await drawer.getByRole('tab', { name: 'Change List' }).click();
   await expect(drawer.getByRole('table', { name: 'Change list' })).toBeVisible();
   await capture(page, 'portal-node-changes', suffix);
+  await drawer.getByRole('button', { name: 'Add change note', exact: true }).click();
+  await drawer.getByRole('textbox', { name: /Description/ }).fill('The balance should use display-sm, not display-xs.');
+  await capture(page, 'portal-node-notes', suffix);
+  await drawer.getByRole('button', { name: 'Cancel' }).click();
   await page.keyboard.press('Escape');
 
   await go(page, `/ui/files/${APP.fileKey}/nodes?under=tokens`);

@@ -90,6 +90,9 @@ export function useWorkLive(fileKey: string): StreamState {
   const claims = () => refresh(workKeys.claims(fileKey));
   return useEventStream(fileKey ? `/v3/files/${encodeURIComponent(fileKey)}/events` : null, {
     'sync.completed': work,
+    'note.added': work,
+    'note.resolved': work,
+    'note.dismissed': work,
     'nodes.cleared': () => {
       work();
       claims();

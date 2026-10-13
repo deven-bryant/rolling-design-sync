@@ -57,6 +57,7 @@ export function scopePrompt({ fileKey, scopes }: { fileKey: string; scopes: read
     `   - MCP: list_nodes { "fileKey": "${fileKey}", "under": "<nodeId>" } or get_node { "fileKey": "${fileKey}", "nodeId": "<nodeId>" }`,
     `   - CLI: ${cli} nodes ls --file-key ${fileKey} --under <nodeId>, or ${cli} nodes show <nodeId> --file-key ${fileKey}`,
     '4. Implement the changes and commit them.',
+    '   An item with notes has nodes a person noted as not matching the design (changeType "requested" when the design is otherwise built): read the notes on the node (get_node), fix the code to match the design as they describe; clearing resolves them.',
     '5. Clear every node you built with its contentHash and the commit SHA:',
     `   - MCP: clear_nodes { "fileKey": "${fileKey}", "items": [{ "nodeId": "<nodeId>", "contentHash": "<contentHash>" }], "commitRef": "<sha>" }`,
     `   - CLI: ${cli} clear <nodeId>=<contentHash> … --file-key ${fileKey} --commit-ref <sha>`,

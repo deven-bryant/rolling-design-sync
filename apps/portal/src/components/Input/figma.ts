@@ -39,3 +39,18 @@ export const figmaHelpIcon = {
     },
   ],
 } as const;
+
+/** Figma `Textarea input field` (`Type=Default`, `Destructive=False` only; focus, invalid and disabled come from React Aria). */
+export const figmaTextarea = {
+  component: 'Textarea',
+  setId: '173:32742',
+  setKey: '84c88e76110f6ffecf337182b2ddbf1e25c0c14a',
+  properties: { Label: 'label', 'Required *': 'required', 'Hint text': 'hint', 'Help icon': 'tooltip' },
+  variants: [
+    {
+      nodeId: '173:32743',
+      name: 'Type=Default, Destructive=False, State=Placeholder',
+      code: '<Textarea label="Description" required tooltip="…" placeholder="Enter a description..." />',
+    },
+  ],
+} as const;

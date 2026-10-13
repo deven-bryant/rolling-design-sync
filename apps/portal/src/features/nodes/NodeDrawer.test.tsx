@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act } from '@testing-library/react';
 import { toastQueue, ToastRegion } from '../../components/Toast';
+import { expectNoAxeViolations } from '../../test/axe';
 import { LIBRARY_LINKS_OFF, NodeDrawer, type NodeDrawerProps } from './NodeDrawer';
 import { breadcrumbs, claimC1, divider, FILE, mockApi, node, renderWithClient, treeRoutes, type Route } from './test-fixtures';
 
@@ -345,5 +346,148 @@ describe('NodeDrawer', () => {
   it('renders nothing without a node', () => {
     renderDrawer({ nodeId: null });
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('NodeDrawer notes', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    act(() => toastQueue.clear());
+  });
+
+  const mine = { noteId: 'n1', body: 'The divider should be 2px.', author: 'portal:devin', createdAt: new Date(Date.now() - 120_000).toISOString() };
+  const theirs = { noteId: 'n2', body: 'Wrong gap.', author: 'portal:alex', createdAt: new Date(Date.now() - 120_000).toISOString() };
+  const requested = { ...detail, state: 'dirty', changeType: 'requested', changedProps: [], changes: {}, notes: [mine, theirs] };
+  const noted = (n: object) => (call: { method: string; path: string }) => (call.method === 'GET' && call.path === `/v3/files/${FILE}/nodes/1:3` ? n : undefined);
+
+  const openList = async () => {
+    const dialog = within(await screen.findByRole('dialog'));
+    await userEvent.setup().click(await dialog.findByRole('tab', { name: 'Change List' }));
+    return dialog;
+  };
+
+  it('adds a note from the Add Change view: validation, counter, toast, back to the list', async () => {
+    const added = { ...detail, state: 'dirty', changeType: 'requested', notes: [mine] };
+    const { api } = renderWithToasts(
+      { role: 'viewer' },
+      drawerRoutes(call =>
+        call.method === 'POST' && call.path === `/v3/files/${FILE}/nodes/1:3/notes` ? { fileKey: FILE, note: { ...mine, status: 'open' }, node: added } : undefined,
+      ),
+    );
+    const dialog = await openList();
+    const user = userEvent.setup();
+    await user.click(dialog.getByRole('button', { name: 'Add change note' }));
+    await user.click(dialog.getByRole('button', { name: 'Add Change Note' }));
+    expect(dialog.getByText('Describe what doesn’t match the design.')).toBeTruthy();
+    expect(api.find('POST', `/v3/files/${FILE}/nodes/1:3/notes`)).toHaveLength(0);
+    await user.type(dialog.getByRole('textbox', { name: /Description/ }), 'The divider should be 2px.');
+    expect(dialog.getByText('26/4000')).toBeTruthy();
+    await user.click(dialog.getByRole('button', { name: 'Add Change Note' }));
+    expect(await screen.findByText('Note added — the node needs a change')).toBeTruthy();
+    expect(api.find('POST', `/v3/files/${FILE}/nodes/1:3/notes`)[0]?.body).toEqual({ body: 'The divider should be 2px.' });
+    expect(await dialog.findByRole('table', { name: 'Change list' })).toBeTruthy();
+    expect(dialog.getByRole('button', { name: 'Add change note' }).getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('rejects a note over 4000 characters', async () => {
+    renderDrawer({ role: 'viewer' });
+    const dialog = await openList();
+    const user = userEvent.setup();
+    await user.click(dialog.getByRole('button', { name: 'Add change note' }));
+    const box = dialog.getByRole('textbox', { name: /Description/ });
+    await user.click(box);
+    await user.paste('x'.repeat(4001));
+    await user.click(dialog.getByRole('button', { name: 'Add Change Note' }));
+    expect(dialog.getByText('Keep the note to 4000 characters (4001 now).')).toBeTruthy();
+  });
+
+  it('shows a requested node’s open notes instead of “no changes”, with Requested and note badges', async () => {
+    renderDrawer({}, drawerRoutes(noted(requested)));
+    const dialog = await openList();
+    const notes = within(dialog.getByRole('region', { name: 'Open notes' }));
+    const first = within(notes.getByRole('listitem', { name: 'Note by devin' }));
+    expect(first.getByText('The divider should be 2px.')).toBeTruthy();
+    expect(first.getByText('2 min ago')).toBeTruthy();
+    expect(dialog.queryByText('Nothing changed since it was last cleared.')).toBeNull();
+    const status = within(dialog.getByRole('group', { name: 'Status' }));
+    expect(status.getByText('Requested')).toBeTruthy();
+    expect(status.getByText('note')).toBeTruthy();
+  });
+
+  it('gives the author Edit / Delete / Dismiss, an agent Dismiss only on others’ notes', async () => {
+    renderDrawer({}, drawerRoutes(noted(requested)));
+    const dialog = await openList();
+    const first = within(dialog.getByRole('listitem', { name: 'Note by devin' }));
+    const second = within(dialog.getByRole('listitem', { name: 'Note by alex' }));
+    expect(await first.findByRole('button', { name: 'Edit' })).toBeTruthy();
+    expect(first.getByRole('button', { name: 'Delete' })).toBeTruthy();
+    expect(first.getByRole('button', { name: 'Dismiss' })).toBeTruthy();
+    expect(second.queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(second.queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(second.getByRole('button', { name: 'Dismiss' })).toBeTruthy();
+  });
+
+  it('a viewer can add notes but not dismiss others’ (and keeps no agent actions)', async () => {
+    renderDrawer({ role: 'viewer' }, drawerRoutes(noted(requested)));
+    const dialog = await openList();
+    expect(dialog.getByRole('button', { name: 'Add change note' })).toBeTruthy();
+    const second = within(dialog.getByRole('listitem', { name: 'Note by alex' }));
+    expect(second.queryByRole('button', { name: 'Dismiss' })).toBeNull();
+    expect(dialog.queryByRole('button', { name: 'Block…' })).toBeNull();
+  });
+
+  it('edits, deletes and (after confirming) dismisses notes', async () => {
+    const { api } = renderWithToasts(
+      {},
+      drawerRoutes(call => {
+        if (call.path === `/v3/files/${FILE}/notes/n1` && (call.method === 'PATCH' || call.method === 'DELETE')) return { fileKey: FILE, note: mine };
+        if (call.method === 'POST' && call.path === `/v3/files/${FILE}/notes/n2/dismiss`) return { fileKey: FILE, note: theirs };
+        return noted(requested)(call);
+      }),
+    );
+    const dialog = await openList();
+    const user = userEvent.setup();
+    const first = () => within(dialog.getByRole('listitem', { name: 'Note by devin' }));
+    await user.click(await first().findByRole('button', { name: 'Edit' }));
+    const box = first().getByRole('textbox', { name: 'Edit note' });
+    await user.clear(box);
+    await user.type(box, 'The divider should be 3px.');
+    await user.click(first().getByRole('button', { name: 'Save note' }));
+    await waitFor(() => expect(api.find('PATCH', `/v3/files/${FILE}/notes/n1`)[0]?.body).toEqual({ body: 'The divider should be 3px.' }));
+    expect(await screen.findByText('Note updated')).toBeTruthy();
+
+    await user.click(first().getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(api.find('DELETE', `/v3/files/${FILE}/notes/n1`)).toHaveLength(1));
+
+    const second = within(dialog.getByRole('listitem', { name: 'Note by alex' }));
+    await user.click(second.getByRole('button', { name: 'Dismiss' }));
+    const confirm = within(second.getByRole('alertdialog', { name: 'Dismiss this note?' }));
+    expect(api.find('POST', `/v3/files/${FILE}/notes/n2/dismiss`)).toHaveLength(0);
+    await user.click(confirm.getByRole('button', { name: 'Dismiss note' }));
+    await waitFor(() => expect(api.find('POST', `/v3/files/${FILE}/notes/n2/dismiss`)).toHaveLength(1));
+    expect(await screen.findByText('Note dismissed')).toBeTruthy();
+  });
+
+  it('lists note added / resolved / dismissed in the history', async () => {
+    const noteEvents = [
+      { id: 12, fileKey: FILE, type: 'note.dismissed', actor: 'devin', data: { nodeId: '1:3', noteId: 'n2', reason: 'Matches now' }, createdAt: claimC1.createdAt },
+      { id: 11, fileKey: FILE, type: 'note.resolved', actor: 'devin', data: { nodeId: '1:3', noteId: 'n1', commitRef: 'abcdef1234567' }, createdAt: claimC1.createdAt },
+      { id: 10, fileKey: FILE, type: 'note.added', actor: 'portal:alex', data: { nodeId: '1:3', noteId: 'n1' }, createdAt: claimC1.createdAt },
+    ];
+    renderDrawer({}, drawerRoutes(call => (call.method === 'GET' && call.path === `/v3/files/${FILE}/events` ? { fileKey: FILE, events: noteEvents } : undefined)));
+    const feed = within(await screen.findByRole('dialog'));
+    expect(await feed.findByText('Added a note: the built node doesn’t match the design.')).toBeTruthy();
+    expect(feed.getByText('Resolved a note by clearing it at abcdef1.')).toBeTruthy();
+    expect(feed.getByText('Dismissed a note: Matches now')).toBeTruthy();
+  });
+
+  it('has no axe violations with notes and in Add Change', async () => {
+    renderDrawer({}, drawerRoutes(noted(requested)));
+    const dialog = await openList();
+    await dialog.findByRole('button', { name: 'Edit' });
+    const el = await screen.findByRole('dialog');
+    await expectNoAxeViolations(el);
+    await userEvent.setup().click(dialog.getByRole('button', { name: 'Add change note' }));
+    await expectNoAxeViolations(el);
   });
 });

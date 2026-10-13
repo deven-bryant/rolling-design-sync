@@ -55,7 +55,7 @@ export function filterParams(filters: NodeFilters, { search = true } = {}): Node
 
 /** A compact listing's fields plus `attrs`: token rows show their resolved type and code name. */
 export const TOKEN_FIELDS =
-  'nodeId,name,type,parentId,isInstance,mainComponentId,component,state,changeType,changedProps,changes,changesKnown,contentHash,figmaUrl,library,claim,blocked,attrs';
+  'nodeId,name,type,parentId,isInstance,mainComponentId,component,state,changeType,changedProps,changes,changesKnown,contentHash,figmaUrl,library,claim,blocked,notes,attrs';
 
 /** `fields` for a level under the design-tokens scope (`tokens`, `tokens:<collectionKey>`). */
 const tokenFields = (under: string | number | undefined) =>
@@ -172,6 +172,12 @@ export function useSessionRole(): SessionRole {
   return session.data?.role === 'agent' ? 'agent' : 'viewer';
 }
 
+/** The author name the API records for the signed-in session's notes (`portal:<label>`); undefined until known. */
+export function useSessionAuthor(): string | undefined {
+  const session = useQuery({ queryKey: ['session'], queryFn: () => getSession(), retry: false });
+  return session.data?.label ? `portal:${session.data.label}` : undefined;
+}
+
 type NodePatch = Partial<NodeItem> | ((node: NodeLike) => Partial<NodeItem>);
 
 const patchOne = <N extends NodeLike>(node: N, ids: ReadonlySet<string> | null, patch: NodePatch, match?: (node: NodeLike) => boolean): N => {
@@ -260,5 +266,56 @@ export function useUnblockNode(fileKey: string) {
       storeNode(queryClient, fileKey, data.node);
       void queryClient.invalidateQueries({ queryKey: nodeKeys.histories(fileKey) });
     },
+  });
+}
+
+/** A note's body length bounds (the API's). */
+export const NOTE_MAX = 4000;
+
+/** After a note write: refetch the file's nodes (state, change type, notes), work items and histories. */
+function refreshAfterNote(queryClient: QueryClient, fileKey: string) {
+  void queryClient.invalidateQueries({ queryKey: nodeKeys.all(fileKey) });
+  void queryClient.invalidateQueries({ queryKey: ['files', fileKey, 'work'] });
+}
+
+/** Anyone signed in (viewers too): notes that the built node doesn't match the design; the node turns dirty. */
+export function useAddNote(fileKey: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ nodeId, body }: { nodeId: string; body: string }) =>
+      api.post('/v3/files/{fileKey}/nodes/{nodeId}/notes', { path: { fileKey, nodeId }, body: { body } }),
+    onSuccess: data => {
+      const { nodeId, state, changeType, notes } = data.node ?? {};
+      if (nodeId) patchNodes(queryClient, fileKey, [nodeId], { state, changeType, notes });
+      refreshAfterNote(queryClient, fileKey);
+    },
+  });
+}
+
+/** The author: rewrites an open note. */
+export function useEditNote(fileKey: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ noteId, body }: { noteId: string; body: string }) =>
+      api.patch('/v3/files/{fileKey}/notes/{noteId}', { path: { fileKey, noteId }, body: { body } }),
+    onSuccess: () => refreshAfterNote(queryClient, fileKey),
+  });
+}
+
+/** The author: deletes an open note. */
+export function useDeleteNote(fileKey: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (noteId: string) => api.delete('/v3/files/{fileKey}/notes/{noteId}', { path: { fileKey, noteId } }),
+    onSuccess: () => refreshAfterNote(queryClient, fileKey),
+  });
+}
+
+/** The author or an agent: dismisses an open note; the node goes back to its design-only state. */
+export function useDismissNote(fileKey: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (noteId: string) => api.post('/v3/files/{fileKey}/notes/{noteId}/dismiss', { path: { fileKey, noteId }, body: {} }),
+    onSuccess: () => refreshAfterNote(queryClient, fileKey),
   });
 }

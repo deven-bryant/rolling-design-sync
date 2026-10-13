@@ -271,7 +271,13 @@ follows the OS `prefers-color-scheme`, live.
   and the commit SHA, re-read stale results, block what cannot be built; an
   item with `kind: "removed"` has its code removed (keeping the components in
   its `uses` that are still placed) and only its root cleared with
-  `subtree: true`. "Open in Figma" links the scope.
+  `subtree: true`; an item with `notes` (nodes with `changeType:
+  "requested"` when nothing else changed) has its notes read and the code
+  fixed to match the design as they describe — clearing resolves them.
+  "Open in Figma" links the scope.
+- Change filter: Any · Added · Modified · Deleted · **Requested** (open notes
+  and no design change). A **Notes** column shows a file icon on nodes with
+  open notes (named `N open notes`).
 - **File settings** (gear button beside *Copy agent prompt*, tooltip "File
   settings", on Nodes and Work Items) opens a right drawer with the file's
   name and **Track library components** (`settings.trackLibraryComponents`,
@@ -312,15 +318,29 @@ follows the OS `prefers-color-scheme`, live.
   Animations respect `prefers-reduced-motion`.
 
 ### Node detail drawer — `?node=<nodeId>` on the Node tree
-- 583px wide (the Change List tab widens it).
+- 583px wide (the Change List tab, and its Add Change view, widen it).
 - `GET /v3/files/:fileKey/nodes/:nodeId?changes=diff`: header (name with a
   **Library** badge on library nodes, type, id, `→ main`), status badges, **What changed** (Diff rows: built → now as token
   chips, raw values beneath, category badge; "since cleared at <commit> (<age>)").
 - **Claim:** from `/claims` — worker, age, lease left; **Release claim** (agent
   session) → `DELETE /v3/files/:fileKey/claims/:claimId`, confirming first when
   the claim covers other nodes.
-- **History:** `GET /v3/files/:fileKey/events?nodeId=…` as a feed.
-- Footer: Copy node prompt (the scope prompt's steps for this node) · **Block…** (agent session; reason required, 1–500
+- **Notes** (Figma *Node Details* `State=Add Change`): an *Add change note*
+  dropdown above the Change List opens a **Description** textarea (required,
+  1–4000 characters, `N/4000` counter) with **Add Change Note** and a
+  *Cancel* link back. Adding (`POST …/nodes/:nodeId/notes`, any session —
+  viewers too) toasts "Note added — the node needs a change", returns to the
+  list and makes the node dirty with a **Requested** badge (and a `note`
+  category) when it had no design change. Open notes (author, age, text) sit
+  above the Change List; a requested node with no design change shows only
+  them, not "nothing changed". The author can **Edit** (`PATCH
+  …/notes/:noteId`) or **Delete** their open note; the author or an agent can
+  **Dismiss** it after confirming (`POST …/notes/:noteId/dismiss`; the node
+  goes back to its design-only state). Clearing the node resolves its notes.
+- **History:** `GET /v3/files/:fileKey/events?nodeId=…` as a feed — including
+  "Added a note", "Resolved a note by clearing it at <commit>" and "Dismissed
+  a note: <reason>".
+- Footer: Copy node prompt (the scope prompt's steps for this node, reading its open notes too) · **Block…** (agent session; reason required, 1–500
   chars) or **Unblock** · Open in Figma (for a library node, its library
   file). A library node with no `figmaUrl` (unresolved) gets **Copy component
   key** instead (secondary; toast "Component key copied"); while
@@ -343,7 +363,8 @@ follows the OS `prefers-color-scheme`, live.
   link, so there is no *Open in Figma*; *Copy node prompt* tells the agent to
   update the code variable named by `codeSyntax` (WEB, else the token name)
   for each changed mode, then clear.
-- Viewer sessions see the same drawer without the action buttons.
+- Viewer sessions see the same drawer without the agent action buttons; they
+  can still add notes (and edit, delete or dismiss their own).
 
 ### Work items — `/ui/files/:fileKey/work`
 - `GET /v3/files/:fileKey/work?group=component|frame&expand=instances&include=progress&under=<scopes>`,
@@ -355,7 +376,7 @@ follows the OS `prefers-color-scheme`, live.
   `expand=instances`). *By frame* needs one root: with several scopes it is
   disabled with a tooltip and the list is grouped by component.
 - Columns: component (name, key, variants), placements in this screen / in file,
-  dirty of total, categories, progress (`clean / total`), agent (from claims).
+  dirty of total (`· N notes` with open notes), categories, progress (`clean / total`), agent (from claims).
   Long component names and agent names truncate so the table fits 1440 px.
   Library items get a gray **Library** badge after the name.
 - A row opens the Node tree filtered to that component (`under=<key>`).
