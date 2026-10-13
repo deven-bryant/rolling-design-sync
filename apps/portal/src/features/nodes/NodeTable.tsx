@@ -120,7 +120,7 @@ export function NodeFiltersBar({ filters, onFiltersChange, addon }: NodeFiltersB
         className="w-70"
         type="search"
         placeholder="Search name, node id, or key:value"
-        tooltip="Plain text matches node names, a node id lists that node, and key:value pairs (state:dirty changed:fills) filter like the API's q."
+        tooltip="Plain text matches node names anywhere in the scope, a node id lists that node, and key:value pairs (state:dirty changed:fills) filter like the API's q. Separate several names or node ids with commas: Button, Pagination."
         iconLeading={<Icon name="search-lg" size="md" />}
         value={draft}
         onChange={setDraft}
@@ -446,11 +446,13 @@ function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const page = cursors.length;
   const query = useNodePage(fileKey, scopeId, filters, cursors[page - 1]);
-  const under = nodePageParams(scopeId, filters).under as string | undefined;
+  const params = nodePageParams(scopeId, filters);
+  const under = params.under as string | undefined;
+  const tree = params.depth === 1;
   const nodes = query.data?.nodes ?? [];
-  const root = page === 1 ? nodes.find(n => n.nodeId === under) : undefined;
-  const rest = nodes.filter(n => n.nodeId !== under);
-  const depth = under && page > 1 ? 1 : 0;
+  const root = tree && page === 1 ? nodes.find(n => n.nodeId === under) : undefined;
+  const rest = tree ? nodes.filter(n => n.nodeId !== under) : nodes;
+  const depth = tree && page > 1 ? 1 : 0;
   const nextCursor = query.data?.nextCursor ?? null;
   const total = query.data?.total;
   const pageCount = typeof total === 'number' ? Math.max(Math.ceil(total / PAGE_SIZE), page + (nextCursor ? 1 : 0)) : undefined;

@@ -16,6 +16,7 @@ export {
   useChildNodes,
   useNodeDetail,
   useNodeHistory,
+  useNoteList,
   useSessionRole,
   useLibraryLinks,
   useReleaseClaim,
