@@ -404,3 +404,12 @@ describe('URL state', () => {
     expect(navItemOf('/nope')).toBeNull();
   });
 });
+
+describe('scopePrompt notes', () => {
+  it('tells the agent to read notes, fix the code and clear to resolve them', () => {
+    const text = scopePrompt({ fileKey: FILE, scopes: [{ nodeId: '1:2', name: 'Team View' }] });
+    expect(text).toContain('changeType "requested"');
+    expect(text).toContain('read the notes on the node');
+    expect(text).toContain('clearing resolves them');
+  });
+});

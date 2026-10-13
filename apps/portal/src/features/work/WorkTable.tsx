@@ -53,7 +53,7 @@ export const isLibraryItem = (item: WorkItem, group: WorkGroup = 'component'): b
 export const isTokensItem = (item: WorkItem): boolean => item.kind === 'tokens';
 
 /**
- * `22 dirty` / `of 30 nodes`, or `Done` / `11 nodes cleared` once every node is clean; a removed item reads
+ * `22 dirty` / `of 30 nodes` (`· 2 notes` with open notes), or `Done` / `11 nodes cleared` once every node is clean; a removed item reads
  * `41 layers removed`, a reference item `Library · not tracked`, a token item `3 tokens changed`.
  */
 export function nodesSummary(item: WorkItem): { text: string; supporting?: string } {
@@ -64,7 +64,8 @@ export function nodesSummary(item: WorkItem): { text: string; supporting?: strin
   if (total > 0 && clean >= total) return { text: 'Done', supporting: `${plural(clean, unit)} cleared` };
   if (isTokensItem(item)) return { text: `${plural(total - clean, 'token')} changed`, supporting: `of ${plural(total, 'token')}` };
   if (item.kind === 'removed') return { text: `${plural(total, 'layer')} removed` };
-  return { text: `${formatCount(total - clean)} dirty`, supporting: `of ${plural(total, 'node')}` };
+  const notes = item.notes ? ` · ${plural(item.notes, 'note')}` : '';
+  return { text: `${formatCount(total - clean)} dirty`, supporting: `of ${plural(total, 'node')}${notes}` };
 }
 
 function ItemBadges({ item, group }: { item: WorkItem; group: WorkGroup }) {

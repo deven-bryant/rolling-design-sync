@@ -294,3 +294,34 @@ describe('NodeTable', () => {
     await waitFor(() => expect(pages()).toBe(3));
   });
 });
+
+describe('NodeTable notes', () => {
+  beforeEach(() => {
+    FakeEventSource.reset();
+    vi.stubGlobal('EventSource', FakeEventSource);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('filters to Requested nodes', async () => {
+    const user = userEvent.setup();
+    const { onFiltersChange } = renderTable({ filters: { state: 'all' } });
+    await user.click(screen.getByRole('button', { name: /Change/ }));
+    await user.click(await screen.findByRole('option', { name: /Requested/ }));
+    expect(onFiltersChange).toHaveBeenLastCalledWith({ state: 'all', changeType: 'requested' });
+  });
+
+  it('shows a file icon in the Notes column for nodes with open notes', async () => {
+    const base = treeRoutes();
+    const routes: Route = call => {
+      const r = base(call) as { nodes?: { nodeId: string }[] } | undefined;
+      if (call.method === 'GET' && call.path === pagePath && r?.nodes)
+        return { ...r, nodes: r.nodes.map(n => (n.nodeId === '1:3' ? { ...n, notes: [{ noteId: 'n1', body: 'x', status: 'open' }] } : n)) };
+      return r;
+    };
+    renderTable({}, routes);
+    await screen.findByText('Breadcrumbs');
+    expect(screen.getByRole('columnheader', { name: 'Notes' })).toBeTruthy();
+    expect(within(row('1:3')).getByRole('img', { name: '1 open note' })).toBeTruthy();
+    expect(within(row('1:2')).queryByRole('img', { name: /open note/ })).toBeNull();
+  });
+});

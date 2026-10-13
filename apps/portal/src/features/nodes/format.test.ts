@@ -85,3 +85,12 @@ describe('format', () => {
     expect(describeEvent({ type: 'node.blocked', data: { reason: 'No token' } })).toBe('Blocked it: No token');
   });
 });
+
+describe('nodePrompt notes', () => {
+  it('tells the agent to read open notes, fix the code to match and clear to resolve them', () => {
+    const prompt = nodePrompt({ fileKey: 'KEY', nodeId: '1:3', name: 'Breadcrumbs' });
+    expect(prompt).toContain('its open notes');
+    expect(prompt).toContain('fix the code to match the design as they describe');
+    expect(prompt).toContain('Clearing resolves them.');
+  });
+});

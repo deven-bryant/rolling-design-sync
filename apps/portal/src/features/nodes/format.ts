@@ -239,12 +239,13 @@ export function nodePrompt({
     '1. Claim it with a stable worker id when other agents share the file:',
     `   - MCP: claim_nodes { "fileKey": "${fileKey}", "nodeIds": ["${nodeId}"], "worker": "<worker>" }`,
     `   - CLI: ${cli} claim --file-key ${fileKey} --node-ids ${nodeId} --worker <worker>`,
-    "2. Read what changed since it was last built and its contentHash:",
+    '2. Read what changed since it was last built, its open notes and its contentHash:',
     `   - MCP: get_node { "fileKey": "${fileKey}", "nodeId": "${nodeId}" }`,
     `   - CLI: ${cli} nodes show ${nodeId} --file-key ${fileKey}`,
     token
       ? `3. Update ${variable} for each changed mode (value:<Mode>) and commit.`
       : '3. Implement the changes and commit them.',
+    '   Open notes (notes) are what a person saw doesn’t match the design: fix the code to match the design as they describe. Clearing resolves them.',
     '4. Clear it with the contentHash you read and the commit SHA:',
     `   - MCP: clear_nodes { "fileKey": "${fileKey}", "items": [{ "nodeId": "${nodeId}", "contentHash": "<contentHash>" }], "commitRef": "<sha>" }`,
     `   - CLI: ${cli} clear ${nodeId}=<contentHash> --file-key ${fileKey} --commit-ref <sha>`,

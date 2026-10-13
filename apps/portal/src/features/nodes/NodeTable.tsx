@@ -15,11 +15,11 @@ import { Input } from '../../components/Input';
 import { Menu } from '../../components/Menu';
 import { Pagination } from '../../components/Pagination';
 import { Select, SelectItem } from '../../components/Select';
-import { Table, TextCell } from '../../components/Table';
+import { FileTypeCell, Table, TextCell } from '../../components/Table';
 import { Toggle } from '../../components/Toggle';
 import { cx, Icon, Text, VisuallyHidden } from '../../components/primitives';
 import { CATEGORIES, categoriesOf, type Category } from './categories';
-import { isTokenNodeId, nodeMeta, timeAgo, tokenMeta, tokenModeChanges, tokenValueView, whatChanged, type TokenModeChange } from './format';
+import { isTokenNodeId, nodeMeta, plural, timeAgo, tokenMeta, tokenModeChanges, tokenValueView, whatChanged, type TokenModeChange } from './format';
 import { useNodeLiveUpdates, type NodeLiveUpdates } from './live';
 import { filterParams, nodePageParams, PAGE_SIZE, splitUnder, useChildNodes, useFile, useNodePage, useScope } from './queries';
 import type { ChangeFilter, FileClaim, NodeFilters, NodeItem, StateFilter } from './types';
@@ -33,6 +33,7 @@ const COLUMNS = [
   { id: 'categories', label: 'Categories', width: 'w-43' },
   { id: 'changed', label: 'What changed', width: 'w-45' },
   { id: 'agent', label: 'Agent', width: 'w-45' },
+  { id: 'notes', label: 'Notes', width: 'w-45' },
 ] as const;
 export type NodeColumn = (typeof COLUMNS)[number]['id'];
 
@@ -47,6 +48,7 @@ const CHANGE_OPTIONS: { id: ChangeFilter | 'any'; label: string }[] = [
   { id: 'added', label: 'Added' },
   { id: 'modified', label: 'Modified' },
   { id: 'deleted', label: 'Deleted' },
+  { id: 'requested', label: 'Requested' },
 ];
 const CATEGORY_OPTIONS: { id: Category | 'any'; label: string }[] = [{ id: 'any', label: 'Any' }, ...CATEGORIES.map(c => ({ id: c, label: c }))];
 const NODE_TYPES = [
@@ -297,6 +299,7 @@ function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeR
           <AgentColumn node={node} />
         </Table.Cell>
       )}
+      {columns.has('notes') && <FileTypeCell label={node.notes?.length ? plural(node.notes.length, 'open note', 'open notes') : undefined} />}
     </Table.Row>
   );
 }

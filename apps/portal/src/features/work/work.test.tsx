@@ -476,3 +476,11 @@ describe('WorkTable token items', () => {
     await expectNoAxeViolations(container);
   });
 });
+
+describe('nodesSummary notes', () => {
+  it('adds the open notes count to the supporting text', () => {
+    const item = component('k', 'Card', { progress: { total: 30, clean: 3 }, notes: 2 } as Partial<WorkItem>);
+    expect(nodesSummary(item)).toEqual({ text: '27 dirty', supporting: 'of 30 nodes · 2 notes' });
+    expect(nodesSummary({ ...item, notes: 0 })).toEqual({ text: '27 dirty', supporting: 'of 30 nodes' });
+  });
+});
