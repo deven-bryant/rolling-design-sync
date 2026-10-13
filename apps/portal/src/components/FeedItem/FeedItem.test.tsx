@@ -104,6 +104,13 @@ describe('FeedItem', () => {
     expect(ref.current?.getAttribute('aria-hidden')).toBe('true');
     expect(ref.current?.className).toContain('ml-xs');
   });
+
+  it('File type icon: File type=Simple / Empty is a bare page without a label', () => {
+    const ref = createRef<HTMLSpanElement>();
+    render(<FileTypeIcon ref={ref} type="empty" />);
+    expect(ref.current?.textContent).toBe('');
+    expect(ref.current?.querySelector('path')?.getAttribute('class')).toContain('fill-none');
+  });
 });
 
 describeGalleryInThemes(gallery);

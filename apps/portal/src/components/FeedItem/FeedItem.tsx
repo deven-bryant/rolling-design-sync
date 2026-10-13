@@ -107,12 +107,12 @@ function FeedItemHighlight({ className, ref, ...rest }: FeedItemHighlightProps) 
 }
 
 export interface FileTypeIconProps extends HTMLAttributes<HTMLSpanElement> {
-  /** `File type`. */
-  type?: 'pdf';
+  /** `File type`: `pdf` (Document / PDF) or `empty` (Simple / Empty, a bare page). */
+  type?: 'pdf' | 'empty';
   ref?: Ref<HTMLSpanElement>;
 }
 
-const fileTypeLabels = { pdf: 'PDF' } as const;
+const fileTypeLabels = { pdf: 'PDF', empty: null } as const;
 
 /** `File type icon` (`Type=Default`): a page with the file type's label. */
 export function FileTypeIcon({ type = 'pdf', className, ref, ...rest }: FileTypeIconProps) {
@@ -121,14 +121,16 @@ export function FileTypeIcon({ type = 'pdf', className, ref, ...rest }: FileType
       <svg viewBox="0 0 32 40" fill="none" className="h-5xl w-4xl">
         <path
           d="M4 .75h16c.2 0 .39.08.53.22l10.5 10.5c.14.14.22.33.22.53V36A3.25 3.25 0 0 1 28 39.25H4A3.25 3.25 0 0 1 .75 36V4A3.25 3.25 0 0 1 4 .75Z"
-          className="fill-bg-primary stroke-border-primary"
+          className={cx('stroke-border-primary', type === 'empty' ? 'fill-none' : 'fill-bg-primary')}
           strokeWidth={1.5}
         />
         <path d="M20 .5V8a4 4 0 0 0 4 4h7.5" className="stroke-border-primary" strokeWidth={1.5} />
       </svg>
-      <span className="absolute bottom-1.5 left-0.5 rounded-xxs bg-error-600 px-0.75 py-xxs text-[0.625rem] leading-none font-bold text-fg-white">
-        {fileTypeLabels[type]}
-      </span>
+      {fileTypeLabels[type] && (
+        <span className="absolute bottom-1.5 left-0.5 rounded-xxs bg-error-600 px-0.75 py-xxs text-[0.625rem] leading-none font-bold text-fg-white">
+          {fileTypeLabels[type]}
+        </span>
+      )}
     </span>
   );
 }
