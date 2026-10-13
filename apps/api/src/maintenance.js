@@ -26,6 +26,7 @@ async function repairChangeData(store, { batchSize = BATCH_SIZE } = {}) {
     if (!rows.length) break;
     const items = [];
     for (const row of rows) {
+      if (row.changeType === 'requested') continue; // dirty by open notes only: nothing to diff
       const next = changeColumns(row);
       if (sameChanges(next, row)) continue;
       items.push({ fileKey: row.fileKey, nodeId: row.nodeId, contentHash: row.contentHash, from: row.changeType, ...next });
