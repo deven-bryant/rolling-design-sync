@@ -124,4 +124,6 @@ const clear = (fileKey, nodeIds) =>
     items: nodeIds.map(nodeId => ({ nodeId, contentHash: TREE.find(n => n.nodeId === nodeId).contentHash })),
   });
 
-module.exports = { TOKENS, ROOT, FRAME, INSTANCE, MAIN, MAIN_CHILD, SECOND, REMOVED, TOKEN_COLLECTION, TOKEN, seedFile, syncSecondScope, syncRemovedScreen, syncTokens, claim, clear };
+const notesOf = (fileKey, nodeId) => api('GET', `/v3/files/${fileKey}/nodes/${nodeId}/notes?status=all`, TOKENS.agent);
+
+module.exports = { TOKENS, ROOT, FRAME, INSTANCE, MAIN, MAIN_CHILD, SECOND, REMOVED, TOKEN_COLLECTION, TOKEN, seedFile, syncSecondScope, syncRemovedScreen, syncTokens, claim, clear, notesOf };

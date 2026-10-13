@@ -5,7 +5,7 @@
 // then signs in as a viewer and an agent. See tests/README.md.
 
 const { test, expect } = require('@playwright/test');
-const { TOKENS, ROOT, FRAME, INSTANCE, MAIN_CHILD, SECOND, REMOVED, TOKEN_COLLECTION, TOKEN, seedFile, syncSecondScope, syncRemovedScreen, syncTokens, claim, clear } = require('./fixture');
+const { TOKENS, ROOT, FRAME, INSTANCE, MAIN_CHILD, SECOND, REMOVED, TOKEN_COLLECTION, TOKEN, seedFile, syncSecondScope, syncRemovedScreen, syncTokens, claim, clear, notesOf } = require('./fixture');
 
 async function signIn(page, token) {
   await page.goto('/ui/sign-in');
@@ -95,6 +95,37 @@ test('agent blocks and unblocks a node and releases a claim', async ({ page }) =
   await expect(instance.getByRole('button', { name: 'Release claim' })).toHaveCount(0);
   await expect(row(page, INSTANCE)).toContainText('unclaimed');
   await page.keyboard.press('Escape');
+});
+
+test('a viewer notes a clean node, it turns Requested, and an agent clear resolves the note', async ({ page }) => {
+  const { fileKey } = await seedFile();
+  await clear(fileKey, [FRAME]);
+  await signIn(page, TOKENS.viewer);
+  await openNodeTree(page, fileKey);
+  await expect(row(page, FRAME)).toContainText('Clean');
+
+  await row(page, FRAME).getByText('Card', { exact: true }).click();
+  const frame = drawer(page);
+  await frame.getByRole('tab', { name: 'Change List' }).click();
+  await frame.getByRole('button', { name: 'Add change note', exact: true }).click();
+  await frame.getByRole('textbox', { name: /Description/ }).fill('The card padding should be 24px, not 16px.');
+  await expect(frame.getByText('42/4000')).toBeVisible();
+  await frame.getByRole('button', { name: 'Add Change Note', exact: true }).click();
+  await expect(page.getByText('Note added — the node needs a change')).toBeVisible();
+  const notes = frame.getByRole('region', { name: 'Open notes' });
+  await expect(notes.getByText('The card padding should be 24px, not 16px.')).toBeVisible();
+  await expect(frame.getByRole('group', { name: 'Status' })).toContainText('Requested');
+  await expect(row(page, FRAME)).toContainText('Requested');
+  await expect(row(page, FRAME).getByRole('img', { name: '1 open note' })).toBeVisible();
+  await expect(frame.getByRole('button', { name: 'Block…' })).toHaveCount(0);
+
+  await clear(fileKey, [FRAME]);
+  await expect(row(page, FRAME)).toContainText('Clean');
+  await expect(notes).toHaveCount(0);
+  const { notes: all } = await notesOf(fileKey, FRAME);
+  expect(all.map(n => n.status)).toEqual(['resolved']);
+  await frame.getByRole('tab', { name: 'Change History' }).click();
+  await expect(frame.getByText(/Resolved a note by clearing it/)).toBeVisible();
 });
 
 test('an API claim pops a sprite onto its row and a clear poofs it, without a reload', async ({ page }) => {
