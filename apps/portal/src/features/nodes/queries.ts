@@ -33,14 +33,17 @@ export type NodeListParams = Record<string, string | number | undefined>;
 const NODE_ID = /^\d+[:-]\d+(?:;\d+[:-]\d+)*$/;
 const KEY_VALUE = /\b[A-Za-z]+:\S/;
 
-/** The search box as listing parameters: `key:value` → `q`, a node id → `under`, text → a `name` glob. */
+/** The search box as listing parameters: `key:value` → `q`, node ids → `under`, text → `name` globs; commas separate terms. */
 export function searchParams(search: string | undefined): NodeListParams {
   const text = search?.trim();
   if (!text) return {};
-  if (NODE_ID.test(text)) return { under: text.replace(/-/g, ':') };
+  const terms = text.split(',').map(term => term.trim()).filter(Boolean);
+  if (terms.every(term => NODE_ID.test(term))) return { under: terms.map(term => term.replace(/-/g, ':')).join(',') };
   if (KEY_VALUE.test(text)) return { q: text };
-  return { name: `*${text}*` };
+  return { name: terms.map(term => `*${term}*`).join(',') };
 }
+
+const searchesSubtree = (params: NodeListParams) => params.name !== undefined || params.q !== undefined;
 
 /** The filter parameters every node page sends (`search` only applies to the top level). */
 export function filterParams(filters: NodeFilters, { search = true } = {}): NodeListParams {
@@ -67,7 +70,7 @@ export function nodePageParams(under: string | undefined, filters: NodeFilters, 
   return {
     ...params,
     ...tokenFields(params.under),
-    depth: params.under ? 1 : undefined,
+    depth: params.under && !searchesSubtree(params) ? 1 : undefined,
     include: 'counts',
     sort: 'document',
     limit: PAGE_SIZE,
@@ -148,6 +151,16 @@ export function useNodeDetail(fileKey: string, nodeId: string | null | undefined
     queryFn: ({ signal }) =>
       api.get('/v3/files/{fileKey}/nodes/{nodeId}', { path: { fileKey, nodeId: nodeId ?? '' }, query: { changes: 'diff' }, signal }),
     enabled: !!fileKey && !!nodeId,
+  });
+}
+
+export function useNoteList(fileKey: string, nodeId: string | null | undefined, { enabled = true } = {}) {
+  return useQuery({
+    queryKey: [...nodeKeys.all(fileKey), 'notes', nodeId ?? ''] as const,
+    queryFn: ({ signal }) =>
+      api.get('/v3/files/{fileKey}/nodes/{nodeId}/notes', { path: { fileKey, nodeId: nodeId ?? '' }, query: { status: 'all' }, signal }),
+    enabled: enabled && !!fileKey && !!nodeId,
+    staleTime: 60_000,
   });
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { categoriesOf, categoryOf } from './categories';
 import { formatValue, nodeMeta, nodePrompt, sideLabel, timeAgo, timeUntil, whatChanged } from './format';
 import { blockReasonError, describeEvent } from './NodeDrawer';
-import { searchParams } from './queries';
+import { nodePageParams, searchParams } from './queries';
 import { breadcrumbs, divider, node, pageHeader } from './test-fixtures';
 
 describe('format', () => {
@@ -68,6 +68,12 @@ describe('format', () => {
     expect(searchParams('Button')).toEqual({ name: '*Button*' });
     expect(searchParams('1-23')).toEqual({ under: '1:23' });
     expect(searchParams('state:dirty changed:fills')).toEqual({ q: 'state:dirty changed:fills' });
+    expect(searchParams('Button, Pagination ,')).toEqual({ name: '*Button*,*Pagination*' });
+    expect(searchParams('1-23, 4:56')).toEqual({ under: '1:23,4:56' });
+    expect(searchParams('Page header, 4:56')).toEqual({ name: '*Page header*,*4:56*' });
+    expect(nodePageParams('1:1', { q: 'Pagination' })).toMatchObject({ under: '1:1', name: '*Pagination*', depth: undefined });
+    expect(nodePageParams('1:1', { q: '1:2' })).toMatchObject({ under: '1:2', depth: 1 });
+    expect(nodePageParams('1:1', {})).toMatchObject({ under: '1:1', depth: 1 });
   });
 
   it('validates block reasons (1–500 characters)', () => {
