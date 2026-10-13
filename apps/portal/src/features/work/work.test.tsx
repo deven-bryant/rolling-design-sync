@@ -214,14 +214,16 @@ describe('features/work', () => {
     renderScreen();
     await waitFor(() => expect(row('Table cell')).toBeDefined());
     const nav = within(screen.getByRole('navigation', { name: 'Work items pages' }));
-    expect(nav.getByText('1', { selector: '[aria-live]' }).textContent).toBe('Page 1');
+    expect(nav.getByRole('button', { name: 'Page 1' }).getAttribute('aria-current')).toBe('page');
+    expect(nav.getByRole('button', { name: 'Page 2' }).getAttribute('aria-current')).toBeNull();
 
     fireEvent.click(nav.getByRole('button', { name: 'Next' }));
     await waitFor(() => expect(row('Checkbox')).toBeDefined());
     expect(screen.queryByRole('row', { name: 'Table cell' })).toBeNull();
     expect(workCalls().at(-1)?.searchParams.get('cursor')).toBe('c2');
     expect(within(row('Checkbox')).getByText('50%')).toBeDefined();
-    expect(nav.getByText('2', { selector: '[aria-live]' }).textContent).toBe('Page 2');
+    expect(nav.getByRole('button', { name: 'Page 2' }).getAttribute('aria-current')).toBe('page');
+    expect(nav.getByRole('button', { name: 'Page 1' })).toBeDefined();
     expect((nav.getByRole('button', { name: 'Next' }) as HTMLButtonElement).disabled).toBe(true);
 
     const before = workCalls().length;

@@ -228,7 +228,9 @@ export function WorkTable({
           </Table.Body>
         </Table>
       </Card.Body>
-      {(page > 1 || work.hasNext) && <Pagination page={page} hasNext={work.hasNext} onPageChange={onPageChange} label="Work items pages" />}
+      {work.pageCount !== undefined
+        ? work.pageCount > 1 && <Pagination page={page} pageCount={work.pageCount} onPageChange={onPageChange} label="Work items pages" />
+        : (page > 1 || work.hasNext) && <Pagination page={page} hasNext={work.hasNext} onPageChange={onPageChange} label="Work items pages" />}
     </Card>
   );
 }

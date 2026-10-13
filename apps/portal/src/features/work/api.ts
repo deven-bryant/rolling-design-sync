@@ -70,6 +70,10 @@ export function useWorkItems({ page, ...query }: WorkQuery & { page: number }) {
     items: current?.items ?? [],
     /** Items across all pages. */
     total: data?.pages[0]?.total,
+    pageCount:
+      typeof data?.pages[0]?.total === 'number'
+        ? Math.max(1, Math.ceil(data.pages[0].total / pageSize), page + (loaded > page || hasNextPage ? 1 : 0))
+        : undefined,
     hasNext: loaded > page || hasNextPage,
     /** The requested page isn't here yet. */
     isPageLoading: !current && (result.isPending || needsMore || isFetchingNextPage),

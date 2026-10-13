@@ -236,6 +236,27 @@ describe('NodeTable', () => {
     expect(rowIds()).toEqual(['1:1', '1:2', '1:3']);
   });
 
+  it('numbers the pages from the total and jumps to a later page by walking the cursors', async () => {
+    const user = userEvent.setup();
+    const pageOf = (cursor: string | null) => {
+      if (cursor === 'cur3') return { fileKey: FILE, nodes: [node('1:7', { name: 'Footer', parentId: '1:1' })], nextCursor: null, total: 51 };
+      if (cursor === 'cur2') return { fileKey: FILE, nodes: [node('1:6', { name: 'Body', parentId: '1:1' })], nextCursor: 'cur3', total: 51 };
+      return { fileKey: FILE, nodes: [scope, pageHeader], nextCursor: 'cur2', total: 51 };
+    };
+    const { api } = renderTable({}, treeRoutes(call => (call.path === pagePath && call.query.get('under') === '1:1' ? pageOf(call.query.get('cursor')) : undefined)));
+    const nav = within(await screen.findByRole('navigation', { name: 'Node pages' }));
+    expect((await nav.findByRole('button', { name: 'Page 1' })).getAttribute('aria-current')).toBe('page');
+    expect(nav.getByRole('button', { name: 'Page 3' })).toBeTruthy();
+    await user.click(nav.getByRole('button', { name: 'Page 3' }));
+    await screen.findByText('Footer');
+    expect(rowIds()).toEqual(['1:7']);
+    expect(api.find('GET', pagePath).filter(c => c.query.get('under') === '1:1').map(c => c.query.get('cursor'))).toEqual([null, 'cur2', 'cur3']);
+    expect(nav.getByRole('button', { name: 'Page 3' }).getAttribute('aria-current')).toBe('page');
+    await user.click(nav.getByRole('button', { name: 'Page 1' }));
+    await screen.findByText('Page header');
+    expect(nav.getByRole('button', { name: 'Page 1' }).getAttribute('aria-current')).toBe('page');
+  });
+
   it('opens a node when its row is activated', async () => {
     const user = userEvent.setup();
     const { onOpenNode } = renderTable({ selectedNodeId: '1:2' });

@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { createContext, use, useEffect, useState, type ReactNode } from 'react';
 import { buildUrl } from '../../api/client';
 import { useFileClaims } from '../../api/hooks/useFileClaims';
@@ -21,7 +22,7 @@ import { cx, Icon, Text, VisuallyHidden } from '../../components/primitives';
 import { CATEGORIES, categoriesOf, type Category } from './categories';
 import { isTokenNodeId, nodeMeta, plural, timeAgo, tokenMeta, tokenModeChanges, tokenValueView, whatChanged, type TokenModeChange } from './format';
 import { useNodeLiveUpdates, type NodeLiveUpdates } from './live';
-import { filterParams, nodePageParams, PAGE_SIZE, splitUnder, useChildNodes, useFile, useNodePage, useScope } from './queries';
+import { filterParams, listNodes, nodeKeys, nodePageParams, PAGE_SIZE, splitUnder, useChildNodes, useFile, useNodePage, useScope } from './queries';
 import type { ChangeFilter, FileClaim, NodeFilters, NodeItem, StateFilter } from './types';
 
 /** How long the search box waits after typing before it updates the filters. */
@@ -451,6 +452,9 @@ function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
   const rest = nodes.filter(n => n.nodeId !== under);
   const depth = under && page > 1 ? 1 : 0;
   const nextCursor = query.data?.nextCursor ?? null;
+  const total = query.data?.total;
+  const pageCount = typeof total === 'number' ? Math.max(Math.ceil(total / PAGE_SIZE), page + (nextCursor ? 1 : 0)) : undefined;
+  const queryClient = useQueryClient();
 
   let body: ReactNode;
   if (query.isPending) body = <StatusRow>Loading nodes…</StatusRow>;
@@ -459,9 +463,16 @@ function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
   else if (root) body = <TreeRow node={root} depth={0} preloaded={rest} defaultExpanded />;
   else body = rest.map(n => <TreeRow key={n.nodeId} node={n} depth={depth} />);
 
-  const onPageChange = (next: number) => {
-    if (next < page) setCursors(c => c.slice(0, Math.max(1, next)));
-    else if (next > page && nextCursor) setCursors(c => [...c, nextCursor]);
+  const onPageChange = async (next: number) => {
+    if (next < page) return setCursors(c => c.slice(0, Math.max(1, next)));
+    let walked = cursors;
+    while (walked.length < next) {
+      const params = nodePageParams(scopeId, filters, walked[walked.length - 1]);
+      const data = await queryClient.ensureQueryData({ queryKey: nodeKeys.page(fileKey, params), queryFn: ({ signal }) => listNodes(fileKey, params, signal) });
+      if (!data.nextCursor) break;
+      walked = [...walked, data.nextCursor];
+    }
+    setCursors(walked);
   };
 
   return (
@@ -470,7 +481,11 @@ function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
       <tfoot>
         <tr>
           <td colSpan={colSpan} className="p-0">
-            <Pagination label="Node pages" page={page} onPageChange={onPageChange} hasNext={!!nextCursor} className="border-t-0" />
+            {pageCount !== undefined ? (
+              <Pagination label="Node pages" page={page} pageCount={pageCount} onPageChange={next => void onPageChange(next)} className="border-t-0" />
+            ) : (
+              <Pagination label="Node pages" page={page} onPageChange={next => void onPageChange(next)} hasNext={!!nextCursor} className="border-t-0" />
+            )}
           </td>
         </tr>
       </tfoot>
