@@ -7,6 +7,101 @@ are cut.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-13
+
+Design tokens, node notes, removed-design and library-component handling, and
+a startup schema check for self-hosted Postgres.
+
+### Added
+- **Design tokens.** Every sync also tracks the Figma variables your design
+  uses (library ones included) and the variables defined in the file, with
+  every mode's value, as a **Design tokens** scope: one node per variable
+  (`token:<variableKey>`), grouped by collection. A changed value in any mode
+  — e.g. a Dark-mode color — makes exactly that token dirty, not the layers
+  using it. Token work items are per collection; each token reports its code
+  name (`codeSyntax`) and how many layers use it. The portal shows tokens with
+  color swatches, alias links and usage.
+- **Node notes.** Anyone signed in (viewers too) can add a note to a node that
+  is marked built but doesn't match the design: the node turns dirty as
+  **Requested** until an agent clears it, which resolves the note (with the
+  commit). Notes can be edited or deleted by their author and dismissed by the
+  author or an agent. API, MCP (`add_note`, list, dismiss) and CLI (`notes`);
+  the portal's Change List tab has an *Add change note* view, the Nodes table a
+  Notes column and a Requested filter, and Activity shows each note's text.
+- **Removed design as one work item.** A deleted screen that was built becomes
+  a single `kind: "removed"` work item listing the components it used and how
+  many placements each still has elsewhere (keep / likely unused), with a
+  warning when a deleted main component still has instances. Agents clear it
+  once with `subtree: true`.
+- **Library components.** Library nodes are flagged; a per-file **Track library
+  components** setting (portal *File settings*, `PATCH /v3/files/{fileKey}`)
+  stops tracking them when your code gets them from a package — instances stay
+  tracked and library mains appear as references. With the optional
+  `RDS_FIGMA_TOKEN` (`library_assets:read`), library nodes link to their
+  library file; without it the portal offers *Copy component key*.
+- **Plugin:** an *Already built?* prompt when a sync would add many never-seen
+  layers; a spinner for steps without a total and a steadily filling upload
+  bar (smaller batches); automatic re-scan when two scans differ only because
+  Figma was still loading a style, variable or font, with the changed layer and
+  properties named if it never settles.
+- **Startup schema check (Postgres mode):** the API compares the database with
+  the migrations it needs and refuses to start, listing the missing files,
+  instead of serving errors. `RDS_AUTO_MIGRATE=true` applies just the missing
+  ones under an advisory lock; an up-to-date database is never modified.
+
+### Changed
+- **Never-built deletions resolve themselves:** a layer deleted before it was
+  ever built is no longer work.
+- **Search** (Nodes and Work Items) matches names anywhere in the selected
+  scopes, and takes several comma-separated names or node ids.
+- **Pagination** shows numbered pages, as in the design.
+- **Portal:** the node tree keeps rows open across filter changes and aligns
+  siblings by their names; Node Details uses full-width tabs; the file header
+  gets a *File settings* button; the current sidebar item is visible in dark
+  mode (`bg-active` is now `#2b3033` there).
+- **Node.js 22.22 or later** is required (Node 20 is end-of-life); dependency
+  updates including React Router 8 and `@fastify/cors` 11.
+
+### Fixed
+- Hovering *By frame* with several scopes selected no longer crashes the Work
+  Items page.
+- A token whose Figma variable id changes after a library re-import stays clean;
+  usage counts follow the variable key.
+
+### Upgrade notes
+- **Postgres mode (Supabase or your own Postgres): apply three new migrations
+  before deploying 0.14.0.** They only add tables and columns, plus a one-time
+  data cleanup, and work with 0.13.x, so migrate first, then deploy. Apply only
+  these, in order — older migrations aren't safe to re-run:
+  - `20261012000000_api_v3_auto_resolve_never_built.sql` (data only: deleted
+    layers that were never built stop counting as work)
+  - `20261013000000_api_v3_library_components.sql`
+  - `20261014000000_api_v3_node_notes.sql`
+
+  From a checkout of this release, with your database's **direct** connection
+  string (port 5432, not a transaction pooler):
+  ```bash
+  for f in supabase/migrations/20261012000000_api_v3_auto_resolve_never_built.sql \
+           supabase/migrations/20261013000000_api_v3_library_components.sql \
+           supabase/migrations/20261014000000_api_v3_node_notes.sql; do
+    psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
+  done
+  ```
+  Or paste each file, in order, into the Supabase SQL editor. Or start the API
+  once with `RDS_AUTO_MIGRATE=true` (direct connection required). If you skip
+  this, 0.14.0 refuses to start and lists the missing files.
+- **Supabase:** enable row level security on the two new tables, as on the
+  others (the API connects as the table owner, so it is unaffected):
+  `alter table public.library_component enable row level security;` and
+  `alter table public.node_note enable row level security;`
+- **Docker and local mode:** nothing to do; the embedded database migrates
+  itself on start.
+- **Plugin:** re-import or re-open it (its bundle changed). The first sync of
+  each scope uploads your design tokens as new; tick *Code already matches this
+  design* once if your code already has them. Layer content hashes are
+  unchanged.
+- **Node.js 22.22+** for the API, CLI and MCP server.
+
 ## [0.13.1] - 2026-10-10
 
 ### Security
