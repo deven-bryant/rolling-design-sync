@@ -7,6 +7,7 @@ const { MemoryStore } = require('./store/memory');
 const { openLocalStore } = require('./store/pglite');
 const { MemoryBus, PostgresBus, startRetention } = require('./events');
 const { runMaintenance } = require('./maintenance');
+const { checkSchema } = require('./schemaCheck');
 
 const STORE_HELP = 'Set DATABASE_URL (Postgres), RDS_STORE=local (persistent, no database server), or RDS_STORE=memory (non-persistent dev server).';
 
@@ -37,7 +38,15 @@ async function main() {
   let store;
   if (config.store === 'memory') store = new MemoryStore();
   else if (config.store === 'local') store = (await openLocalStore({ dataDir: config.dataDir })).store;
-  else store = PostgresStore.fromUrl(config.databaseUrl, { ssl });
+  else {
+    store = PostgresStore.fromUrl(config.databaseUrl, { ssl });
+    try {
+      await checkSchema(store.pool, config);
+    } catch (err) {
+      await store.close().catch(() => {});
+      throw err;
+    }
+  }
 
   const bus = config.store ? new MemoryBus() : new PostgresBus({ store, connectionString: config.listenUrl, ssl });
   const app = buildApp({ store, config, bus, logger: { level: config.logLevel } });
