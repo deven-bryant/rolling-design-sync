@@ -11,6 +11,7 @@ import {
   AvatarCell,
   BadgeCell,
   BadgesCell,
+  FileTypeCell,
   LeadAction,
   LeadActionCell,
   ProgressCell,
@@ -240,6 +241,30 @@ describe('Table', () => {
     expect(header.className).toBe('h-11 border-b border-secondary bg-primary px-3xl py-lg align-middle');
     expect(header.firstElementChild?.className).toBe('sr-only');
     expect(header.querySelector('button')).toBeNull();
+    await expectNoAxeViolations(container);
+  });
+
+  it('Type=File type icon: a labelled Simple / Empty page, optional text, and nothing without a label', async () => {
+    const { container } = renderTable(
+      <Table.Row>
+        <FileTypeCell label="2 open notes" />
+        <FileTypeCell label="PDF file" fileType="pdf" supportingText="200 KB">
+          Tech requirements.pdf
+        </FileTypeCell>
+        <FileTypeCell />
+      </Table.Row>,
+      <>
+        <Table.HeaderCell>Notes</Table.HeaderCell>
+        <Table.HeaderCell>File</Table.HeaderCell>
+        <Table.HeaderCell>Empty</Table.HeaderCell>
+      </>,
+    );
+    const [notes, file, empty] = screen.getAllByRole('cell') as [HTMLElement, HTMLElement, HTMLElement];
+    expect(within(notes).getByRole('img', { name: '2 open notes' }).textContent).toBe('');
+    expect(within(file).getByRole('img', { name: 'PDF file' }).textContent).toBe('PDF');
+    expect(file.textContent).toContain('Tech requirements.pdf');
+    expect(file.textContent).toContain('200 KB');
+    expect(within(empty).queryByRole('img')).toBeNull();
     await expectNoAxeViolations(container);
   });
 

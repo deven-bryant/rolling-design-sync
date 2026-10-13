@@ -10,9 +10,9 @@ import type {
 } from 'react';
 import { cx, Text, VisuallyHidden } from '../primitives';
 import { Badge } from '../Badge';
-import { Icon } from '../primitives/Icon';
 import { Checkbox, type CheckboxProps } from '../Checkbox';
 import { ProgressBar } from '../ProgressBar';
+import { FileTypeIcon, type FileTypeIconProps } from '../FeedItem';
 
 export interface TableProps extends TableHTMLAttributes<HTMLTableElement> {
   ref?: Ref<HTMLTableElement>;
@@ -311,15 +311,39 @@ export function ActionsCell({ children, className, ...rest }: ActionsCellProps) 
 }
 
 export interface FileTypeCellProps extends Omit<TableCellProps, 'children'> {
-  /** Names the icon (e.g. `2 notes`); without it the cell is empty. */
+  /** Names the icon (e.g. `2 notes`); without it the cell shows no icon. */
   label?: string;
+  /** The `File type icon` variant; `empty` is the bare page (`File type=Simple / Empty`). */
+  fileType?: FileTypeIconProps['type'];
+  /** `Lead text`, beside the icon. */
+  children?: ReactNode;
+  /** `Supporting text`, under the lead text. */
+  supportingText?: ReactNode;
+  /** `Lead action` slot (`<LeadAction />`) before the icon. */
+  leadAction?: ReactNode;
 }
 
-/** `Type=File type icon`: a document glyph, e.g. a node's notes; empty without a `label`. */
-export function FileTypeCell({ label, className, ...rest }: FileTypeCellProps) {
+/** `Type=File type icon`: a page glyph (e.g. a node's open notes), optionally with text; no icon without a `label`. */
+export function FileTypeCell({
+  label,
+  fileType = 'empty',
+  children,
+  supportingText,
+  leadAction,
+  className,
+  ...rest
+}: FileTypeCellProps) {
   return (
     <TableCell className={cx('py-lg', className)} {...rest}>
-      {label && <Icon name="file-04" label={label} className="size-10 text-fg-quaternary" strokeWidth={1.5} />}
+      <div className="flex items-center gap-lg">
+        {leadAction}
+        {label && (
+          <span role="img" aria-label={label} className="inline-flex">
+            <FileTypeIcon type={fileType} />
+          </span>
+        )}
+        {children != null && <TextBlock supportingText={supportingText}>{children}</TextBlock>}
+      </div>
     </TableCell>
   );
 }

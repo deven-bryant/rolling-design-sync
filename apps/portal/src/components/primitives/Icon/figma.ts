@@ -53,7 +53,7 @@ export const figmaIcons = {
   'check-done-01': { component: CopyCheck, nodeId: '92:17346', key: '30ffe73a1cf3b443c6ab453d0c9a7529d79b0441' },
   'check-circle': { component: CircleCheck, nodeId: '92:22955', key: 'a5afeebd6db1a78df56af3bef6fafe75a367b7bd' },
   'chevron-down': { component: ChevronDown, nodeId: '92:10769', key: '6444d0bc968f40ec11020a42feb04479b11449b7' },
-  'chevron-up': { component: ChevronUp, nodeId: null, key: null },
+  'chevron-up': { component: ChevronUp, nodeId: '92:22381', key: '6e45b214933b4ea7789a947ab975cff7f8a18860' },
   'chevron-right': { component: ChevronRight, nodeId: '92:10657', key: '33ba7af76ad66927f477e0cade1526b7b06219da' },
   'chevron-selector-vertical': {
     component: ChevronsUpDown,
