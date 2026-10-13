@@ -15,7 +15,11 @@ npm start -w @rolling-design-sync/api
 RDS_STORE=memory RDS_PLUGIN_TOKENS=p RDS_AGENT_TOKENS=a npm start -w @rolling-design-sync/api
 ```
 
-Env: `DATABASE_URL` (Postgres, schema from `supabase/migrations`), `PORT`
+Env: `DATABASE_URL` (Postgres, schema from `supabase/migrations`; startup
+refuses while a migration's probe fails, listing the missing files),
+`RDS_AUTO_MIGRATE` (`true`: apply just the missing migrations at startup under
+an advisory lock; default `false`), `RDS_SCHEMA_CHECK` (`off` skips the check
+with a warning; not recommended), `PORT`
 (8787), `HOST`, `LOG_LEVEL`, `RDS_PLUGIN_TOKENS` / `RDS_AGENT_TOKENS`
 (comma-separated static bearer tokens; an entry may be `name:token`, name
 `[a-z0-9._-]{1,40}` unique per class, to give events a human label),
@@ -384,6 +388,12 @@ Events (`docs/api-v3-phase2.md`, section 1):
   plain Figma node ids (`path` as an array of ancestor ids, a dot-joined string
   of them, or omitted to derive it from `parentId`); `src/ltree.js` owns the
   id → ltree-label encoding.
+- On startup in Postgres mode, before anything else touches the database,
+  `src/schemaCheck.js` runs one read-only probe per `supabase/migrations/` file
+  (the `PROBES` map, keyed by filename; a test fails if a file has none). It
+  refuses to start while one fails, or with `RDS_AUTO_MIGRATE=true` applies just
+  the failing files under an advisory lock. Local mode keeps its
+  `schema_migrations` ledger. See `docs/setup.md`, "Apply the migrations".
 - On startup, before listening, `src/maintenance.js` runs idempotent repair
   steps in batches of 500, one log line each; a failing step is logged as a
   warning and startup continues. Step `change-data` recomputes the change
@@ -401,6 +411,7 @@ src/store/memory.js in-memory data layer (tests, RDS_STORE=memory)
 src/nodeService.js  NodeSyncService — per-node sync (hashes / sync / exists)
 src/ltree.js        Figma node id <-> ltree label/path helpers
 src/maintenance.js  startup repair steps (runMaintenance), run by server.js before listen
+src/schemaCheck.js  Postgres-mode startup schema probes + RDS_AUTO_MIGRATE (checkSchema)
 src/v3/             API v3: index (auth, problems, OpenAPI), read, actions, events, block, insights (summary, work items, trends), plugin (hashes, sync, exists), format (ndjson / md / outline), address, schemas, problem, legacy (hints for removed v1/v2 paths)
 src/events/         event outbox (withEvents), buses (memory, Postgres LISTEN/NOTIFY + polling), retention
 src/store/postgres.js node-postgres data layer (same interface)
