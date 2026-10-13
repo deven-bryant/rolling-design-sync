@@ -97,38 +97,7 @@ test('agent blocks and unblocks a node and releases a claim', async ({ page }) =
   await page.keyboard.press('Escape');
 });
 
-test('a viewer notes a clean node, it turns Requested, and an agent clear resolves the note', async ({ page }) => {
-  const { fileKey } = await seedFile();
-  await clear(fileKey, [FRAME]);
-  await signIn(page, TOKENS.viewer);
-  await openNodeTree(page, fileKey);
-  await expect(row(page, FRAME)).toContainText('Clean');
-
-  await row(page, FRAME).getByText('Card', { exact: true }).click();
-  const frame = drawer(page);
-  await frame.getByRole('tab', { name: 'Change List' }).click();
-  await frame.getByRole('button', { name: 'Add change note', exact: true }).click();
-  await frame.getByRole('textbox', { name: /Description/ }).fill('The card padding should be 24px, not 16px.');
-  await expect(frame.getByText('42/4000')).toBeVisible();
-  await frame.getByRole('button', { name: 'Add Change Note', exact: true }).click();
-  await expect(page.getByText('Note added — the node needs a change')).toBeVisible();
-  const notes = frame.getByRole('region', { name: 'Open notes' });
-  await expect(notes.getByText('The card padding should be 24px, not 16px.')).toBeVisible();
-  await expect(frame.getByRole('group', { name: 'Status' })).toContainText('Requested');
-  await expect(row(page, FRAME)).toContainText('Requested');
-  await expect(row(page, FRAME).getByRole('img', { name: '1 open note' })).toBeVisible();
-  await expect(frame.getByRole('button', { name: 'Block…' })).toHaveCount(0);
-
-  await clear(fileKey, [FRAME]);
-  await expect(row(page, FRAME)).toContainText('Clean');
-  await expect(notes).toHaveCount(0);
-  const { notes: all } = await notesOf(fileKey, FRAME);
-  expect(all.map(n => n.status)).toEqual(['resolved']);
-  await frame.getByRole('tab', { name: 'Change History' }).click();
-  await expect(frame.getByText(/Resolved a note by clearing it/)).toBeVisible();
-});
-
-test('an API claim pops a sprite onto its row and a clear poofs it, without a reload', async ({ page }) => {
+test('an API claim pops a sprite onto its row and a clear poofs it, without a reload; a viewer note makes it Requested until the next clear', async ({ page }) => {
   const { fileKey } = await seedFile();
   await signIn(page, TOKENS.viewer);
   await openNodeTree(page, fileKey);
@@ -152,6 +121,30 @@ test('an API claim pops a sprite onto its row and a clear poofs it, without a re
   await expect(frame).toContainText('Clean');
   await expect(frame).not.toContainText('Dirty');
   expect(await page.evaluate(() => window.__noReload)).toBe(true);
+
+  // The viewer notes the now-clean node: it turns Requested; an agent clear resolves the note.
+  await frame.getByText('Card', { exact: true }).click();
+  const node = drawer(page);
+  await node.getByRole('tab', { name: 'Change List' }).click();
+  await node.getByRole('button', { name: 'Add change note', exact: true }).click();
+  await node.getByRole('textbox', { name: /Description/ }).fill('The card padding should be 24px, not 16px.');
+  await expect(node.getByText('42/4000')).toBeVisible();
+  await node.getByRole('button', { name: 'Add Change Note', exact: true }).click();
+  await expect(page.getByText('Note added — the node needs a change')).toBeVisible();
+  const notes = node.getByRole('region', { name: 'Open notes' });
+  await expect(notes.getByText('The card padding should be 24px, not 16px.')).toBeVisible();
+  await expect(node.getByRole('group', { name: 'Status' })).toContainText('Requested');
+  await expect(frame).toContainText('Requested');
+  await expect(frame.getByRole('img', { name: '1 open note' })).toBeVisible();
+  await expect(node.getByRole('button', { name: 'Block…' })).toHaveCount(0);
+
+  await clear(fileKey, [FRAME]);
+  await expect(frame).toContainText('Clean');
+  await expect(notes).toHaveCount(0);
+  const { notes: all } = await notesOf(fileKey, FRAME);
+  expect(all.map(n => n.status)).toEqual(['resolved']);
+  await node.getByRole('tab', { name: 'Change History' }).click();
+  await expect(node.getByText(/Resolved a note by clearing it/)).toBeVisible();
 });
 
 test('sidebar navigation, old links redirecting, the scope panel and the theme', async ({ page }) => {
