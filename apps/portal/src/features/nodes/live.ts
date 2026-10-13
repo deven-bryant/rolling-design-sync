@@ -54,7 +54,7 @@ export const fileEventsUrl = (fileKey: string) => `/v3/files/${encodeURIComponen
 
 /**
  * Keeps a file's cached node pages, details and claims live from its event stream:
- * `sync.completed` refetches, clears / blocks / claims patch rows in place, and claim
+ * `sync.completed` and note events refetch, clears / blocks / claims patch rows in place, and claim
  * events (and lease expiry) drive the rows' `AgentSprite` states. `reset` refetches every
  * active query (the stream's default).
  */
@@ -150,6 +150,9 @@ export function useNodeLiveUpdates(fileKey: string): NodeLiveUpdates {
       }));
       refreshHistory();
     },
+    'note.added': () => void queryClient.invalidateQueries({ queryKey: nodeKeys.all(fileKey) }),
+    'note.resolved': () => void queryClient.invalidateQueries({ queryKey: nodeKeys.all(fileKey) }),
+    'note.dismissed': () => void queryClient.invalidateQueries({ queryKey: nodeKeys.all(fileKey) }),
   });
 
   useEffect(() => {

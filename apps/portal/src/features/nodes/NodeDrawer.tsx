@@ -17,7 +17,7 @@ import {
 import { RemovalPanel, type RemovalUse, type RemovalWarning } from '../../components/domain/RemovalPanel';
 import { StateBadge } from '../../components/domain/StateBadge';
 import { TokenValue } from '../../components/domain/TokenValue';
-import { Input } from '../../components/Input';
+import { Input, Textarea } from '../../components/Input';
 import { Menu } from '../../components/Menu';
 import { Text } from '../../components/primitives';
 import { showToast } from '../../components/Toast';
@@ -38,8 +38,22 @@ import {
   tokenMeta,
   tokenValueView,
 } from './format';
-import { useBlockNode, useLibraryLinks, useNodeDetail, useNodeHistory, useReleaseClaim, useSessionRole, useUnblockNode } from './queries';
-import type { FileEvent, NodeDetail, SessionRole } from './types';
+import {
+  NOTE_MAX,
+  useAddNote,
+  useBlockNode,
+  useDeleteNote,
+  useDismissNote,
+  useEditNote,
+  useLibraryLinks,
+  useNodeDetail,
+  useNodeHistory,
+  useReleaseClaim,
+  useSessionAuthor,
+  useSessionRole,
+  useUnblockNode,
+} from './queries';
+import type { FileEvent, NodeDetail, NodeNote, SessionRole } from './types';
 
 /** A block reason's length bounds (the API's). */
 export const BLOCK_REASON_MAX = 500;
@@ -48,6 +62,13 @@ export function blockReasonError(reason: string): string | null {
   const length = reason.trim().length;
   if (!length) return 'Enter why this node can’t be implemented.';
   if (length > BLOCK_REASON_MAX) return `Keep the reason to ${BLOCK_REASON_MAX} characters (${length} now).`;
+  return null;
+}
+
+export function noteBodyError(body: string): string | null {
+  const length = body.trim().length;
+  if (!length) return 'Describe what doesn’t match the design.';
+  if (length > NOTE_MAX) return `Keep the note to ${NOTE_MAX} characters (${length} now).`;
   return null;
 }
 
@@ -79,6 +100,12 @@ export function describeEvent(event: FileEvent): string {
       return 'Unblocked it.';
     case 'sync.completed':
       return 'Synced the design from Figma.';
+    case 'note.added':
+      return 'Added a note: the built node doesn’t match the design.';
+    case 'note.resolved':
+      return typeof data.commitRef === 'string' && data.commitRef ? `Resolved a note by clearing it at ${short(data.commitRef)}.` : 'Resolved a note by clearing it.';
+    case 'note.dismissed':
+      return typeof data.reason === 'string' && data.reason ? `Dismissed a note: ${data.reason}` : 'Dismissed a note.';
     default:
       return event.type ?? 'Event';
   }
@@ -135,6 +162,7 @@ const CATEGORY_COLORS: Record<Category, NonNullable<BadgeProps['color']>> = {
   prototype: 'gray-blue',
   token: 'brand',
   other: 'gray',
+  note: 'orange',
 };
 
 interface ClaimProps {
@@ -235,6 +263,182 @@ function BlockForm({ fileKey, nodeId, onDone }: { fileKey: string; nodeId: strin
         </div>
       </form>
     </Drawer.Section>
+  );
+}
+
+function NoteForm({ fileKey, nodeId, onDone }: { fileKey: string; nodeId: string; onDone: () => void }) {
+  const add = useAddNote(fileKey);
+  const [body, setBody] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const error = noteBodyError(body);
+  const submit = () => {
+    setSubmitted(true);
+    if (error) return;
+    add.mutate(
+      { nodeId, body: body.trim() },
+      {
+        onSuccess: () => {
+          void showToast('Note added — the node needs a change');
+          onDone();
+        },
+      },
+    );
+  };
+  return (
+    <form
+      noValidate
+      aria-label="Add change note"
+      className="flex flex-col gap-3xl"
+      onSubmit={event => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <Textarea
+        label="Description"
+        required
+        autoFocus
+        tooltip="What doesn’t match the design. Agents read it, fix the code and clear the node."
+        placeholder="Enter a description..."
+        value={body}
+        onChange={setBody}
+        isInvalid={submitted && !!error}
+        hint={submitted && error ? error : `${body.trim().length}/${NOTE_MAX}`}
+      />
+      {add.isError && <Text color="error-primary">{add.error.message}</Text>}
+      <div className="flex justify-end">
+        <Button hierarchy="secondary" size="sm" type="submit" loading={add.isPending}>
+          Add Change Note
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** Who wrote a note, without the `portal:` prefix a portal session's notes carry. */
+const noteAuthor = (author: string | undefined) => (author ?? 'unknown').replace(/^portal:/, '');
+
+function NoteItem({ fileKey, note, mine, canDismiss, now }: { fileKey: string; note: NodeNote; mine: boolean; canDismiss: boolean; now: number }) {
+  const edit = useEditNote(fileKey);
+  const remove = useDeleteNote(fileKey);
+  const dismiss = useDismissNote(fileKey);
+  const [mode, setMode] = useState<'view' | 'edit' | 'dismiss'>('view');
+  const [body, setBody] = useState(note.body ?? '');
+  const [submitted, setSubmitted] = useState(false);
+  const noteId = note.noteId ?? '';
+  const author = noteAuthor(note.author);
+  const error = noteBodyError(body);
+  const failure = edit.error ?? remove.error ?? dismiss.error;
+  const save = () => {
+    setSubmitted(true);
+    if (error) return;
+    edit.mutate({ noteId, body: body.trim() }, { onSuccess: () => (setMode('view'), void showToast('Note updated')) });
+  };
+  return (
+    <li aria-label={`Note by ${author}`} className="flex flex-col gap-lg rounded-lg border border-secondary bg-primary p-xl">
+      <div className="flex items-center gap-lg">
+        <Avatar size="md" initials={agentInitials(author)} alt={author} />
+        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-md">
+          <Text weight="medium">{author}</Text>
+          <Text as="span" size="xs" color="tertiary">
+            <time dateTime={note.createdAt}>{timeAgo(note.createdAt, now)}</time>
+          </Text>
+        </div>
+      </div>
+      {mode === 'edit' ? (
+        <form
+          noValidate
+          className="flex flex-col gap-lg"
+          onSubmit={event => {
+            event.preventDefault();
+            save();
+          }}
+        >
+          <Textarea
+            aria-label="Edit note"
+            autoFocus
+            rows={4}
+            value={body}
+            onChange={setBody}
+            isInvalid={submitted && !!error}
+            hint={submitted && error ? error : `${body.trim().length}/${NOTE_MAX}`}
+          />
+          <div className="flex justify-end gap-lg">
+            <Button hierarchy="secondary" size="sm" onPress={() => (setMode('view'), setBody(note.body ?? ''), setSubmitted(false))}>
+              Cancel
+            </Button>
+            <Button hierarchy="primary" size="sm" type="submit" loading={edit.isPending}>
+              Save note
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <Text as="p" color="secondary" className="whitespace-pre-wrap break-words">
+          {note.body}
+        </Text>
+      )}
+      {mode === 'dismiss' && (
+        <div role="alertdialog" aria-label="Dismiss this note?" className="flex flex-col gap-lg rounded-lg border border-secondary bg-secondary p-xl">
+          <Text color="secondary">Dismissing it says the built node matches the design after all; the node goes back to its design changes only.</Text>
+          <div className="flex justify-end gap-lg">
+            <Button hierarchy="secondary" size="sm" onPress={() => setMode('view')}>
+              Cancel
+            </Button>
+            <Button
+              hierarchy="primary"
+              size="sm"
+              loading={dismiss.isPending}
+              onPress={() => dismiss.mutate(noteId, { onSuccess: () => void showToast('Note dismissed') })}
+            >
+              Dismiss note
+            </Button>
+          </div>
+        </div>
+      )}
+      {mode === 'view' && (mine || canDismiss) && (
+        <div className="flex justify-end gap-xl">
+          {mine && (
+            <Button hierarchy="link-gray" size="sm" onPress={() => setMode('edit')}>
+              Edit
+            </Button>
+          )}
+          {mine && (
+            <Button
+              hierarchy="link-gray"
+              size="sm"
+              isDisabled={remove.isPending}
+              onPress={() => remove.mutate(noteId, { onSuccess: () => void showToast('Note deleted') })}
+            >
+              Delete
+            </Button>
+          )}
+          {canDismiss && (
+            <Button hierarchy="link-color" size="sm" onPress={() => setMode('dismiss')}>
+              Dismiss
+            </Button>
+          )}
+        </div>
+      )}
+      {failure && <Text color="error-primary">{failure.message}</Text>}
+    </li>
+  );
+}
+
+/** A node's open notes, newest first: *Edit* / *Delete* for their author, *Dismiss* for the author or agents. */
+function NoteList({ fileKey, notes, role, now }: { fileKey: string; notes: readonly NodeNote[]; role: SessionRole; now: number }) {
+  const me = useSessionAuthor();
+  return (
+    <section aria-label="Open notes" className="flex flex-col gap-lg">
+      <Text as="h3" size="lg" weight="semibold">
+        Open notes
+      </Text>
+      <ul className="flex flex-col gap-lg">
+        {notes.map(note => {
+          const mine = !!me && note.author === me;
+          return <NoteItem key={note.noteId} fileKey={fileKey} note={note} mine={mine} canDismiss={mine || role === 'agent'} now={now} />;
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -359,7 +563,8 @@ function LoadedNode({
   const { history, historyEmpty } = useHistory(fileKey, nodeId, now);
 
   const main = node.isInstance && node.mainComponentId ? ` → main ${node.mainComponentId}` : '';
-  const categories = categoriesOf(node.changedProps ?? []);
+  const notes = node.notes ?? [];
+  const categories: Category[] = [...categoriesOf(node.changedProps ?? []), ...(notes.length ? (['note'] as const) : [])];
   const blocked = node.state === 'blocked' || !!node.blocked;
   const name = node.name ?? nodeId;
   const componentKey = node.library?.key;
@@ -400,6 +605,9 @@ function LoadedNode({
         {...claim}
         changes={node.changesKnown === false ? [] : changeRows(node, onOpenNode)}
         changesDescription={changedSince(node, now)}
+        hideEmptyChanges={notes.length > 0}
+        notes={notes.length > 0 && <NoteList fileKey={fileKey} notes={notes} role={role} now={now} />}
+        addChange={!node.deleted && <NoteForm fileKey={fileKey} nodeId={nodeId} onDone={() => onTabChange('change-list')} />}
         changesEmpty={
           node.changesKnown === false
             ? 'The property changes aren’t known for this node (it has no built baseline).'
@@ -487,7 +695,8 @@ export interface NodeDrawerProps {
 
 /**
  * Figma *Node drawer*: `Node Details` (status, claim, change list / history) with agent actions in the footer.
- * Each node opens on Change History in the narrow drawer; the Change List tab widens it.
+ * Each node opens on Change History in the narrow drawer; the Change List tab (and its Add Change note input) widens it.
+ * Anyone can add a note; the other actions keep their role rules.
  */
 export function NodeDrawer({ fileKey, nodeId, onClose, role, removal, onOpenNode }: NodeDrawerProps) {
   const sessionRole = useSessionRole();
@@ -498,8 +707,8 @@ export function NodeDrawer({ fileKey, nodeId, onClose, role, removal, onOpenNode
       isOpen={!!nodeId}
       onOpenChange={open => !open && onClose()}
       aria-label="Node"
-      size={tab === 'change-list' ? 'wide' : 'narrow'}
-      className={tab === 'change-list' ? undefined : 'w-145.75'}
+      size={tab === 'change-history' ? 'narrow' : 'wide'}
+      className={tab === 'change-history' ? 'w-145.75' : undefined}
     >
       {nodeId && (
         <NodeDrawerContent
