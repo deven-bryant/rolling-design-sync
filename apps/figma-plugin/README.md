@@ -1,6 +1,6 @@
 # Rolling Design Sync — Figma plugin
 
-Version 0.14.0. A runnable JavaScript development plugin with editable source and
+Version 0.14.1. A runnable JavaScript development plugin with editable source and
 no build step required for installation.
 
 Setting it up for the first time? The

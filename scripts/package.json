@@ -1,6 +1,6 @@
 {
   "name": "@rolling-design-sync/agent-cli",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "license": "Apache-2.0",
   "description": "Thin zero-dependency CLI over the v3 agent API; commands generated from its OpenAPI document.",
   "keywords": [
