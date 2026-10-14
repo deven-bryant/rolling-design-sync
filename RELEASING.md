@@ -74,7 +74,11 @@ Replace `X.Y.Z` with the new version and `vPREV` with the previous tag.
    Pushing the tag starts the release workflows (next section).
 4. **Verify and ship.** The **Release** and **Docker** runs for the tag are
    green, CI + E2E are green on `main`, and production redeploys from `main`.
-   Submit the plugin to Figma Community when it changed.
+   **Approve the staged npm packages** (next section) in dependency order —
+   `core`, then `agent-cli`, then `mcp` — on npmjs.com (the package →
+   **Staged Packages** → **Approve**, after the malware scan finishes) or with
+   `npm stage approve <name>@X.Y.Z`; both ask for 2FA. Submit the plugin to
+   Figma Community when it changed.
 
 ## What a tag publishes
 
@@ -84,14 +88,16 @@ Pushing a `vX.Y.Z` tag runs two workflows. Neither uses a stored secret.
   1. **verify** — checks that the tag matches every `package.json` version and
      that `CHANGELOG.md` has an `X.Y.Z` section, then `npm ci`, the tests, the
      build, and the package-contents check (`.github/scripts/check-pack.mjs`).
-  2. **npm** — publishes `@rolling-design-sync/core`, then
+  2. **npm** — **stages** `@rolling-design-sync/core`, then
      `@rolling-design-sync/agent-cli`, then `@rolling-design-sync/mcp` with
      [trusted publishing](https://docs.npmjs.com/trusted-publishers) (GitHub
-     OIDC, npm ≥ 11.5.1) and provenance. A package whose version is already on
-     npm is skipped, so a re-run after a partial failure is safe. A prerelease
-     (`X.Y.Z-beta.1`) goes to the `next` dist-tag. **Only runs when the
-     repository is public**; in a private repository the run logs a notice
-     instead.
+     OIDC) and [staged publishing](https://docs.npmjs.com/staged-publishing/)
+     (`npm stage publish`, npm ≥ 11.15). A staged version is not installable
+     until a maintainer approves it with 2FA, so a compromised workflow can't
+     push a release on its own. A package whose version is already published
+     is skipped. A prerelease (`X.Y.Z-beta.1`) goes to the `next` dist-tag.
+     **Only runs when the repository is public**; in a private repository the
+     run logs a notice instead.
   3. **github-release** — creates the GitHub Release `vX.Y.Z` with the
      `CHANGELOG.md` section as notes (marked prerelease for `X.Y.Z-*`); skipped
      if it already exists.
@@ -104,7 +110,9 @@ Pushing a `vX.Y.Z` tag runs two workflows. Neither uses a stored secret.
   a branch.
 
 If a run fails part-way, fix the cause and re-run it (**Re-run all jobs**):
-versions already on npm are skipped and an existing Release is kept.
+versions already published are skipped and an existing Release is kept. A
+version that is already **staged** but not approved can't be staged again:
+approve (or reject) it on npmjs.com before re-running.
 
 ## One-time setup (maintainer)
 
@@ -128,9 +136,11 @@ Do these once, in the public repository, around the first release:
 3. **Trusted publisher, per package.** On npmjs.com → the package →
    **Settings** → **Trusted Publisher** → **GitHub Actions**: organization or
    user `<owner>`, repository `rolling-design-sync`, workflow filename
-   `release.yml`, no environment, and allow `npm publish`. Then, under
-   **Publishing access**, require two-factor authentication and disallow
-   tokens, so only the workflow can publish.
+   `release.yml`, no environment, and leave **Allow npm publish** and **Allow
+   npm dist-tag** unticked (stage only — `npm stage publish` is always
+   allowed), then **Set up connection**. Under **Publishing access**, require
+   two-factor authentication and disallow tokens, and **Update Package
+   Settings**.
 
 ## Hotfixes
 
