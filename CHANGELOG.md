@@ -7,6 +7,17 @@ are cut.
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-10-14
+
+### Changed
+- **README:** a short demo video (a plugin sync, then the changed nodes in the
+  portal), and the portal screenshots in the dark theme. All README and docs
+  screenshots are regenerated at 0.14.
+
+### Upgrade notes
+- Documentation only: no code, migration or plugin behaviour change. npm stays
+  at 0.14.1, which is identical apart from the version.
+
 ## [0.14.1] - 2026-10-13
 
 ### Changed

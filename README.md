@@ -12,6 +12,10 @@ Figma plugin records what the design says, coding agents mark nodes as
 implemented once the code matches, and what's left is exactly the design work
 that hasn't been built — node by node, property by property.
 
+https://github.com/user-attachments/assets/1b32ff1d-47f8-40c0-9097-fc93ffc743ac
+
+*A sync from the Figma plugin, then the changed nodes waiting in the portal.*
+
 > **Status: 0.14 beta.** It works end to end, but the API, plugin protocol,
 > MCP tools and CLI may still change between minor releases until 1.0. What's promised, and when, is in the
 > [compatibility policy](docs/compatibility.md).
@@ -19,7 +23,7 @@ that hasn't been built — node by node, property by property.
 **[Quickstart →](docs/quickstart.md)** from a clean machine to an agent clearing
 its first Figma changes.
 
-![The portal's node tree: a synced screen with dirty, clean and blocked nodes, the agents working on them, and what changed](docs/images/portal-node-tree.png)
+![The portal's node tree: a synced screen with dirty, clean and blocked nodes, the agents working on them, and what changed](docs/images/portal-node-tree-dark.png)
 
 ## Why
 
@@ -99,10 +103,10 @@ they then show as references, not work.
 
 | | |
 |---|---|
-| ![Work items](docs/images/portal-work-items.png) **Work items** — changes grouped by component, with progress, so the shared pieces get built first; search nodes and expand instances like the node tree. A deleted screen that was built is one **Removed** item listing the components it used and which are still placed elsewhere; library components are badged and link to their library file. | ![Change List](docs/images/portal-node-changes.png) **Change List** — each changed property, from what was built to what the design says now, design tokens included. |
-| ![Change History](docs/images/portal-node-history.png) **Change History** — every claim, clear and block on a node, with the commit that built it. | ![Activity](docs/images/portal-activity.png) **Activity** — everything that happened in your files, live; **Claims** shows who holds what right now. |
-| ![Design tokens](docs/images/portal-design-tokens.png) **Design tokens** — collections and tokens like any scope; each changed mode reads at a glance with color swatches, and a token's drawer shows its code name and how many layers use it. | ![Notes](docs/images/portal-node-notes.png) **Notes** — say what doesn't match the design on any node; it comes back as **Requested** work, and the agent's clear resolves the note. |
-| ![Files](docs/images/portal-files.png) **Files** — every tracked file with what's left to build, and the week's trend: nodes cleared vs the week before, net newly dirty. | ![Connect](docs/images/portal-connect.png) **Connect** — copy-paste setup for Claude Code, Cursor, Devin and the CLI. |
+| ![Work items](docs/images/portal-work-items-dark.png) **Work items** — changes grouped by component, with progress, so the shared pieces get built first; search nodes and expand instances like the node tree. A deleted screen that was built is one **Removed** item listing the components it used and which are still placed elsewhere; library components are badged and link to their library file. | ![Change List](docs/images/portal-node-changes-dark.png) **Change List** — each changed property, from what was built to what the design says now, design tokens included. |
+| ![Change History](docs/images/portal-node-history-dark.png) **Change History** — every claim, clear and block on a node, with the commit that built it. | ![Activity](docs/images/portal-activity-dark.png) **Activity** — everything that happened in your files, live; **Claims** shows who holds what right now. |
+| ![Design tokens](docs/images/portal-design-tokens-dark.png) **Design tokens** — collections and tokens like any scope; each changed mode reads at a glance with color swatches, and a token's drawer shows its code name and how many layers use it. | ![Notes](docs/images/portal-node-notes-dark.png) **Notes** — say what doesn't match the design on any node; it comes back as **Requested** work, and the agent's clear resolves the note. |
+| ![Files](docs/images/portal-files-dark.png) **Files** — every tracked file with what's left to build, and the week's trend: nodes cleared vs the week before, net newly dirty. | ![Connect](docs/images/portal-connect-dark.png) **Connect** — copy-paste setup for Claude Code, Cursor, Devin and the CLI. |
 
 The screenshots are generated from a seeded demo with
 `npm run screenshots` in [`tests/e2e-portal`](tests/e2e-portal/screenshots.spec.js).
