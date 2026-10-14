@@ -12,6 +12,10 @@ Figma plugin records what the design says, coding agents mark nodes as
 implemented once the code matches, and what's left is exactly the design work
 that hasn't been built — node by node, property by property.
 
+https://github.com/user-attachments/assets/1b32ff1d-47f8-40c0-9097-fc93ffc743ac
+
+*A sync from the Figma plugin, then the changed nodes waiting in the portal.*
+
 > **Status: 0.14 beta.** It works end to end, but the API, plugin protocol,
 > MCP tools and CLI may still change between minor releases until 1.0. What's promised, and when, is in the
 > [compatibility policy](docs/compatibility.md).
