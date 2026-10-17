@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "0.5.8",
-    "@fastify/cors": "^11.3.0",
-    "@fastify/swagger": "9.9.1",
+    "@fastify/cors": "^11.3.1",
+    "@fastify/swagger": "9.9.2",
     "@rolling-design-sync/core": "*",
     "fastify": "5.12.5",
     "pg": "^8.23.1",
