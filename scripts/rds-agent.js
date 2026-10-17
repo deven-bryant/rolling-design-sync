@@ -10,8 +10,11 @@
  * `1-2` node ids, `--all` paging, `--format`, bulk-clear input, output and error
  * formatting, exit codes.
  *
+ * Hand-written command: `check` (render checks; loads the optional Playwright peer
+ * dependency, nothing else does).
+ *
  * Env: RDS_API_BASE_URL, RDS_AGENT_TOKEN, RDS_WORKER. Zero deps (Node >= 20 built-in fetch).
- * Exits 0 on 2xx (and for --help), 1 on API/usage errors.
+ * Exits 0 on 2xx (and for --help), 1 on API/usage errors; `check`: 0 passed, 1 mismatch, 2 errors.
  */
 
 const SPEC = require('./commands.generated.json');
@@ -68,7 +71,7 @@ function usage() {
     'Usage: rds-agent <command> [arguments] [flags]',
     '',
     'Commands:',
-    ...pad([...COMMANDS.values()].map(c => [`  ${c.command}${argsOf(c)}`, c.summary || ''])),
+    ...pad([...[...COMMANDS.values()].map(c => [`  ${c.command}${argsOf(c)}`, c.summary || '']), ['  check', 'Screenshot screens of the built app and submit render checks (Playwright)']]),
     '',
     "Run 'rds-agent <command> --help' for a command's flags.",
     '',
@@ -139,6 +142,7 @@ function parseArgs(argv) {
   const [head, ...tail] = argv;
   if (head === 'help' || head === '--help' || head === '-h') {
     if (!tail.length) throw new CliError(usage(), { exitCode: 0 });
+    if (tail[0] === 'check') throw new CliError(checkHelp(), { exitCode: 0 });
     throw new CliError(commandHelp(commandOf(tail).cmd), { exitCode: 0 });
   }
   const { cmd, used } = commandOf(argv);
@@ -538,9 +542,219 @@ async function readAll(stream) {
   return text;
 }
 
-async function run(argv, { env = process.env, fetchImpl = globalThis.fetch, stdout = process.stdout, stderr = process.stderr, stdin = process.stdin } = {}) {
+// --- check (render checks with Playwright) -------------------------------------------
+const CHECK_BROWSERS = ['chromium', 'firefox', 'webkit'];
+const CHECK_DEFAULT_TIMEOUT = 30000;
+/** The page's clock is frozen at this instant, so dates and relative times render the same on every run. */
+const CHECK_FROZEN_TIME = '2025-01-01T12:00:00.000Z';
+const CHECK_SOURCE = 'rds-agent check';
+const CHECK_FLAGS = ['file-key', 'base-url', 'screen', 'requested', 'storage-state', 'browser', 'timeout', 'commit-ref', 'source', 'help'];
+
+function checkHelp() {
+  return [
+    'Usage: rds-agent check --file-key <key> --base-url <url> (--screen <nodeId> | --requested) [flags]',
+    '',
+    'Screenshots each screen of the built app with Playwright and submits it as a render check result;',
+    'the API compares it with the screen\'s Figma reference. Playwright is an optional peer dependency:',
+    'npm i -D playwright && npx playwright install chromium',
+    '',
+    'Flags:',
+    ...pad([
+      ['  --file-key <string>', '(required) The Figma file key.'],
+      ['  --base-url <url>', '(required) Where the built app runs (e.g. http://localhost:3000); each screen opens at base-url + route (+ query).'],
+      ['  --screen <nodeId>', 'Request a check of this screen, then run it.'],
+      ['  --requested', 'Run every requested check of the file.'],
+      ['  --storage-state <file>', 'Playwright storage state (cookies, local storage) for a signed-in app.'],
+      ['  --browser <chromium|firefox|webkit>', '(default "chromium")'],
+      ['  --timeout <ms>', `(default ${CHECK_DEFAULT_TIMEOUT}) Per page: navigation, network idle and fonts.`],
+      ['  --commit-ref <string>', '(default: git rev-parse HEAD in a git repo) The commit the app was built from.'],
+      ['  --source <string>', `(default $RDS_WORKER, else "${CHECK_SOURCE}") What rendered the screenshots.`],
+    ]),
+    '',
+    'Exit codes: 0 every check passed (or none was requested), 1 a render mismatch, 2 an error.',
+  ].join('\n');
+}
+
+/** Parse `check` flags (argv after `check`); usage errors are CliErrors with exit code 2. */
+function parseCheckArgs(argv) {
+  const options = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '-h' || arg === '--help') { options.help = true; continue; }
+    if (!arg.startsWith('--')) throw new CliError(`Unexpected argument for 'check': ${arg}\n\n${checkHelp()}`, { exitCode: 2 });
+    let key = arg.slice(2);
+    let value;
+    const eq = key.indexOf('=');
+    if (eq !== -1) { value = key.slice(eq + 1); key = key.slice(0, eq); }
+    if (!CHECK_FLAGS.includes(key)) {
+      throw new CliError(`Unknown option for 'check': --${key}. Valid: ${CHECK_FLAGS.map(k => `--${k}`).join(' ')}`, { exitCode: 2 });
+    }
+    if (key === 'requested') { options.requested = value === undefined ? true : value !== 'false'; continue; }
+    if (value === undefined) {
+      if (i + 1 >= argv.length) throw new CliError(`Missing value for --${key}\n\n${checkHelp()}`, { exitCode: 2 });
+      value = argv[++i];
+    }
+    if (options[key] !== undefined) throw new CliError(`Pass --${key} once`, { exitCode: 2 });
+    options[key] = String(value).trim();
+  }
+  if (options.help) throw new CliError(checkHelp(), { exitCode: 0 });
+  const usageError = message => new CliError(`${message}\n\n${checkHelp()}`, { exitCode: 2 });
+  for (const key of ['file-key', 'base-url']) if (!options[key]) throw usageError(`--${key} is required`);
+  if (!options.screen === !options.requested) throw usageError('Pass one of --screen <nodeId> or --requested');
+  const browser = options.browser || 'chromium';
+  if (!CHECK_BROWSERS.includes(browser)) throw usageError(`--browser must be one of: ${CHECK_BROWSERS.join(', ')}`);
+  let timeout = CHECK_DEFAULT_TIMEOUT;
+  if (options.timeout !== undefined) {
+    if (!/^\d+$/.test(options.timeout) || Number(options.timeout) < 1) throw usageError('--timeout must be a positive integer (ms)');
+    timeout = Number(options.timeout);
+  }
+  let baseUrl;
+  try { baseUrl = new URL(options['base-url']); } catch { throw usageError('--base-url must be an absolute URL (e.g. http://localhost:3000)'); }
+  return {
+    fileKey: options['file-key'],
+    baseUrl: baseUrl.toString().replace(/\/+$/, ''),
+    screen: options.screen ? normalizeNodeId(options.screen) : null,
+    requested: !!options.requested,
+    storageState: options['storage-state'] || null,
+    browser,
+    timeout,
+    commitRef: options['commit-ref'] || null,
+    source: options.source || null,
+  };
+}
+
+/** `git rev-parse HEAD` in `cwd`, or null outside a git repo (or without git). */
+function gitHead(cwd) {
+  try {
+    const out = require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return out.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Load Playwright from the project in `cwd` (where `npm i -D playwright` puts it),
+ * else from the CLI's own location. Throws a CliError naming the install command when missing.
+ */
+async function loadPlaywright({ cwd = process.cwd(), name = 'playwright', browser = 'chromium' } = {}) {
+  const { pathToFileURL } = require('node:url');
+  let specifier = name;
+  try { specifier = pathToFileURL(require.resolve(name, { paths: [cwd, __dirname] })).href; } catch { /* fall through to a bare import */ }
+  try {
+    const mod = await import(specifier);
+    return mod.default && mod.default[browser] ? mod.default : mod;
+  } catch (err) {
+    if (err && (err.code === 'ERR_MODULE_NOT_FOUND' || err.code === 'MODULE_NOT_FOUND')) {
+      throw new CliError(`rds-agent check needs Playwright — install it: npm i -D playwright && npx playwright install ${browser}`, { exitCode: 2 });
+    }
+    throw err;
+  }
+}
+
+/** The page a check renders: base URL + route, with the screen's query string. */
+function checkUrl(baseUrl, check) {
+  const url = new URL(baseUrl + (check.route || '/'));
+  const query = String(check.query || '').replace(/^\?/, '');
+  if (query) for (const [k, v] of new URLSearchParams(query)) url.searchParams.append(k, v);
+  return url.toString();
+}
+
+/** A viewport-sized PNG of one screen (reduced motion, frozen clock, after network idle and fonts). */
+async function screenshot(browser, check, options) {
+  const viewport = check.viewport && check.viewport.width && check.viewport.height ? check.viewport : null;
+  if (!viewport) throw new Error(`screen ${check.nodeId} has no viewport`);
+  const context = await browser.newContext({
+    viewport: { width: viewport.width, height: viewport.height },
+    deviceScaleFactor: 1,
+    reducedMotion: 'reduce',
+    ...(check.theme === 'dark' || check.theme === 'light' ? { colorScheme: check.theme } : {}),
+    ...(options.storageState ? { storageState: options.storageState } : {}),
+  });
+  try {
+    const page = await context.newPage();
+    page.setDefaultTimeout(options.timeout);
+    await page.clock.setFixedTime(new Date(CHECK_FROZEN_TIME));
+    await page.goto(checkUrl(options.baseUrl, check), { waitUntil: 'networkidle', timeout: options.timeout });
+    await page.evaluate('document.fonts.ready.then(() => true)');
+    return await page.screenshot({ type: 'png', fullPage: false, animations: 'disabled', caret: 'hide', timeout: options.timeout });
+  } finally {
+    await context.close();
+  }
+}
+
+const percent = n => (typeof n === 'number' ? `${Number(n.toFixed(3))}%` : '?');
+
+function checkLine(check) {
+  const head = `${check.nodeId}  ${check.status}`;
+  if (check.status === 'error') return `${head}  ${check.error || ''}`.trimEnd();
+  const cmp = check.status === 'passed' ? '<=' : '>';
+  const lines = [`${head}  score ${percent(check.score)} ${cmp} limit ${percent(check.threshold)}  ${check.checkId}`];
+  for (const r of check.regions || []) lines.push(`  region ${r.x},${r.y} ${r.width}x${r.height}${typeof r.pixels === 'number' ? ` (${r.pixels} px)` : ''}`);
+  return lines.join('\n');
+}
+
+const asCheckError = err => (err instanceof CliError ? err.message : `error: ${err && err.message ? err.message : err}`);
+
+/**
+ * `rds-agent check`: list (or request) the checks, screenshot each screen, submit it.
+ * Returns the exit code: 0 all passed, 1 any mismatch, 2 any error.
+ */
+async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cwd(), playwright }) {
+  const opts = parseCheckArgs(argv);
+  readEnv(env);
+  const pw = playwright || await loadPlaywright({ cwd, browser: opts.browser });
+  const call = (method, path, extra = {}) => execute({ method, path, query: {}, ...extra }, { env, fetchImpl });
+  const fk = encodeURIComponent(opts.fileKey);
+  let checks;
+  if (opts.screen) {
+    checks = [(await call('POST', `/v3/files/${fk}/screens/${encodeURIComponent(opts.screen)}/checks`)).check];
+  } else {
+    checks = (await call('GET', `/v3/files/${fk}/checks`, { query: { status: 'requested', limit: '500' } })).checks || [];
+  }
+  if (!checks.length) {
+    stdout.write('no requested checks\n');
+    return 0;
+  }
+  const commitRef = opts.commitRef || gitHead(cwd);
+  const source = opts.source || envVar(env, 'WORKER') || CHECK_SOURCE;
+  const meta = { ...(commitRef ? { commitRef } : {}), source };
+  const counts = { passed: 0, mismatch: 0, error: 0 };
+  const browser = await pw[opts.browser].launch();
+  try {
+    for (const check of checks) {
+      let body;
+      try {
+        body = { image: Buffer.from(await screenshot(browser, check, opts)).toString('base64'), ...meta };
+      } catch (err) {
+        body = { error: `could not render ${checkUrl(opts.baseUrl, check)}: ${err && err.message ? err.message : err}`.slice(0, 2000), ...meta };
+      }
+      try {
+        const done = (await call('POST', `/v3/files/${fk}/checks/${encodeURIComponent(check.checkId)}/result`, { body })).check;
+        counts[done.status === 'passed' || done.status === 'mismatch' ? done.status : 'error']++;
+        stdout.write(`${checkLine(done)}\n`);
+      } catch (err) {
+        counts.error++;
+        stderr.write(`${check.nodeId}  error  ${asCheckError(err)}\n`);
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+  stdout.write(`${plural(checks.length, 'check')}: ${counts.passed} passed, ${counts.mismatch} mismatch, ${plural(counts.error, 'error')}\n`);
+  if (counts.error) return 2;
+  return counts.mismatch ? 1 : 0;
+}
+
+/**
+ * @param {string[]} argv
+ * @param {{ env?: Record<string, string | undefined>, fetchImpl?: any, stdout?: any, stderr?: any, stdin?: any, cwd?: string, playwright?: any }} [options]
+ */
+async function run(argv, { env = process.env, fetchImpl = globalThis.fetch, stdout = process.stdout, stderr = process.stderr, stdin = process.stdin, cwd = process.cwd(), playwright } = {}) {
+  const isCheck = argv[0] === 'check';
   try {
     warnLegacyEnv(env, { warn: message => stderr.write(`${message}\n`) });
+    if (isCheck) return await runCheck(argv.slice(1), { env, fetchImpl, stdout, stderr, cwd, playwright });
     const parsed = parseArgs(argv);
     const cmd = COMMANDS.get(parsed.command);
     const stdinText = cmd.items && parsed.args.includes('-') ? await readAll(stdin) : undefined;
@@ -553,10 +767,10 @@ async function run(argv, { env = process.env, fetchImpl = globalThis.fetch, stdo
     if (err instanceof CliError) {
       (err.exitCode === 0 ? stdout : stderr).write(err.message + '\n');
       if (err.body !== undefined && err.body !== null) stderr.write(JSON.stringify(err.body, null, 2) + '\n');
-      return err.exitCode;
+      return isCheck && err.exitCode !== 0 ? 2 : err.exitCode;
     }
     stderr.write(`${err && err.message ? err.message : err}\n`);
-    return 1;
+    return isCheck ? 2 : 1;
   }
 }
 
@@ -564,4 +778,4 @@ if (require.main === module) {
   run(process.argv.slice(2)).then(code => { process.exitCode = code; });
 }
 
-module.exports = { envVar, warnLegacyEnv, retrySeconds, parseArgs, buildRequest, buildUrl, execute, perform, run, normalizeNodeId, usage, commandHelp, CliError, CLIENT, COMMANDS };
+module.exports = { parseCheckArgs, loadPlaywright, checkUrl, gitHead, envVar, warnLegacyEnv, retrySeconds, parseArgs, buildRequest, buildUrl, execute, perform, run, normalizeNodeId, usage, commandHelp, CliError, CLIENT, COMMANDS };
