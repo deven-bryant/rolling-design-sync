@@ -124,6 +124,30 @@ const clear = (fileKey, nodeIds) =>
     items: nodeIds.map(nodeId => ({ nodeId, contentHash: TREE.find(n => n.nodeId === nodeId).contentHash })),
   });
 
+/** A 200×200 white PNG (base64), with a black `box`×`box` square at 20, 20 when given. */
+async function png(box = 0) {
+  const sharp = require('sharp');
+  let img = sharp({ create: { width: 200, height: 200, channels: 3, background: { r: 255, g: 255, b: 255 } } });
+  if (box) img = img.composite([{ input: { create: { width: box, height: box, channels: 3, background: { r: 0, g: 0, b: 0 } } }, left: 20, top: 20 }]);
+  return (await img.png().toBuffer()).toString('base64');
+}
+
+/** Makes `FRAME` a render-check screen (route `/card`, 200×200), builds it and uploads its reference: Ready. */
+async function readyScreen(fileKey) {
+  await api('PUT', `/v3/files/${fileKey}/screens/${FRAME}`, TOKENS.agent, { route: '/card', viewport: { width: 200, height: 200 } });
+  await clear(fileKey, [FRAME, INSTANCE]);
+  const { screens } = await api('GET', `/v3/files/${fileKey}/screens/references-needed`, TOKENS.plugin);
+  const needed = screens.find(s => s.nodeId === FRAME);
+  await api('PUT', `/v3/files/${fileKey}/screens/${FRAME}/reference`, TOKENS.plugin, { designVersion: needed.designVersion, image: await png() });
+}
+
+/** Submits the built screenshot for the screen's requested check (as `rds-agent check` does). */
+async function submitCheck(fileKey, image) {
+  const { checks } = await api('GET', `/v3/files/${fileKey}/checks?status=requested`, TOKENS.agent);
+  const check = checks.find(c => c.nodeId === FRAME);
+  return (await api('POST', `/v3/files/${fileKey}/checks/${check.checkId}/result`, TOKENS.agent, { image, commitRef: 'e2e1234567', source: 'e2e' })).check;
+}
+
 const notesOf = (fileKey, nodeId) => api('GET', `/v3/files/${fileKey}/nodes/${nodeId}/notes?status=all`, TOKENS.agent);
 
-module.exports = { TOKENS, ROOT, FRAME, INSTANCE, MAIN, MAIN_CHILD, SECOND, REMOVED, TOKEN_COLLECTION, TOKEN, seedFile, syncSecondScope, syncRemovedScreen, syncTokens, claim, clear, notesOf };
+module.exports = { TOKENS, ROOT, FRAME, INSTANCE, MAIN, MAIN_CHILD, SECOND, REMOVED, TOKEN_COLLECTION, TOKEN, seedFile, syncSecondScope, syncRemovedScreen, syncTokens, claim, clear, notesOf, png, readyScreen, submitCheck };

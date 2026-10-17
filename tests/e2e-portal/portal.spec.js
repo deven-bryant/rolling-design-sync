@@ -5,7 +5,7 @@
 // then signs in as a viewer and an agent. See tests/README.md.
 
 const { test, expect } = require('@playwright/test');
-const { TOKENS, ROOT, FRAME, INSTANCE, MAIN_CHILD, SECOND, REMOVED, TOKEN_COLLECTION, TOKEN, seedFile, syncSecondScope, syncRemovedScreen, syncTokens, claim, clear, notesOf } = require('./fixture');
+const { TOKENS, ROOT, FRAME, INSTANCE, MAIN_CHILD, SECOND, REMOVED, TOKEN_COLLECTION, TOKEN, seedFile, syncSecondScope, syncRemovedScreen, syncTokens, claim, clear, notesOf, png, readyScreen, submitCheck } = require('./fixture');
 
 async function signIn(page, token) {
   await page.goto('/ui/sign-in');
@@ -304,4 +304,68 @@ test('design tokens: browse a collection, read a changed mode, open the token an
   await item.getByText('Semantic', { exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/nodes\\?under=${encodeURIComponent(TOKEN_COLLECTION).replace('%3A', '(%3A|:)')}`));
   await expect(row(page, TOKEN)).toBeVisible();
+});
+
+const loaded = img => img.evaluate(el => el.complete && el.naturalWidth > 0);
+
+test('a viewer adds a note with a screenshot and opens it in the lightbox', async ({ page }) => {
+  const { fileKey } = await seedFile();
+  await signIn(page, TOKENS.viewer);
+  await openNodeTree(page, fileKey);
+  await row(page, FRAME).getByText('Card', { exact: true }).click();
+  const node = drawer(page);
+  await node.getByRole('tab', { name: 'Change List' }).click();
+  await node.getByRole('button', { name: 'Add change note', exact: true }).click();
+  await node.getByRole('textbox', { name: /Description/ }).fill('The badge overlaps the title.');
+  const shot = Buffer.from(await png(40), 'base64');
+  await node.locator('input[type="file"]').setInputFiles({ name: 'overlap.png', mimeType: 'image/png', buffer: shot });
+  await expect(node.getByRole('list', { name: 'Attached screenshots' }).getByRole('img', { name: 'overlap.png' })).toBeVisible();
+  await node.locator('input[type="file"]').setInputFiles({ name: 'clip.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') });
+  await expect(node.getByRole('alert')).toHaveText('clip.gif isn’t a PNG, JPG or WebP image.');
+  await node.getByRole('button', { name: 'Add Change Note', exact: true }).click();
+  await expect(page.getByText('Note added — the node needs a change')).toBeVisible();
+
+  const note = node.getByRole('region', { name: 'Open notes' }).getByRole('listitem').first();
+  const thumb = note.getByRole('button', { name: 'View Screenshot 1' });
+  await expect(thumb).toBeVisible();
+  await expect.poll(() => loaded(thumb.locator('img'))).toBe(true);
+  await thumb.click();
+  const lightbox = page.getByRole('dialog', { name: 'Screenshot 1' });
+  await expect.poll(() => loaded(lightbox.locator('img'))).toBe(true);
+  await page.keyboard.press('Escape');
+  await expect(lightbox).toHaveCount(0);
+  const { notes } = await notesOf(fileKey, FRAME);
+  expect(notes[0].attachments.map(a => a.kind)).toEqual(['screenshot']);
+});
+
+test('an agent requests a render check; the submitted mismatch shows live with its heatmap, a pass clears it', async ({ page }) => {
+  const { fileKey } = await seedFile();
+  await readyScreen(fileKey);
+  await signIn(page, TOKENS.agent);
+  await openNodeTree(page, fileKey);
+  await row(page, FRAME).getByText('Card', { exact: true }).click();
+  const node = drawer(page);
+  const check = node.getByRole('group', { name: /Render check/ });
+  await expect(check).toContainText('Ready');
+  await check.getByRole('button', { name: 'Request check' }).click();
+  await expect(check).toContainText('Requested');
+
+  await submitCheck(fileKey, await png(40));
+  await expect(check).toContainText('Render mismatch');
+  await expect(check).toContainText('e2e1234');
+  await expect(check).toContainText('1 region');
+  await expect(node.getByRole('group', { name: 'Status' })).toContainText('render');
+  await expect.poll(() => loaded(check.getByRole('button', { name: 'View Implemented' }).locator('img'))).toBe(true);
+  await check.getByRole('tab', { name: 'Heatmap' }).click();
+  const heatmap = check.getByRole('button', { name: 'View Heatmap' });
+  await expect.poll(() => loaded(heatmap.locator('img'))).toBe(true);
+  await heatmap.click();
+  await expect.poll(() => loaded(page.getByRole('dialog', { name: 'Heatmap' }).locator('img'))).toBe(true);
+  await page.keyboard.press('Escape');
+
+  await check.getByRole('button', { name: 'Request check' }).click();
+  await expect(check).toContainText('Requested');
+  await submitCheck(fileKey, await png());
+  await expect(check).toContainText('Passed');
+  await expect(node.getByRole('group', { name: 'Status' })).not.toContainText('Render mismatch');
 });
