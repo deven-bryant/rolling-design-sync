@@ -84,7 +84,7 @@ than the path is `400 url_mismatch`; a URL pasted as the key is
 | `GET /v3/files/{fileKey}/claims` | `url?` | `{fileKey, claims: [{claimId, worker, label, expiresAt, createdAt, nodeCount, nodeIds, nodes}]}` — nodes still leased to each unexpired claim |
 | `GET /v3/files` | — | `{files: [file]}`, most recently synced first |
 | `GET /v3/files/{fileKey}` | `url?` | `file` (with `settings`, defaults filled in) |
-| `PATCH /v3/files/{fileKey}` | `{settings: {trackLibraryComponents}, worker?}`, `url?` | `file`; emits `file.settings_changed`; unknown setting `400 invalid_parameter` |
+| `PATCH /v3/files/{fileKey}` | `{settings: {trackLibraryComponents, storeImages}, worker?}`, `url?` | `file`; emits `file.settings_changed`; unknown setting `400 invalid_parameter` |
 | `GET /v3/files/{fileKey}/scopes` | `url?` | `{fileKey, scopes: [{nodeId, name, type, deleted, figmaUrl, lastSyncAt, lastSyncCounts, counts}]}` — one per synced root, latest sync |
 | `GET /v3/files/{fileKey}/nodes` | filters (below), `view`, `changes`, `fields`, `include`, `sort`, `limit`, `cursor`, `format?`, `url?` | `{fileKey, nodes: [node], nextCursor, total, truncated?}` |
 | `GET /v3/files/{fileKey}/nodes/{nodeId}` | `fields?`, `changes?`, `url?` | detail node |
@@ -94,10 +94,18 @@ than the path is `400 url_mismatch`; a URL pasted as the key is
 | `DELETE /v3/files/{fileKey}/claims/{claimId}` | — | `{claimId, worker, label, released: [nodeId]}` |
 | `POST /v3/files/{fileKey}/nodes/{nodeId}/block` | `{reason, worker?}` (reason 1–500) | `{fileKey, node, released: {claimId, worker} \| null}` — releases any lease |
 | `POST /v3/files/{fileKey}/nodes/{nodeId}/unblock` | `{worker?}` (body optional) | `{fileKey, node, unblocked}` (`false` if it wasn't blocked) |
-| `POST /v3/files/{fileKey}/nodes/{nodeId}/notes` | `{body, worker?}` (body 1–4000; viewer or agent) | `{fileKey, note, node}` — the note and the node's new state |
+| `POST /v3/files/{fileKey}/nodes/{nodeId}/notes` | `{body, worker?, images?}` (body 1–4000; up to 3 base64 screenshots; viewer or agent) | `{fileKey, note, node}` — the note and the node's new state |
 | `GET /v3/files/{fileKey}/nodes/{nodeId}/notes` | `status?` (`open` default \| `all`), `url?` | `{fileKey, nodeId, notes: [note]}`, newest first |
 | `PATCH /v3/files/{fileKey}/notes/{noteId}` | `{body}` (author only, open notes) | `{fileKey, note, node}` |
 | `DELETE /v3/files/{fileKey}/notes/{noteId}` | — (author only, open notes) | `{fileKey, noteId, deleted: true, node}` |
+| `GET /v3/files/{fileKey}/attachments/{attachmentId}` | `size?` (`full` \| `thumb`) | the image bytes (`private`, `nosniff`, sandboxed); viewer or agent |
+| `GET /v3/files/{fileKey}/screens` | `under?` | `{fileKey, screens: [screen]}` — route, viewport, masks, threshold, design / reference version, status, last check |
+| `PUT /v3/files/{fileKey}/screens/{nodeId}` | `{route, viewport?, theme?, query?, masks?, threshold?}` (FRAME / COMPONENT) | `{fileKey, screen}` |
+| `DELETE /v3/files/{fileKey}/screens/{nodeId}` | — | `{fileKey, nodeId, deleted}` — with its checks and images |
+| `POST /v3/files/{fileKey}/screens/{nodeId}/checks` | — (viewer or agent) | `{fileKey, check, created}` — the open request if there is one |
+| `GET /v3/files/{fileKey}/checks` | `status?`, `nodeId?`, `limit?` | `{fileKey, checks: [check]}`, newest first |
+| `GET /v3/files/{fileKey}/checks/{checkId}` | — | `check` with score, regions and reference / built / heatmap urls |
+| `POST /v3/files/{fileKey}/checks/{checkId}/result` | `{image}` (base64 PNG) or `{error}`, `commitRef?`, `source?` | the scored `check`; a mismatch adds a `render_check` note |
 | `POST /v3/files/{fileKey}/notes/{noteId}/dismiss` | `{reason?}` (author or any agent; body optional) | `{fileKey, note, node}` |
 | `GET /v3/files/{fileKey}/events` | `after?`, `order?` (`asc` \| `desc`), `before?`, `types?`, `nodeId?`, `since?`, `limit?`, `format?` (JSON); `Last-Event-ID` (SSE), `url?` | `{fileKey, events: [event], nextAfter}` (`order=desc`: newest first, `{fileKey, events, nextBefore}`; page older with `before`), or a `text/event-stream` with `Accept: text/event-stream` |
 | `GET /v3/events` | Same event parameters plus `fileKey?` | `{events: [event], nextAfter}` (or `nextBefore` with `order=desc`) or SSE across files; every event includes `fileKey`, and on JSON pages `fileName` |

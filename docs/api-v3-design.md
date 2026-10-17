@@ -414,6 +414,36 @@ design: `POST …/nodes/{nodeId}/notes { body, worker? }` (body 1–4000 chars).
 - **Auth.** These are the only writes viewer tokens and sessions may make;
   session writes follow the usual CSRF rules.
 
+### Screenshots and render checks
+
+- **Images.** Notes take up to 3 `images` (base64 PNG / JPEG / WebP, ≤ 5 MB,
+  ≤ 8192 px a side; the type is sniffed from the bytes). Each is re-encoded
+  (metadata stripped), gets a ≤ 480 px WebP thumbnail and is an `attachment`
+  row (`attachment_id`, `owner_kind` note | screen | check, `kind`
+  screenshot | reference | built | heatmap, size, dimensions, sha256) whose
+  bytes sit in the blob store (`blob` table, local files or an S3 bucket).
+  They are served only with credentials, `nosniff`, sandboxed. Deleting a note
+  deletes its images. `storeImages: false` on a file refuses new ones.
+- **Screens.** `screen` rows mark a FRAME or COMPONENT (not a section) as a
+  page of the app: `route`, `viewport`, `theme?`, `query?`, `masks`,
+  `threshold` (% of pixels, default 1). The **design version** hashes the
+  content hashes of the screen and every live node under it; the plugin
+  uploads a 1× reference for screens whose reference is for another version
+  (`references-needed`).
+- **Checks.** Anyone signed in requests a check (idempotent while
+  `requested`); an agent submits the built screenshot. The API compares it
+  with the reference — no resizing, size differences count as differing,
+  masks skipped, YIQ distance with anti-aliasing tolerance — and stores
+  `score`, up to 10 merged `regions` and a heatmap. Over the threshold is
+  `mismatch`: a `render_check` note (author `render-check`, the three images
+  attached) dirties the screen root as `requested` with category `render`.
+  A pass resolves those notes. A design change makes the last result
+  `stale`. Each screen keeps its 10 newest checks. Events
+  `render_check.requested|passed|mismatch` carry ids and the score only.
+- **Reads.** Nodes and work items carry `screen: { status, stale, score }` on
+  screen roots (`building` while nodes under it are dirty, then `ready`,
+  `requested`, `passed`, `mismatch`, `error`).
+
 ## Supporting data
 
 - **`sync_event`** — one row per plugin sync: `file_key`, `root_node_id`,

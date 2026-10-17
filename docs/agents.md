@@ -343,6 +343,20 @@ mode, then clear it like any node (`clear_nodes` with its `contentHash`).
    it. `not_removed` means the node isn't deleted — clear it normally.
    Deleting something that was never built creates no work at all.
 
+8. **Render checks.** Screens (frames set up with `set_screen`: a `route` and a
+   viewport) are compared with their Figma reference as built. Run requested
+   render checks with `rds-agent check`: for each
+   `list_render_checks { "status": "requested" }` /
+   `node scripts/rds-agent.js checks ls --file-key AbC123 --status requested`,
+   open the check's `route` at its `viewport` (with its `theme` / `query`),
+   take a 1× screenshot and send it with `submit_render_check`
+   (`{ "checkId": "…", "image": "<base64 PNG>" }`; `error` if it would not
+   render). The API scores it and returns a heatmap. Fix render-mismatch notes
+   like any note: a `source: "render_check"` note on the screen root lists the
+   differing regions; look at its heatmap with `get_attachment` (an image), fix
+   the screen, then `request_render_check` and run it again — a pass resolves
+   the note. Notes from people may carry screenshots too (`get_attachment`).
+
 Repeat until the listing is empty.
 
 ### Parallel agents with claims
