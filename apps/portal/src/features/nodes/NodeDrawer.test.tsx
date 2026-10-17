@@ -74,7 +74,8 @@ describe('NodeDrawer', () => {
     const row = within(dialog.getByRole('table', { name: 'Change list' })).getAllByRole('row')[1] as HTMLElement;
     expect(within(row).getAllByRole('cell').map(c => c.textContent)).toEqual(['itemSpacing', 'spacing-md12', 'spacing-lg16']);
     const claim = within(dialog.getByRole('group', { name: 'Claim Holder' }));
-    expect(await claim.findByText('devin · claimed 2 min ago · lease expires in 15 min')).toBeTruthy();
+    expect(await claim.findByText('2 min ago')).toBeTruthy();
+    expect(claim.getAllByRole('definition').map(d => d.textContent)).toEqual(['devin', '2 min ago', 'in 15 min']);
     expect(claim.getByText('covers 2 other nodes too')).toBeTruthy();
     expect(dialog.getByRole('link', { name: 'Open in Figma' }).getAttribute('href')).toBe(breadcrumbs.figmaUrl);
     expect(api.find('GET', `/v3/files/${FILE}/nodes/1:3`)[0]?.query.get('changes')).toBe('diff');
@@ -136,7 +137,7 @@ describe('NodeDrawer', () => {
   it('shows viewers the same content without claim or block actions', async () => {
     renderDrawer({ role: 'viewer' });
     const dialog = within(await screen.findByRole('dialog'));
-    await dialog.findByText('devin · claimed 2 min ago · lease expires in 15 min');
+    await dialog.findByText('in 15 min');
     expect(dialog.queryByRole('button', { name: 'Release claim' })).toBeNull();
     expect(dialog.queryByRole('button', { name: 'Block…' })).toBeNull();
     expect(dialog.getByRole('button', { name: 'Copy node prompt' })).toBeTruthy();
@@ -161,7 +162,7 @@ describe('NodeDrawer', () => {
     expect(api.find('DELETE', `/v3/files/${FILE}/claims/c1`)).toHaveLength(0);
     await user.click(confirm.getByRole('button', { name: 'Release 3 nodes' }));
     await waitFor(() => expect(api.find('DELETE', `/v3/files/${FILE}/claims/c1`)).toHaveLength(1));
-    expect(await screen.findByText(/Not claimed/)).toBeTruthy();
+    expect(await screen.findByText(/^Unclaimed/)).toBeTruthy();
   });
 
   it('releases a single-node claim without confirming', async () => {
@@ -174,7 +175,7 @@ describe('NodeDrawer', () => {
         return undefined;
       }),
     );
-    await screen.findByText('devin · claimed 2 min ago · lease expires in 15 min');
+    await screen.findByText('in 15 min');
     await user.click(screen.getByRole('button', { name: 'Release claim' }));
     await waitFor(() => expect(api.find('DELETE', `/v3/files/${FILE}/claims/c1`)).toHaveLength(1));
     expect(screen.queryByRole('alertdialog')).toBeNull();

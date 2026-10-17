@@ -4,6 +4,7 @@ import { useEventStream, type StreamEvent, type StreamState } from '../../api/us
 import type { AgentSpriteState } from '../../components/domain/AgentSprite';
 import { useFileClaims } from '../../api/hooks/useFileClaims';
 import { cachedNodeIds, nodeKeys, patchNodes } from './queries';
+import { refreshRenderChecks } from './renderChecks';
 import type { FileClaim, FileClaims, NodeClaim } from './types';
 
 interface Envelope<T> {
@@ -151,6 +152,9 @@ export function useNodeLiveUpdates(fileKey: string): NodeLiveUpdates {
       refreshHistory();
     },
     'note.added': () => void queryClient.invalidateQueries({ queryKey: nodeKeys.all(fileKey) }),
+    'render_check.requested': () => refreshRenderChecks(queryClient, fileKey),
+    'render_check.passed': () => refreshRenderChecks(queryClient, fileKey),
+    'render_check.mismatch': () => refreshRenderChecks(queryClient, fileKey),
     'note.resolved': () => void queryClient.invalidateQueries({ queryKey: nodeKeys.all(fileKey) }),
     'note.dismissed': () => void queryClient.invalidateQueries({ queryKey: nodeKeys.all(fileKey) }),
   });

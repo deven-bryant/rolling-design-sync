@@ -8,6 +8,7 @@ import { cx, Icon, Text, VisuallyHidden } from '../../primitives';
 import { SectionHeader } from '../../SectionHeader';
 import { Table, TextCell } from '../../Table';
 import { Tabs } from '../../Tabs';
+import { ClaimHolder } from '../ClaimHolder';
 
 /** Figma `State`: which tab is showing; `add-change` is the Change List tab with its note input open. */
 export type NodeDetailsState = 'change-list' | 'add-change' | 'change-history';
@@ -55,8 +56,12 @@ export interface NodeDetailsProps extends Omit<HTMLAttributes<HTMLElement>, 'tit
   children?: ReactNode;
   /** `Section / Claim` title. */
   claimTitle?: ReactNode;
-  /** `Section / Claim` subtitle: who holds the claim, or that nobody does. */
-  claimSubtitle: ReactNode;
+  /** `Section / Claim` subtitle when nobody holds the claim (`Property 1=Unclaimed`). */
+  claimSubtitle?: ReactNode;
+  /** `Claim Holder`, `Property 1=Claimed`: Name · Claim Time · Lease Expiration. */
+  claimDetails?: readonly { label: string; value: ReactNode }[];
+  /** `Node Details - Render Check`, under the claim (screen roots only). */
+  renderCheck?: ReactNode;
   /** A second claim line (label, other nodes covered). */
   claimNote?: ReactNode;
   /** The claim's button (`Release claim`). */
@@ -172,6 +177,8 @@ export function NodeDetails({
   children,
   claimTitle = 'Claim Holder',
   claimSubtitle,
+  claimDetails,
+  renderCheck,
   claimNote,
   claimAction,
   claimContent,
@@ -192,7 +199,6 @@ export function NodeDetails({
   ...rest
 }: NodeDetailsProps) {
   const statusId = useId();
-  const claimId = useId();
   const [uncontrolledState, setUncontrolledState] = useState(defaultState);
   const current = state ?? uncontrolledState;
   const compact = current === 'change-history';
@@ -217,27 +223,10 @@ export function NodeDetails({
         </div>
       )}
       {children}
-      <div role="group" aria-labelledby={claimId} className="flex flex-col gap-lg">
-        <div className={cx('flex items-start justify-between', compact ? 'gap-6xl' : 'gap-4xl')}>
-          <div className="flex min-w-0 flex-col gap-md">
-            <Text as="h3" id={claimId} size="lg" weight="semibold">
-              {claimTitle}
-            </Text>
-            <div className="flex flex-col">
-              <Text as="p" color="tertiary">
-                {claimSubtitle}
-              </Text>
-              {claimNote != null && (
-                <Text as="p" color="tertiary">
-                  {claimNote}
-                </Text>
-              )}
-            </div>
-          </div>
-          {claimAction}
-        </div>
+      <ClaimHolder title={claimTitle} details={claimDetails} unclaimed={claimSubtitle} note={claimNote} action={claimAction} wide={compact}>
         {claimContent}
-      </div>
+      </ClaimHolder>
+      {renderCheck}
       <Tabs
         type="button-brand"
         size="md"

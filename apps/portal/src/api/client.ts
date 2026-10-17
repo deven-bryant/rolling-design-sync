@@ -112,6 +112,8 @@ export const api = {
     apiFetch<ApiResponse<P, 'get'>>(p, { ...options, method: 'GET' }),
   post: <P extends PathsWith<'post'>>(p: P, options?: RequestOptions) =>
     apiFetch<ApiResponse<P, 'post'>>(p, { ...options, method: 'POST' }),
+  put: <P extends PathsWith<'put'>>(p: P, options?: RequestOptions) =>
+    apiFetch<ApiResponse<P, 'put'>>(p, { ...options, method: 'PUT' }),
   patch: <P extends PathsWith<'patch'>>(p: P, options?: RequestOptions) =>
     apiFetch<ApiResponse<P, 'patch'>>(p, { ...options, method: 'PATCH' }),
   delete: <P extends PathsWith<'delete'>>(p: P, options?: RequestOptions) =>

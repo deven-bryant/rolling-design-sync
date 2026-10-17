@@ -1,5 +1,6 @@
-import type { HTMLAttributes, ReactNode } from 'react';
+import { useState, type HTMLAttributes, type ReactNode } from 'react';
 import { Badge } from '../../components/Badge';
+import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { Pagination } from '../../components/Pagination';
 import { Text } from '../../components/primitives';
@@ -7,9 +8,12 @@ import { ProgressCell, Table, TextCell } from '../../components/Table';
 import { AgentCell } from '../../components/domain/AgentCell';
 import { CategoryBadges } from '../../components/domain/CategoryBadges';
 import { NodeCell } from '../../components/domain/NodeCell';
+import { RenderCheckBadge } from '../../components/domain/RenderCheck';
+import { showToast } from '../../components/Toast';
 import { useFileClaims } from '../../api/hooks/useFileClaims';
 import { useNow } from '../../api/hooks/useNow';
 import { formatCount, percent, plural, timeAgo } from '../files';
+import { formatScore, renderStatus, useRequestCheck } from '../nodes/renderChecks';
 import { itemClaim, useWorkItems, useWorkLive, type FileClaim, type WorkGroup, type WorkItem } from './api';
 
 export interface WorkTableProps extends HTMLAttributes<HTMLDivElement> {
@@ -40,7 +44,7 @@ export interface WorkTableProps extends HTMLAttributes<HTMLDivElement> {
 const CATEGORIES_SHOWN = 2;
 
 const columns = (group: WorkGroup) =>
-  group === 'component' ? ['Component', 'Placements', 'Nodes', 'Categories', 'Progress', 'Agent'] : ['Frame', 'Nodes', 'Categories', 'Progress', 'Agent'];
+  group === 'component' ? ['Component', 'Placements', 'Nodes', 'Categories', 'Progress', 'Agent'] : ['Frame', 'Nodes', 'Categories', 'Progress', 'Render check', 'Agent'];
 
 /** A library component the file doesn't track: placements only, nothing to build. */
 export const isReference = (item: WorkItem): boolean => item.kind === 'library' && item.tracked === false;
@@ -150,8 +154,52 @@ function WorkRow({
       ) : (
         <ProgressCell className="min-w-32" value={itemProgress(item)} label={`${name} progress`} />
       )}
+      {group === 'frame' && <RenderCheckCell screen={item.screen} />}
       <AgentColumn claim={itemClaim(item, claims)} now={now} />
     </Table.Row>
+  );
+}
+
+function RenderCheckCell({ screen }: { screen: WorkItem['screen'] }) {
+  const status = renderStatus(screen);
+  if (status === 'not-set-up') return <TextCell>—</TextCell>;
+  const scored = screen?.score != null && (status === 'passed' || status === 'mismatch' || status === 'stale');
+  return (
+    <Table.Cell>
+      <div className="flex flex-col items-start gap-xxs">
+        <RenderCheckBadge status={status} />
+        {scored && (
+          <Text as="span" color="tertiary">
+            {formatScore(screen?.score)} differ
+          </Text>
+        )}
+      </div>
+    </Table.Cell>
+  );
+}
+
+/** Frames whose render check can be requested now: built with no result for this design, or a stale one. */
+const checkable = (item: WorkItem) => {
+  const status = renderStatus(item.screen);
+  return !!item.key && (status === 'ready' || status === 'stale');
+};
+
+function RequestChecks({ fileKey, items }: { fileKey: string; items: readonly WorkItem[] }) {
+  const request = useRequestCheck(fileKey);
+  const [pending, setPending] = useState(false);
+  const ready = items.filter(checkable);
+  if (!items.some(item => item.screen)) return null;
+  const run = async () => {
+    setPending(true);
+    const results = await Promise.allSettled(ready.map(item => request.mutateAsync(item.key!)));
+    setPending(false);
+    const failed = results.filter(r => r.status === 'rejected').length;
+    void showToast(failed ? `${plural(ready.length - failed, 'check')} requested, ${failed} failed` : `${plural(ready.length, 'render check')} requested`);
+  };
+  return (
+    <Button hierarchy="secondary" size="sm" isDisabled={!ready.length} loading={pending} onPress={() => void run()}>
+      Request checks ({ready.length} ready)
+    </Button>
   );
 }
 
@@ -199,6 +247,7 @@ export function WorkTable({
         title="Work items"
         badge={work.total !== undefined && <Badge color="brand">{plural(work.total, group)}</Badge>}
         description={description}
+        actions={group === 'frame' ? <RequestChecks fileKey={fileKey} items={work.items} /> : undefined}
       />
       <Card.Body>
         <Table aria-label="Work items">

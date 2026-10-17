@@ -203,11 +203,44 @@ describe('features/work', () => {
     expect(onGroup).toHaveBeenCalledWith('frame');
     await waitFor(() => expect(row('Page header')).toBeDefined());
     expect(workCalls().at(-1)?.searchParams.get('group')).toBe('frame');
-    expect(screen.getAllByRole('columnheader').map(th => th.textContent)).toEqual(['Frame', 'Nodes', 'Categories', 'Progress', 'Agent']);
+    expect(screen.getAllByRole('columnheader').map(th => th.textContent)).toEqual(['Frame', 'Nodes', 'Categories', 'Progress', 'Render check', 'Agent']);
     expect(screen.getByText('1 frame')).toBeDefined();
     expect(within(row('Page header')).getByText('2 dirty')).toBeDefined();
 
     expect(screen.queryByRole('radio', { name: 'Flat list' })).toBeNull();
+  });
+
+  it('shows each frame’s render check and requests the ready ones', async () => {
+    const user = userEvent.setup();
+    db.byFrame = [
+      component('3:1', 'Work items', { type: 'FRAME', screen: { status: 'mismatch', stale: false, score: 3.4 } }),
+      component('3:2', 'Settings', { type: 'FRAME', screen: { status: 'ready', stale: false, score: null } }),
+      component('3:3', 'Files', { type: 'FRAME', screen: { status: 'passed', stale: true, score: 0.1 } }),
+      component('3:4', 'Sign in', { type: 'FRAME' }),
+    ];
+    const posts: string[] = [];
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = new URL(String(input), 'http://portal.test');
+      if (init?.method === 'POST' && url.pathname.endsWith('/checks')) {
+        posts.push(decodeURIComponent(url.pathname));
+        return json({ fileKey: FILE, check: { checkId: 'k', status: 'requested' } });
+      }
+      return base(input, init);
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <WorkTable fileKey={FILE} under={SCOPE} group="frame" page={1} onPageChange={vi.fn()} onOpenComponent={vi.fn()} pageSize={10} />
+      </QueryClientProvider>,
+    );
+    const mismatch = within(await screen.findByRole('row', { name: 'Work items' }));
+    expect(mismatch.getByText('Render mismatch')).toBeDefined();
+    expect(mismatch.getByText('3.4% differ')).toBeDefined();
+    expect(within(row('Settings')).getByText('Ready')).toBeDefined();
+    expect(within(row('Files')).getByText('Stale')).toBeDefined();
+    expect(within(row('Sign in')).getAllByText('—').length).toBeGreaterThan(0);
+    await user.click(screen.getByRole('button', { name: 'Request checks (2 ready)' }));
+    await waitFor(() => expect(posts.sort()).toEqual([`/v3/files/${FILE}/screens/3:2/checks`, `/v3/files/${FILE}/screens/3:3/checks`]));
   });
 
   it('pages with the cursor', async () => {

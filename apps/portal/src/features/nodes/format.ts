@@ -246,6 +246,7 @@ export function nodePrompt({
       ? `3. Update ${variable} for each changed mode (value:<Mode>) and commit.`
       : '3. Implement the changes and commit them.',
     '   Open notes (notes) are what a person saw doesn’t match the design: fix the code to match the design as they describe. Clearing resolves them.',
+    '   A note with source "render_check" is a render check that found the built screen differs from its Figma frame: fix the differing regions it lists, then run rds-agent check to submit a new screenshot.',
     '4. Clear it with the contentHash you read and the commit SHA:',
     `   - MCP: clear_nodes { "fileKey": "${fileKey}", "items": [{ "nodeId": "${nodeId}", "contentHash": "<contentHash>" }], "commitRef": "<sha>" }`,
     `   - CLI: ${cli} clear ${nodeId}=<contentHash> --file-key ${fileKey} --commit-ref <sha>`,

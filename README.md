@@ -85,7 +85,13 @@ What that gets you:
 - **Notes when the build is off.** Spot something that doesn't match the
   design? Add a note on the node in the portal — anyone signed in can. The
   node comes back as **Requested** work; the agent reads the note, fixes the
-  code and clears it, which resolves the note.
+  code and clears it, which resolves the note. Paste or drop up to three
+  screenshots onto a note to show what's wrong.
+- **Render checks.** Assembled screens are compared with their Figma frame:
+  request a check in the portal, the agent renders the route and submits a
+  screenshot (`rds-agent check`), and a mismatch comes back as a note with the
+  differing regions and a heatmap — catching regressions in shared code that
+  per-node tracking can't see.
 - **Works with your agent.** A local MCP server for Claude Code, Cursor and other
   MCP hosts, and a zero-dependency CLI for anything with a shell.
 
