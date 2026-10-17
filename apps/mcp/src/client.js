@@ -3,7 +3,7 @@
 /**
  * Minimal HTTP client for the v3 API. `request` resolves to
  * `{ ok, status, contentType, data, nextCursor, retryAfter, method, path }` for any HTTP response
- * (`application/json` and `+json` bodies parsed, others — ndjson included — as text;
+ * (`application/json` and `+json` bodies parsed, `image/*` as a Buffer, others — ndjson included — as text;
  * `nextCursor` from the X-RDS-Next-Cursor header and `retryAfter` from Retry-After, else null);
  * network failures reject. Every request
  * carries the agent token and `X-RDS-Client: <clientName>`.
@@ -14,6 +14,7 @@
  */
 
 const JSON_TYPE = /^\s*application\/(?:[\w.-]+\+)?json\s*(?:;|$)/i;
+const IMAGE_TYPE = /^\s*image\//i;
 
 function createApiClient({ baseUrl, token, clientName, fetchImpl = globalThis.fetch }) {
   /**
@@ -36,14 +37,17 @@ function createApiClient({ baseUrl, token, clientName, fetchImpl = globalThis.fe
     }
     const res = await fetchImpl(url.toString(), init);
     const contentType = res.headers.get('content-type') || '';
+    const nextCursor = res.headers.get('x-rds-next-cursor') || null;
+    const retryAfter = res.headers.get('retry-after') || null;
+    if (res.ok && IMAGE_TYPE.test(contentType)) {
+      return { ok: res.ok, status: res.status, contentType, data: Buffer.from(await res.arrayBuffer()), nextCursor, retryAfter, method, path };
+    }
     const text = await res.text();
     /** @type {any} */
     let data = text;
     if (JSON_TYPE.test(contentType) && text) {
       try { data = JSON.parse(text); } catch (_) { data = text; }
     }
-    const nextCursor = res.headers.get('x-rds-next-cursor') || null;
-    const retryAfter = res.headers.get('retry-after') || null;
     return { ok: res.ok, status: res.status, contentType, data, nextCursor, retryAfter, method, path };
   }
 

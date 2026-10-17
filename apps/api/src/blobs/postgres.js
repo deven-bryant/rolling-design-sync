@@ -20,7 +20,7 @@ class PostgresBlobs {
     const { rows: [row] } = await this.db.query(
       `with used as (select coalesce(sum(size), 0)::bigint as total from blob where key <> $1)
        insert into blob (key, content_type, size, bytes)
-       select $1, $2, $3, $4 from used where used.total + $3 <= $5
+       select $1, $2, $3::integer, $4 from used where used.total + $3::integer <= $5::bigint
        on conflict (key) do update set content_type = excluded.content_type, size = excluded.size, bytes = excluded.bytes, created_at = now()
        returning key`,
       [key, contentType, size, bytes, this.maxBytes]);

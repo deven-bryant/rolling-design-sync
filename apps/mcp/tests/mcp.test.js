@@ -256,7 +256,7 @@ test('every tool round-trips: inputs → HTTP request → JSON result', async t 
 
   const settings = await expectCall('update_file_settings', { settings: { trackLibraryComponents: true } },
     { method: 'PATCH', path: file, body: { settings: { trackLibraryComponents: true } } });
-  assert.deepEqual(settings.settings, { trackLibraryComponents: true });
+  assert.deepEqual(settings.settings, { trackLibraryComponents: true, storeImages: true });
 
   const cleared = await expectCall('clear_nodes', { commitRef: 'abc123', items: [{ nodeId: CHILD, contentHash: node.contentHash }] },
     { method: 'POST', path: `${file}/clear`, body: { commitRef: 'abc123', items: [{ nodeId: CHILD, contentHash: node.contentHash }] } });
@@ -267,7 +267,9 @@ test('every tool round-trips: inputs → HTTP request → JSON result', async t 
   assert.equal(events.events[0].data.client, CLIENT, 'the API recorded X-RDS-Client');
 
   const { tools } = await client.listTools();
-  assert.deepEqual([...done].sort(), tools.map(tool => tool.name).sort(), 'every tool is exercised');
+  // The screen / render-check tools and get_attachment have their own test below.
+  const own = new Set(['set_screen', 'delete_screen', 'list_screens', 'request_render_check', 'list_render_checks', 'get_render_check', 'submit_render_check', 'get_attachment']);
+  assert.deepEqual([...done].sort(), tools.map(tool => tool.name).filter(n => !own.has(n)).sort(), 'every tool is exercised');
 });
 
 test('every request sends X-RDS-Client: mcp/<version>', async t => {
@@ -686,4 +688,42 @@ test('rds-mcp exits 1 with a clear message when required env is missing', () => 
   const res = spawnSync(process.execPath, [BIN], { env, encoding: 'utf8', timeout: 10000 });
   assert.equal(res.status, 1);
   assert.match(res.stderr, /missing required environment variable\(s\): RDS_API_BASE_URL, RDS_AGENT_TOKEN/);
+});
+
+test('screens and render checks; get_attachment returns MCP image content', async t => {
+  const { call, client } = await setup(t, {
+    upserts: [
+      upsert(ROOT, { width: 800 }, { nodeType: 'SECTION' }),
+      upsert(CHILD, { width: 320, height: 240 }, { parentId: ROOT, path: [ROOT], nodeType: 'FRAME' }),
+    ],
+  });
+  const file = `/v3/files/${FILE_KEY}`;
+  const set = await call('set_screen', { nodeId: CHILD, route: '/home' });
+  assert.equal(set.isError, false, set.text);
+  assert.deepEqual([set.request.method, set.request.path, set.request.body], ['PUT', `${file}/screens/${encodeURIComponent(CHILD)}`, { route: '/home' }]);
+  assert.deepEqual(set.json.screen.viewport, { width: 320, height: 240 });
+  assert.deepEqual((await call('list_screens', {})).json.screens.map(s => s.nodeId), [CHILD]);
+  const requested = await call('request_render_check', { nodeId: CHILD });
+  assert.equal(requested.json.check.status, 'requested');
+  const { checkId } = requested.json.check;
+  assert.deepEqual((await call('list_render_checks', { status: 'requested' })).json.checks.map(c => c.checkId), [checkId]);
+  assert.equal((await call('get_render_check', { checkId })).json.check.route, '/home');
+  const failed = await call('submit_render_check', { checkId, error: 'dev server down' });
+  assert.equal(failed.json.check.status, 'error');
+  const removed = await call('delete_screen', { nodeId: CHILD });
+  assert.equal(removed.json.deleted, true);
+  assert.deepEqual((await call('list_screens', {})).json.screens, []);
+
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+  const note = await call('add_note', { nodeId: CHILD, body: 'off by one', images: [{ data: PNG }] });
+  assert.equal(note.isError, false, note.text);
+  const [shot] = note.json.note.attachments;
+  const res = await client.callTool({ name: 'get_attachment', arguments: { attachmentId: shot.attachmentId } });
+  assert.equal(res.isError, undefined);
+  assert.equal(res.content[0].type, 'image');
+  assert.equal(res.content[0].mimeType, shot.contentType);
+  assert.ok(Buffer.from(res.content[0].data, 'base64').length > 8);
+  const missing = await client.callTool({ name: 'get_attachment', arguments: { attachmentId: '00000000-0000-4000-8000-000000000000' } });
+  assert.equal(missing.isError, true);
+  assert.match(missing.content[0].text, /attachment_not_found/);
 });

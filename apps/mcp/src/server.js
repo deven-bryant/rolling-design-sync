@@ -19,6 +19,7 @@ const INSTRUCTIONS = [
   '(3) clear_nodes with the nodeId + contentHash pairs you read and the commit SHA.',
   'An item that comes back `stale` changed again after you read it: re-read that node with get_node, implement the newer change, and clear it with its new contentHash — never retry the old hash.',
   'Use block_node for a node you cannot implement instead of clearing it.',
+  'Notes and render checks can carry screenshots: get_attachment returns one as an image (thumb=true for a small one). A `render_check` note means a screen\'s built page does not match its design — open its heatmap, fix the screen, then request_render_check again.',
   'Any tool that takes fileKey / nodeId also takes a Figma link as `url`; fileKey defaults to RDS_FILE_KEY when that is set in the server env.',
   `Listing tools return ${DEFAULT_LIMIT} results per call unless you pass limit (text formats: up to that many lines; format=outline: the whole outline unless you pass limit, in lines); a result that ends with \`More results: call again with cursor="…"\` has more — repeat the call with that cursor and every other input unchanged. Results too large for one reply come back as a smaller page.`,
   'Where the connected API offers them (they then appear in the tool inputs): expand=instances follows instances into their main components, so one list_nodes / summarize / list_work_items call covers everything a screen uses;',
@@ -156,6 +157,10 @@ async function createServer(config, { fetchImpl, doc } = {}) {
         return text(`Could not reach the rolling-design-sync API at ${config.baseUrl} (RDS_API_BASE_URL): ${reason(err)}`, true);
       }
       if (!res.ok) return httpError(res);
+      if (Buffer.isBuffer(res.data)) {
+        const mimeType = res.contentType.split(';')[0].trim();
+        return { content: [{ type: 'image', data: res.data.toString('base64'), mimeType }] };
+      }
       if (res.data === '' || res.data === null) return text(`HTTP ${res.status} ${req.method} ${req.path}: no content.`);
       if (typeof res.data === 'string' && outline) {
         const paging = res.nextCursor ? `${res.data.endsWith('\n') ? '\n' : '\n\n'}${moreResults(res.nextCursor)}` : '';
