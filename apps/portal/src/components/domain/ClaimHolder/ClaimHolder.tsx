@@ -11,6 +11,8 @@ export interface ClaimHolderProps extends Omit<HTMLAttributes<HTMLDivElement>, '
   note?: ReactNode;
   /** The right-hand button (`Release claim`, `Add note`). */
   action?: ReactNode;
+  /** Figma `Change History`: a wider `gap-6xl` between the text and the action. */
+  wide?: boolean;
   /** Under the row: a confirmation, an error. */
   children?: ReactNode;
   ref?: Ref<HTMLDivElement>;
@@ -26,6 +28,7 @@ export function ClaimHolder({
   unclaimed = 'Unclaimed · the next agent pass you start picks this up',
   note,
   action,
+  wide = false,
   children,
   className,
   ref,
@@ -34,7 +37,7 @@ export function ClaimHolder({
   const titleId = useId();
   return (
     <div ref={ref} role="group" aria-labelledby={titleId} {...rest} className={cx('flex flex-col gap-lg', className)}>
-      <div className="flex items-start justify-between gap-4xl">
+      <div className={cx('flex items-start justify-between', wide ? 'gap-6xl' : 'gap-4xl')}>
         <div className="flex min-w-0 flex-col gap-xxs">
           <Text as="h3" id={titleId} size="lg" weight="semibold">
             {title}

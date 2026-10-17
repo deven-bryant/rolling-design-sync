@@ -166,7 +166,8 @@ const CATEGORY_COLORS: Record<Category, NonNullable<BadgeProps['color']>> = {
 };
 
 interface ClaimProps {
-  claimSubtitle: ReactNode;
+  claimSubtitle?: ReactNode;
+  claimDetails?: { label: string; value: ReactNode }[];
   claimNote?: ReactNode;
   claimAction?: ReactNode;
   claimContent?: ReactNode;
@@ -180,20 +181,20 @@ function useClaim({ fileKey, node, canAct, now }: { fileKey: string; node: NodeD
   const full = claim?.claimId ? claims.data?.claims?.find(c => c.claimId === claim.claimId) : undefined;
   const others = Math.max(0, (full?.nodeCount ?? 1) - 1);
 
-  if (!claim?.worker) return { claimSubtitle: 'Not claimed. Agents claim nodes before they implement them.' };
+  if (!claim?.worker) return { claimSubtitle: 'Unclaimed · the next agent pass you start picks this up' };
 
   const doRelease = () => {
     if (!claim.claimId) return;
     release.mutate(claim.claimId, { onSuccess: () => setConfirming(false) });
   };
-  const parts = [
-    claim.worker,
-    full?.createdAt ? `claimed ${timeAgo(full.createdAt, now)}` : 'claimed',
-    claim.expiresAt ? `lease expires ${timeUntil(claim.expiresAt, now)}` : null,
-  ].filter(Boolean);
+  const details = [
+    { label: 'Name', value: claim.worker },
+    ...(full?.createdAt ? [{ label: 'Claim Time', value: timeAgo(full.createdAt, now) }] : []),
+    ...(claim.expiresAt ? [{ label: 'Lease Expiration', value: timeUntil(claim.expiresAt, now) }] : []),
+  ];
   const note = [claim.label, others > 0 ? `covers ${plural(others, 'other node', 'other nodes')} too` : null].filter(Boolean).join(' · ');
   return {
-    claimSubtitle: parts.join(' · '),
+    claimDetails: details,
     claimNote: note || undefined,
     claimAction: canAct && !confirming && (
       <Button hierarchy="secondary" size="sm" loading={release.isPending} onPress={() => (others > 0 ? setConfirming(true) : doRelease())}>
