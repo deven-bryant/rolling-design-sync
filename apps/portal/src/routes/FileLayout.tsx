@@ -58,6 +58,7 @@ export function scopePrompt({ fileKey, scopes }: { fileKey: string; scopes: read
     `   - CLI: ${cli} nodes ls --file-key ${fileKey} --under <nodeId>, or ${cli} nodes show <nodeId> --file-key ${fileKey}`,
     '4. Implement the changes and commit them.',
     '   An item with notes has nodes a person noted as not matching the design (changeType "requested" when the design is otherwise built): read the notes on the node (get_node), fix the code to match the design as they describe; clearing resolves them.',
+    '   A frame with a screen (render check) whose status is "mismatch" has a render_check note listing the regions that differ from the design; a requested check waits for you: render its route and submit the screenshot with rds-agent check.',
     '5. Clear every node you built with its contentHash and the commit SHA:',
     `   - MCP: clear_nodes { "fileKey": "${fileKey}", "items": [{ "nodeId": "<nodeId>", "contentHash": "<contentHash>" }], "commitRef": "<sha>" }`,
     `   - CLI: ${cli} clear <nodeId>=<contentHash> … --file-key ${fileKey} --commit-ref <sha>`,

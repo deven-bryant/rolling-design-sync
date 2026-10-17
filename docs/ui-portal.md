@@ -322,7 +322,9 @@ follows the OS `prefers-color-scheme`, live.
 - `GET /v3/files/:fileKey/nodes/:nodeId?changes=diff`: header (name with a
   **Library** badge on library nodes, type, id, `→ main`), status badges, **What changed** (Diff rows: built → now as token
   chips, raw values beneath, category badge; "since cleared at <commit> (<age>)").
-- **Claim:** from `/claims` — worker, age, lease left; **Release claim** (agent
+- **Claim Holder** (Figma *Node Details - Claim Holder*): from `/claims` —
+  Name, Claim Time, Lease Expiration as key / value rows, or "Unclaimed · the
+  next agent pass you start picks this up"; **Release claim** (agent
   session) → `DELETE /v3/files/:fileKey/claims/:claimId`, confirming first when
   the claim covers other nodes.
 - **Notes** (Figma *Node Details* `State=Add Change`): an *Add change note*
@@ -337,6 +339,24 @@ follows the OS `prefers-color-scheme`, live.
   …/notes/:noteId`) or **Delete** their open note; the author or an agent can
   **Dismiss** it after confirming (`POST …/notes/:noteId/dismiss`; the node
   goes back to its design-only state). Clearing the node resolves its notes.
+- **Screenshots** on notes (Figma *Node Details - Notes Screenshots*): the
+  Add Change form takes up to 3 PNG / JPG / WebP images (5 MB each), dropped,
+  pasted or browsed, previewed as thumbnails with a remove button; they upload
+  with the note (`images: [{ data, name }]`). Open notes show their
+  screenshots as thumbnails (`?size=thumb`) that open the full image in a
+  lightbox. With the file's `storeImages` setting off the field is replaced by
+  "Screenshots are off for this file: its settings don’t store images."
+- **Render check** (Figma *Node Details - Render Check*; frames and
+  components): the screen's status badge (Not set up · Building · Ready ·
+  Requested · Passed · Render mismatch · Error · Stale), KV badges (Checked ·
+  Commit · Source · Limit), *Side by side* (designed and implemented images,
+  differing regions outlined) and *Heatmap* tabs, the score and regions.
+  Images come from `GET …/attachments/:id` (thumbnails first, full image in a
+  lightbox). **Request check** (any session) → `POST
+  …/screens/:nodeId/checks`; **Check settings** (agents) edits route,
+  viewport, theme / query, threshold and masks (`PUT …/screens/:nodeId`).
+  A mismatch adds a **Render mismatch** badge and the `render` category; its
+  `render_check` note is badged too. `render_check.*` events refresh it live.
 - **History:** `GET /v3/files/:fileKey/events?nodeId=…` as a feed — including
   "Added a note", "Resolved a note by clearing it at <commit>" and "Dismissed
   a note: <reason>".
@@ -396,6 +416,9 @@ follows the OS `prefers-color-scheme`, live.
   (`under=tokens:<collectionKey>`). *Copy agent prompt* has a line for them:
   update the code variables (each token's `codeSyntax`, WEB, else the token
   name) for every changed mode, then clear the tokens.
+- *By frame* adds a **Render check** column (status badge, `N% differ`) and
+  **Request checks (N ready)**, which requests every ready or stale screen on
+  the page.
 
 ### Activity — `/ui/activity` (all files)
 - Live feed: `GET /v3/events` stream (or the file's), newest first, grouped by
