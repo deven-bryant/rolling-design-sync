@@ -136,10 +136,10 @@ test('an API claim pops a sprite onto its row and a clear poofs it, without a re
   await frame.getByText('Card', { exact: true }).click();
   const node = drawer(page);
   await node.getByRole('tab', { name: 'Change List' }).click();
-  await node.getByRole('button', { name: 'Add change note', exact: true }).click();
+  await node.getByRole('button', { name: 'Add note', exact: true }).click();
   await node.getByRole('textbox', { name: /Description/ }).fill('The card padding should be 24px, not 16px.');
   await expect(node.getByText('42/4000')).toBeVisible();
-  await node.getByRole('button', { name: 'Add Change Note', exact: true }).click();
+  await node.getByRole('button', { name: 'Add change note', exact: true }).click();
   await expect(page.getByText('Note added — the node needs a change')).toBeVisible();
   const notes = node.getByRole('region', { name: 'Open notes' });
   await expect(notes.getByText('The card padding should be 24px, not 16px.')).toBeVisible();
@@ -325,14 +325,14 @@ test('a viewer adds a note with a screenshot and opens it in the lightbox', asyn
   await row(page, FRAME).getByText('Card', { exact: true }).click();
   const node = drawer(page);
   await node.getByRole('tab', { name: 'Change List' }).click();
-  await node.getByRole('button', { name: 'Add change note', exact: true }).click();
+  await node.getByRole('button', { name: 'Add note', exact: true }).click();
   await node.getByRole('textbox', { name: /Description/ }).fill('The badge overlaps the title.');
   const shot = Buffer.from(await png(40), 'base64');
   await node.locator('input[type="file"]').setInputFiles({ name: 'overlap.png', mimeType: 'image/png', buffer: shot });
   await expect(node.getByRole('list', { name: 'Attached screenshots' }).getByRole('img', { name: 'overlap.png' })).toBeVisible();
   await node.locator('input[type="file"]').setInputFiles({ name: 'clip.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') });
   await expect(node.getByRole('alert')).toHaveText('clip.gif isn’t a PNG, JPG or WebP image.');
-  await node.getByRole('button', { name: 'Add Change Note', exact: true }).click();
+  await node.getByRole('button', { name: 'Add change note', exact: true }).click();
   await expect(page.getByText('Note added — the node needs a change')).toBeVisible();
 
   const note = node.getByRole('region', { name: 'Open notes' }).getByRole('listitem').first();
