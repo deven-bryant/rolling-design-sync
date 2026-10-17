@@ -50,11 +50,18 @@ const TREE = [
 ];
 
 async function api(method, route, token, body) {
-  const res = await fetch(`${API}${route}`, {
-    method,
-    headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const send = () =>
+    fetch(`${API}${route}`, {
+      method,
+      headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  let res = await send();
+  // The per-address sign-in budget is shared with the browser's sign-ins: wait out the window once.
+  if (res.status === 429) {
+    await new Promise(resolve => setTimeout(resolve, (Number(res.headers.get('retry-after')) || 5) * 1000 + 250));
+    res = await send();
+  }
   const text = await res.text();
   if (!res.ok) throw new Error(`${method} ${route} → ${res.status} ${text}`);
   return text ? JSON.parse(text) : null;

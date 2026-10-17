@@ -7,10 +7,20 @@
 const { test, expect } = require('@playwright/test');
 const { TOKENS, ROOT, FRAME, INSTANCE, MAIN_CHILD, SECOND, REMOVED, TOKEN_COLLECTION, TOKEN, seedFile, syncSecondScope, syncRemovedScreen, syncTokens, claim, clear, notesOf, png, readyScreen, submitCheck } = require('./fixture');
 
+// Sign-ins share a per-address budget per minute; a run signs in often enough to spend it, so wait it out.
+test.describe.configure({ timeout: 120_000 });
+
 async function signIn(page, token) {
   await page.goto('/ui/sign-in');
   await page.getByLabel('Token').fill(token);
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  for (let attempt = 0; ; attempt++) {
+    const [res] = await Promise.all([
+      page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/v3/session'),
+      page.getByRole('button', { name: 'Sign in' }).click(),
+    ]);
+    if (res.status() !== 429 || attempt === 2) break;
+    await page.waitForTimeout((Number(res.headers()['retry-after']) || 5) * 1000 + 250);
+  }
   await expect(page).toHaveURL(/\/ui\/files$/);
 }
 
