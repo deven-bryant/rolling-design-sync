@@ -4,7 +4,7 @@ import { Button } from '../../Button';
 import { Card } from '../../Card';
 import { Feed, FeedItem } from '../../FeedItem';
 import { Pagination } from '../../Pagination';
-import { cx, Icon, Text, VisuallyHidden } from '../../primitives';
+import { cx, Text, VisuallyHidden } from '../../primitives';
 import { SectionHeader } from '../../SectionHeader';
 import { Table, TextCell } from '../../Table';
 import { Tabs } from '../../Tabs';
@@ -189,7 +189,7 @@ export function NodeDetails({
   hideEmptyChanges = false,
   notes,
   addChange,
-  addChangeLabel = 'Add change note',
+  addChangeLabel = 'Add note',
   pageSize = 10,
   paginationLabel = 'Change list pages',
   history,
@@ -211,17 +211,21 @@ export function NodeDetails({
     <article ref={ref} {...rest} data-state={current} className={cx('flex w-full flex-col gap-4xl bg-primary', className)}>
       <SectionHeader>
         <SectionHeader.Title>{title}</SectionHeader.Title>
-        {description != null && <SectionHeader.SupportingContent>{description}</SectionHeader.SupportingContent>}
+        {(description != null || status != null) && (
+          <SectionHeader.SupportingContent className="flex-col gap-xs">
+            {description != null && <div>{description}</div>}
+            {status != null && (
+              <div className="flex items-center gap-lg py-xxs">
+                <VisuallyHidden id={statusId}>Status</VisuallyHidden>
+                <div aria-labelledby={statusId} role="group" className="flex flex-wrap items-center gap-md">
+                  {status}
+                </div>
+              </div>
+            )}
+          </SectionHeader.SupportingContent>
+        )}
         {actions != null && <SectionHeader.Actions>{actions}</SectionHeader.Actions>}
       </SectionHeader>
-      {status != null && (
-        <div className="flex items-center gap-lg py-xxs">
-          <VisuallyHidden id={statusId}>Status</VisuallyHidden>
-          <div aria-labelledby={statusId} role="group" className="flex flex-wrap items-center gap-md">
-            {status}
-          </div>
-        </div>
-      )}
       {children}
       <ClaimHolder title={claimTitle} details={claimDetails} unclaimed={claimSubtitle} note={claimNote} action={claimAction} wide={compact}>
         {claimContent}
@@ -245,17 +249,11 @@ export function NodeDetails({
         <Tabs.Panel id="change-list" className="flex flex-col gap-3xl">
           {addChange != null && (
             <div className="flex h-9 items-center justify-between gap-lg px-md">
-              <Button
-                hierarchy="link-color"
-                size="md"
-                aria-expanded={adding}
-                iconTrailing={<Icon name={adding ? 'chevron-up' : 'chevron-down'} size="md" />}
-                onPress={() => setState(adding ? 'change-list' : 'add-change')}
-              >
+              <Button hierarchy="secondary" size="md" aria-expanded={adding} isDisabled={adding} onPress={() => setState('add-change')}>
                 {addChangeLabel}
               </Button>
               {adding && (
-                <Button hierarchy="link-gray" size="sm" onPress={() => setState('change-list')}>
+                <Button hierarchy="secondary" size="sm" onPress={() => setState('change-list')}>
                   Cancel
                 </Button>
               )}
