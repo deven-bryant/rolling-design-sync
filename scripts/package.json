@@ -34,6 +34,14 @@
     "gen": "node gen-commands.js",
     "gen:check": "node gen-commands.js --check"
   },
+  "peerDependencies": {
+    "playwright": ">=1.45"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
+  },
   "engines": {
     "node": ">=22.22"
   },
