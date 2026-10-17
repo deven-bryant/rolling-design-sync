@@ -255,7 +255,7 @@ test('sync budget: a full 2,000-node upload fits many times over in one minute',
   const snapshot = await P.capture(api, root, FK);
   let requests = 0;
   const http = async (url, init) => {
-    requests++;
+    if (/\/(hashes|sync|exists)(\?|$)/.test(url)) requests++; // the sync bucket; screen routes count as token requests
     const res = await app.inject({ method: init.method, url: url.replace('http://127.0.0.1:8787', ''), headers: { ...init.headers, host: '127.0.0.1:8787' }, payload: init.body });
     return { ok: res.statusCode < 400, status: res.statusCode, json: async () => res.json() };
   };

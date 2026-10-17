@@ -225,3 +225,18 @@ test('the result reports the design tokens pass with a tokens stat', () => {
   u.receive(SYNCED);
   assert.doesNotMatch(u.$('result-note').textContent, /Tokens/);
 });
+test('the result reports screen references and the export phase counts screens', () => {
+  const u = ui();
+  u.receive({ type: 'busy', value: true }, { type: 'progress', phase: 'Exporting screens', count: 1, total: 2 });
+  assert.equal(u.$('busy').textContent, 'Exporting screens: 1 / 2 screens');
+  u.receive({ type: 'busy', value: false }, { ...NO_CHANGES, references: { needed: 2, updated: 2, skipped: 0, warnings: [] } });
+  assert.match(u.$('result-note').textContent, / Screens: 2 references updated\.$/);
+  assert.match(u.$('message').textContent, /; 2 screen references updated\./);
+  u.receive({ ...SYNCED, references: { needed: 3, updated: 1, skipped: 2, warnings: [] } });
+  assert.match(u.$('result-note').textContent, / Screens: 1 reference updated, 2 skipped\.$/);
+  for (const references of [null, { needed: 0, updated: 0, skipped: 0, warnings: [] }]) {
+    u.receive({ ...NO_CHANGES, references });
+    assert.doesNotMatch(u.$('result-note').textContent, /Screens/);
+    assert.equal(u.$('message').textContent, 'Sync complete. No changes since the last sync.');
+  }
+});

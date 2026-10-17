@@ -217,6 +217,8 @@ plugin routes a plugin token, and `/v3/openapi.json` none.
 | `GET /v3/files/{fileKey}/hashes` | Plugin: stored hashes for a subtree |
 | `POST /v3/files/{fileKey}/sync` | Plugin: upsert changed nodes, tombstone deleted ones |
 | `POST /v3/files/{fileKey}/exists` | Plugin: which nodes are stored (and which are stale) |
+| `GET /v3/files/{fileKey}/screens/references-needed` | Plugin: configured screens whose reference image is missing or out of date |
+| `PUT /v3/files/{fileKey}/screens/{nodeId}/reference` | Plugin: upload a screen's 1× PNG reference for a design version |
 | `GET /v3/openapi.json` | OpenAPI 3.1 spec (no token) |
 | `GET /health` | Liveness check (no token) |
 

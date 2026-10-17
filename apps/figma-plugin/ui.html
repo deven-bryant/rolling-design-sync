@@ -39,7 +39,7 @@ let scope=null, busy=false, progress=null, pending=null;
 const PROMPT_BUTTONS=['prompt-implemented','prompt-new','prompt-cancel'];
 function post(type, extra={}){parent.postMessage({pluginMessage:{type,...extra}},'*');}
 function message(text,kind=''){$('message').textContent=text;$('message').className=kind;}
-function progressText(p){const n=v=>Number(v||0).toLocaleString();return p.phase+': '+n(p.count)+(p.total!==undefined?' / '+n(p.total):'')+' nodes';}
+function progressText(p){const n=v=>Number(v||0).toLocaleString();return p.phase+': '+n(p.count)+(p.total!==undefined?' / '+n(p.total):'')+(p.phase==='Exporting screens'?' screens':' nodes');}
 function bar(){
  const b=$('bar'),known=!!progress&&typeof progress.total==='number'&&progress.total>0;
  b.hidden=!busy||!!pending||!known;$('spinner').hidden=!busy||!!pending||known;
@@ -62,14 +62,15 @@ function elem(tag,text,cls){const e=document.createElement(tag);if(text!==undefi
 function stat(label,value){const s=elem('div',undefined,'stat');s.append(elem('b',String(value)),elem('span',label,'tag'));return s;}
 function clearResult(){$('result-area').hidden=true;$('stats').replaceChildren();$('raw').textContent='';$('warnings').textContent='';$('result-note').textContent='';}
 function renderResult(m){
- const r=m.result||{},k=m.mains||{},t=m.tokens||null,n=v=>Number(v||0).toLocaleString(),uploaded=(m.changed||0)+(m.added||0);
+ const r=m.result||{},k=m.mains||{},t=m.tokens||null,s=m.references||null,n=v=>Number(v||0).toLocaleString(),uploaded=(m.changed||0)+(m.added||0);
  $('result-area').hidden=false;
  const library=k.librarySkipped?` ${n(k.librarySkipped)} library component${k.librarySkipped===1?'':'s'} not tracked (file setting).`:'';
  const mains=k.resolved?` ${n(k.resolved)} main component${k.resolved===1?'':'s'} resolved: ${n(k.scanned)} scanned (${n(k.scannedNodes)} nodes)${k.stale?`, ${n(k.stale)} of them re-scanned (stale)`:''}, ${n(k.present)} already present${k.unresolved?`, ${n(k.unresolved)} could not be loaded`:''}.`:'';
  const tokens=t?` Tokens: ${n(t.tracked)} tracked, ${n(t.changed)} changed, ${n(t.added)} new${t.deleted?`, ${n(t.deleted)} deleted`:''}.`:'';
+ const screens=s&&s.needed?` Screens: ${n(s.updated)} reference${s.updated===1?'':'s'} updated${s.skipped?`, ${n(s.skipped)} skipped`:''}.`:'';
  $('result-note').textContent=(uploaded+(m.deleted||0)+(k.scanned||0)===0
   ?`Nothing to upload: all ${n(m.tracked)} tracked nodes match the server. Scope ${m.scopeId}.`
-  :`${n(uploaded)} of ${n(m.tracked)} tracked nodes uploaded in ${n(m.batches)} batch${m.batches===1?'':'es'} (${n(m.changed)} changed, ${n(m.added)} new) · ${n(m.deleted)} deleted · ${n(r.dirty)} now dirty for agents${m.markImplemented?` · ${n(r.baselined)} new marked implemented`:''} · scope ${m.scopeId}.`)+mains+library+tokens;
+  :`${n(uploaded)} of ${n(m.tracked)} tracked nodes uploaded in ${n(m.batches)} batch${m.batches===1?'':'es'} (${n(m.changed)} changed, ${n(m.added)} new) · ${n(m.deleted)} deleted · ${n(r.dirty)} now dirty for agents${m.markImplemented?` · ${n(r.baselined)} new marked implemented`:''} · scope ${m.scopeId}.`)+mains+library+tokens+screens;
  $('stats').replaceChildren(stat('changed',m.changed||0),stat('new',m.added||0),stat('deleted',m.deleted||0),stat('unchanged',m.unchanged||0),stat('instances recorded',m.instances||0),stat('inside instances skipped',m.skippedInstances||0),stat('dirty',r.dirty||0),stat('baselined',r.baselined||0),
   stat('mains resolved',k.resolved||0),stat('mains scanned',k.scanned||0),stat('mains re-scanned (stale)',k.stale||0),stat('mains present',k.present||0),stat('library not tracked',k.librarySkipped||0),stat('tokens',t?t.tracked||0:0));
  const warnings=[].concat(m.warnings||[],r.warnings||[]);
@@ -96,6 +97,6 @@ onmessage=event=>{
  if(m.type==='settings'){$('base-url').value=m.settings.baseUrl||'';$('token').value=m.settings.token||'';controls();}
  if(m.type==='scope'){const previousId=scope&&scope.id;scope=m;clearResult();$('scope').textContent=`${m.name} · ${m.id}`;if(previousId!==m.id){$('url').value='';$('mark-implemented').checked=false;}controls();}
  if(m.type==='clear-result'){clearResult();hidePrompt();}
- if(m.type==='synced'){renderResult(m);$('mark-implemented').checked=false;const k=m.mains||{},t=m.tokens||{},tokens=(t.changed||0)+(t.added||0)+(t.deleted||0);message((m.changed||0)+(m.added||0)+(m.deleted||0)+(k.scanned||0)+tokens===0?'Sync complete. No changes since the last sync.':`Sync complete: ${m.changed||0} changed, ${m.added||0} new, ${m.deleted||0} deleted uploaded${k.scanned?`; ${k.scanned} main component${k.scanned===1?'':'s'} scanned${k.stale?` (${k.stale} stale, re-scanned)`:''}`:''}${tokens?`; ${tokens} token${tokens===1?'':'s'} changed`:''}. Agents can pull the delta for this scope.`,'success');}
+ if(m.type==='synced'){renderResult(m);$('mark-implemented').checked=false;const k=m.mains||{},t=m.tokens||{},tokens=(t.changed||0)+(t.added||0)+(t.deleted||0),screens=(m.references&&m.references.updated)||0;message((m.changed||0)+(m.added||0)+(m.deleted||0)+(k.scanned||0)+tokens+screens===0?'Sync complete. No changes since the last sync.':`Sync complete: ${m.changed||0} changed, ${m.added||0} new, ${m.deleted||0} deleted uploaded${k.scanned?`; ${k.scanned} main component${k.scanned===1?'':'s'} scanned${k.stale?` (${k.stale} stale, re-scanned)`:''}`:''}${tokens?`; ${tokens} token${tokens===1?'':'s'} changed`:''}${screens?`; ${screens} screen reference${screens===1?'':'s'} updated`:''}. Agents can pull the delta for this scope.`,'success');}
 };controls();post('load-settings');
 </script></body></html>

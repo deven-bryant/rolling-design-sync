@@ -55,7 +55,8 @@ routes), `../../docs/architecture.md` and
 `RDS_PLUGIN_TOKENS` this plugin authenticates with).
 
 > **v3 routes.** The plugin calls only the v3 plugin routes
-> (`/v3/files/{fileKey}/hashes`, `…/sync`, `…/exists`) with the same request
+> (`/v3/files/{fileKey}/hashes`, `…/sync`, `…/exists`, and for screen references
+> `…/screens/references-needed` and `…/screens/{nodeId}/reference`) with the same request
 > bodies the v2 routes took, and sends `X-RDS-Client: plugin/<version>` (the
 > version from `package.json`, baked into `code.js` by `build.js`) on every
 > request. API errors are shown as the problem's `title` and `hint`; a `401` /
@@ -239,6 +240,25 @@ a deleted variable). A collection goes only once every stored token in it is
 deleted, and an older server without the token map gets no token deletions. The result shows a **tokens** stat and *"Tokens: 48 tracked,
 1 changed, 0 new."*; the already-built prompt still counts layers only.
 
+**Screen references.** Screens set up for render checks (a frame, component
+or instance, configured by an agent on the server) need a Figma reference
+image to compare the built screen with. After the layer and token passes, every
+sync asks the API which configured screens under the synced scope need one
+(`GET …/screens/references-needed?under=<scope>` — missing, or made for an
+older design version) and, one at a time, loads each screen
+(`getNodeByIdAsync`), exports it as a 1× PNG (`exportAsync`, `SCALE` 1) and
+uploads it with the design version the API named
+(`PUT …/screens/{nodeId}/reference`, `{ designVersion, image }`, base64). The
+status line shows **Exporting screens: 1 / 2 screens**; Cancel stops before
+the next export (references already uploaded stay). No Figma token is needed,
+on any plan. Nothing is exported when no screen's design changed, and an older
+API without the screen routes (404) skips the pass silently. A screen that no
+longer exists, is not a frame / component / instance, or would export larger
+than 8,192 px per side or 5 MB (`EXPORT_MAX_SIDE`, `EXPORT_MAX_BYTES`) is
+skipped with a non-blocking `[screen]` warning; a file whose `storeImages`
+setting is off stops the pass with one warning. The result adds
+*"Screens: 2 references updated."* (and how many were skipped).
+
 From there, coding agents pull the dirty nodes and clear them via the API / the
 `scripts/rds-agent.js` CLI — not through this plugin. Sync again after further
 design edits to refresh the delta.
@@ -265,7 +285,7 @@ and shared-component impact in the running app.
 | --- | --- |
 | `../../packages/core/index.js` | Pure normalization / diff / link helpers (shared with the API) |
 | `src/core.js` | Re-export of `@rolling-design-sync/core` for the plugin tests |
-| `src/plugin.js` | Figma traversal, dependency resolution, snapshot capture, hash delta + batched upload, UI actions |
+| `src/plugin.js` | Figma traversal, dependency resolution, snapshot capture, hash delta + batched upload, screen reference export, UI actions |
 | `ui.html` | Plugin interface (Settings, scope, progress, sync result) |
 | `code.js` | Ready-to-run bundle used by Figma |
 | `build.js` | Dependency-free source bundler (`packages/core` + `src/plugin.js`) |

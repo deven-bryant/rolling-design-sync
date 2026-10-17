@@ -291,6 +291,11 @@ const DesignChecklist = (() => {
   // isn't published): the node's own values are still captured, only the token
   // name is unknown, so the snapshot is complete enough to upload.
   const TOKEN_WARNING = '[token] ';
+  // Reference pass: configured screens are exported at 1x, one at a time, within the API's image limits.
+  const SCREEN_WARNING = '[screen] ';
+  const SCREEN_TYPES = ['FRAME', 'COMPONENT', 'INSTANCE'];
+  const EXPORT_MAX_SIDE = 8192;
+  const EXPORT_MAX_BYTES = 5 * 1024 * 1024;
   const blockingWarnings = warnings => warnings.filter(w => !w.startsWith(METADATA_WARNING) && !w.startsWith(MAIN_WARNING) && !w.startsWith(TOKEN_WARNING));
   function componentSet(node) {
     try { return node.type === 'COMPONENT' && node.parent && node.parent.type === 'COMPONENT_SET' ? node.parent : null; }
@@ -674,10 +679,11 @@ const DesignChecklist = (() => {
     if (!data || typeof data.title !== 'string' || !data.title) return null;
     return typeof data.hint === 'string' && data.hint ? data.title + '. ' + data.hint : data.title + '.';
   }
-  async function request(http, settings, path, body) {
+  /* Errors carry the HTTP `status` and the problem `code` (when the API sent one). */
+  async function request(http, settings, path, body, method) {
     let response;
     try {
-      const init = { method: body === undefined ? 'GET' : 'POST', headers: { Authorization: 'Bearer ' + settings.token, 'X-RDS-Client': CLIENT } };
+      const init = { method: method || (body === undefined ? 'GET' : 'POST'), headers: { Authorization: 'Bearer ' + settings.token, 'X-RDS-Client': CLIENT } };
       if (body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
       response = await http(settings.baseUrl + path, init);
     } catch (e) {
@@ -687,12 +693,13 @@ const DesignChecklist = (() => {
     try { data = await response.json(); } catch (_) { data = null; }
     if (!response.ok) {
       const problem = problemText(data);
+      const failed = message => Object.assign(new Error(message), { status: response.status, code: data && typeof data.code === 'string' ? data.code : undefined });
       if (response.status === 401 || response.status === 403) {
-        throw new Error('The API rejected the upload token (' + response.status + '). Check Settings.' + (problem ? '\n' + problem : ''));
+        throw failed('The API rejected the upload token (' + response.status + '). Check Settings.' + (problem ? '\n' + problem : ''));
       }
-      if (problem) throw new Error('Sync failed (' + response.status + '): ' + problem);
+      if (problem) throw failed('Sync failed (' + response.status + '): ' + problem);
       const detail = data && data.message ? data.message : 'HTTP ' + response.status;
-      throw new Error('Sync failed at ' + path + ': ' + detail);
+      throw failed('Sync failed at ' + path + ': ' + detail);
     }
     return data;
   }
@@ -791,7 +798,8 @@ const DesignChecklist = (() => {
      `options.batchRecords`), both raised on big syncs so the upload takes at most MAX_UPLOAD_BATCHES batches
      (`options.maxBatches`) with no batch over BATCH_CHARS_MAX; deletions go in the first batch.
      With `options.api` a second pass then syncs the file's design tokens (`syncTokens`, same `markImplemented`;
-     `result.tokens`); the prompt counts layers only. */
+     `result.tokens`); the prompt counts layers only. A third pass uploads reference images for configured screens
+     whose design changed (`syncReferences`, `result.references`; `options.references: false` skips it). */
   async function sync(http, settings, snapshot, options = {}) {
     const config = validateSettings(settings);
     let markImplemented = options.markImplemented === true;
@@ -828,8 +836,93 @@ const DesignChecklist = (() => {
       const records = Object.keys(snapshot.nodes).sort().map(id => snapshot.nodes[id].props).concat(mains.upserts.map(up => up.attrs));
       tokens = await syncTokens(options.api, http, config, snapshot.fileKey, records, { ...uploadOptions, pause: options.pause, progress });
     }
+    let references = null;
+    if (options.api && options.references !== false) {
+      if (cancelled()) throw new Error(cancelMessage);
+      references = await syncReferences(options.api, http, config, snapshot.fileKey, snapshot.scopeId, { cancelled, cancelMessage, pause: options.pause, progress });
+    }
     return { fileKey: snapshot.fileKey, scopeId: snapshot.scopeId, markImplemented, trackLibraryComponents: trackLibrary, batches: scope.batches, ...plan.counts,
-      mains: mains.counts, mainWarnings: mains.warnings, tokens, result: scope.result };
+      mains: mains.counts, mainWarnings: mains.warnings, tokens, references, result: scope.result };
+  }
+  const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  function base64(api, bytes) {
+    if (typeof api.base64Encode === 'function') return api.base64Encode(bytes);
+    let out = '';
+    for (let i = 0; i < bytes.length; i += 3) {
+      const n = (bytes[i] << 16) | ((bytes[i + 1] || 0) << 8) | (bytes[i + 2] || 0);
+      out += BASE64[(n >> 18) & 63] + BASE64[(n >> 12) & 63] + (i + 1 < bytes.length ? BASE64[(n >> 6) & 63] : '=') + (i + 2 < bytes.length ? BASE64[n & 63] : '=');
+    }
+    return out;
+  }
+  /* Export size at 1x: the frame, or its render bounds when effects/overflow reach past it. */
+  function exportSize(node) {
+    let width = Number(node.width) || 0, height = Number(node.height) || 0;
+    try {
+      const b = node.absoluteRenderBounds;
+      if (b) { width = Math.max(width, Number(b.width) || 0); height = Math.max(height, Number(b.height) || 0); }
+    } catch (_) { /* Render bounds are optional. */ }
+    return { width: Math.ceil(width), height: Math.ceil(height) };
+  }
+  /* Third pass of a sync: reference images for the configured screens under the scope whose design changed since
+     their last reference (`GET …/screens/references-needed?under=`). Each screen is loaded, exported as a 1x PNG
+     and uploaded (`PUT …/screens/{nodeId}/reference` with `{ designVersion, image }`), one at a time ("Exporting
+     screens"). Screens that are gone, of another type, or over EXPORT_MAX_SIDE px / EXPORT_MAX_BYTES are skipped
+     with a non-blocking [screen] warning. Returns null when the server has no screen routes (404); a file that
+     stores no images (images_disabled) stops the pass with one warning. Cancel is honoured between exports. */
+  async function syncReferences(api, http, config, fileKey, scopeId, options) {
+    let listed;
+    try {
+      listed = await request(http, config, filePath(fileKey, 'screens/references-needed') + '?under=' + encodeURIComponent(scopeId));
+    } catch (e) {
+      if (e && e.status === 404) return null;
+      throw e;
+    }
+    const screens = (listed && Array.isArray(listed.screens) ? listed.screens : [])
+      .filter(s => s && typeof s.nodeId === 'string' && s.nodeId && typeof s.designVersion === 'string' && s.designVersion);
+    const result = { needed: screens.length, updated: 0, skipped: 0, warnings: [] };
+    if (!screens.length) return result;
+    const skip = message => { result.skipped++; result.warnings.push(SCREEN_WARNING + message); };
+    options.progress('Exporting screens', 0, screens.length);
+    for (let i = 0; i < screens.length; i++) {
+      if (options.cancelled()) throw new Error(options.cancelMessage);
+      if (options.pause) await options.pause();
+      const { nodeId, designVersion } = screens[i];
+      let node = null;
+      try { node = await api.getNodeByIdAsync(nodeId); } catch (_) { node = null; }
+      if (!node || node.removed) skip(`${nodeId}: screen no longer exists in this file; reference not updated.`);
+      else if (!SCREEN_TYPES.includes(node.type)) skip(`${nodeId}: screen is a ${node.type}, not a frame, component or instance; reference not updated.`);
+      else {
+        const size = exportSize(node);
+        if (size.width > EXPORT_MAX_SIDE || size.height > EXPORT_MAX_SIDE) {
+          skip(`"${node.name}" (${nodeId}) is ${size.width} × ${size.height} px, over ${EXPORT_MAX_SIDE} px per side; reference not updated.`);
+        } else {
+          let bytes = null;
+          try { bytes = await node.exportAsync({ format: 'PNG', constraint: { type: 'SCALE', value: 1 } }); }
+          catch (e) { skip(`"${node.name}" (${nodeId}) could not be exported: ${String(e && e.message || e).slice(0, 300)}`); }
+          if (bytes && bytes.length > EXPORT_MAX_BYTES) {
+            skip(`"${node.name}" (${nodeId}) exports to ${(bytes.length / 1048576).toFixed(1)} MB, over ${EXPORT_MAX_BYTES / 1048576} MB; reference not updated.`);
+          } else if (bytes) {
+            const body = { designVersion, image: base64(api, bytes) };
+            bytes = null;
+            try {
+              await request(http, config, filePath(fileKey, 'screens/' + encodeURIComponent(nodeId) + '/reference'), body, 'PUT');
+              result.updated++;
+            } catch (e) {
+              if (e && e.code === 'images_disabled') {
+                result.skipped += screens.length - i;
+                result.warnings.push(SCREEN_WARNING + 'This file does not store images (file setting), so no screen references were uploaded.');
+                options.progress('Exporting screens', screens.length, screens.length);
+                return result;
+              }
+              if (e && (e.status === 401 || e.status === 403)) throw e;
+              skip(`"${node.name}" (${nodeId}): ${e && e.message || e}`);
+            }
+          }
+        }
+      }
+      options.progress('Exporting screens', i + 1, screens.length);
+    }
+    return result;
   }
   /* Upserts in batches of at most `batchChars` JSON chars and `batchRecords` records (raised so the upload takes at
      most `maxBatches` requests, no batch over BATCH_CHARS_MAX); deletions go in the first batch. Every batch carries
@@ -956,7 +1049,7 @@ const DesignChecklist = (() => {
           const synced = await sync(http, settings, snapshot, { cancelled: () => cancelled, api, pause, mainNodes, fileName: api.root.name, confirmNewLayers,
             markImplemented: msg.markImplemented === true,
             progress: (phase, count, total) => send(progressMessage(phase, count, total)) });
-          send({ type: 'synced', ...synced, warnings: snapshot.warnings.concat(synced.mainWarnings, synced.tokens ? synced.tokens.warnings : []) });
+          send({ type: 'synced', ...synced, warnings: snapshot.warnings.concat(synced.mainWarnings, synced.tokens ? synced.tokens.warnings : [], synced.references ? synced.references.warnings : []) });
         } else {
           throw new Error('Unknown action: ' + msg.type);
         }
@@ -966,7 +1059,7 @@ const DesignChecklist = (() => {
     try { scope = selected(); send(scopeState()); } catch (_) { send({ type: 'notice', message: 'Select a section or frame, then click Use selection.' }); }
   }
   return { capture, planDelta, scanDifference, resolveMains, collectTokens, planTokens, sync, validateSettings, start, NEW_LAYERS_MIN, NEW_LAYERS_SHARE,
-    BATCH_CHARS, BATCH_RECORDS, MAX_UPLOAD_BATCHES, BATCH_CHARS_MAX, VERIFY_RETRIES };
+    BATCH_CHARS, BATCH_RECORDS, MAX_UPLOAD_BATCHES, BATCH_CHARS_MAX, VERIFY_RETRIES, EXPORT_MAX_SIDE, EXPORT_MAX_BYTES };
 })();
 if (typeof figma !== 'undefined') DesignChecklist.start(figma);
 if (typeof module !== 'undefined') module.exports = DesignChecklist;
