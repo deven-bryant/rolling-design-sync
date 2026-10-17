@@ -155,6 +155,14 @@ Generated from the API's OpenAPI document (API 3.0.0) — one command per `x-rds
 | [`notes list`](#rds-agent-notes-list) | `GET /v3/files/{fileKey}/nodes/{nodeId}/notes` | List a node's notes |
 | [`notes add`](#rds-agent-notes-add) | `POST /v3/files/{fileKey}/nodes/{nodeId}/notes` | Add a note to a node |
 | [`notes dismiss`](#rds-agent-notes-dismiss) | `POST /v3/files/{fileKey}/notes/{noteId}/dismiss` | Dismiss a note |
+| [`attachments get`](#rds-agent-attachments-get) | `GET /v3/files/{fileKey}/attachments/{attachmentId}` | Get an attached image |
+| [`screens ls`](#rds-agent-screens-ls) | `GET /v3/files/{fileKey}/screens` | List screens |
+| [`screens set`](#rds-agent-screens-set) | `PUT /v3/files/{fileKey}/screens/{nodeId}` | Configure a screen |
+| [`screens rm`](#rds-agent-screens-rm) | `DELETE /v3/files/{fileKey}/screens/{nodeId}` | Remove a screen |
+| [`checks request`](#rds-agent-checks-request) | `POST /v3/files/{fileKey}/screens/{nodeId}/checks` | Request a render check |
+| [`checks ls`](#rds-agent-checks-ls) | `GET /v3/files/{fileKey}/checks` | List render checks |
+| [`checks show`](#rds-agent-checks-show) | `GET /v3/files/{fileKey}/checks/{checkId}` | Get a render check |
+| [`checks submit`](#rds-agent-checks-submit) | `POST /v3/files/{fileKey}/checks/{checkId}/result` | Submit a render check result |
 | [`summary`](#rds-agent-summary) | `GET /v3/files/{fileKey}/summary` | Summarize changes |
 | [`trends`](#rds-agent-trends) | `GET /v3/insights/trends` | Weekly trends |
 | [`work`](#rds-agent-work) | `GET /v3/files/{fileKey}/work` | List work items |
@@ -180,13 +188,14 @@ One tracked file's node counts and last sync time: a quick check of how much is 
 
 `PATCH /v3/files/{fileKey}`
 
-Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
+Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. `storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
 
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--track-library-components` | boolean | body `settings.trackLibraryComponents` | Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. |
+| `--store-images` | boolean | body `settings.storeImages` | Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). |
 | `--worker` | string | body `worker` | Your worker id; recorded as the event actor (default: the token label). |
 
 ### rds-agent scopes ls
@@ -216,7 +225,7 @@ Nodes of a file with their property-level changes — by default the dirty ones 
 | `--change-type` | string | query `changeType` | Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes). |
 | `--has-notes` | true\|false | query `hasNotes` | true: only nodes with open notes; false: only nodes without. |
 | `--changed` | string | query `changed` | Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). |
-| `--category` | string | query `category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. |
+| `--category` | string | query `category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note, render. |
 | `--component` | string | query `component` | Comma-separated main component ids: the components and all their instances. |
 | `--name` | string | query `name` | Comma-separated case-insensitive name globs (`*`, `?`), e.g. Button*. |
 | `--since` | string | query `since` | ISO 8601 time: only nodes changed at or after it. |
@@ -227,7 +236,7 @@ Nodes of a file with their property-level changes — by default the dirty ones 
 | `--q` | string | query `q` | All the filters above in one string: space-separated `key:value` pairs, e.g. `state:dirty under:1:2 changed:fills` (several subtrees: `under:1:2,1:5`); quote values with spaces (name:"Primary Button"). A key may not also be passed as its own parameter. |
 | `--view` | compact\|full | query `view` | compact (default: state, changes, hash, claim, block) or full (adds attrs, implementedAttrs, path; change values never truncated). |
 | `--changes` | auto\|diff\|names | query `changes` | auto (default): the built→now diff for modified and deleted nodes, omitted for added ones (their property names are in `changedProps`) — keeps fresh-sync pages small; diff: the diff for every node, including added ones' full values; names: never `changes`, only `changedProps`. Ask for `changes=diff` (or `get_node`) when you need the values of added nodes. |
-| `--fields` | string | query `fields` | Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage, via (`via` needs `expand=instances`). |
+| `--fields` | string | query `fields` | Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, screen, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage, via (`via` needs `expand=instances`). |
 | `--include` | string | query `include` | Comma-separated: counts, usage. `counts` adds subtree counts (`descendants`) to each node; `usage` adds `usage: { layers }` to each design token (`token:<variableKey>`). |
 | `--sort` | document\|path\|updatedAt\|name\|-document\|-path\|-updatedAt\|-name | query `sort` | document (default: the design's layer order — auto-layout flow order, else top-to-bottom, left-to-right), path (node-id path order), updatedAt or name; prefix `-` for descending. |
 | `--limit` | integer | query `limit` | Page size (default 100, max 1000). With format=outline: rendered lines per page (default: every line). |
@@ -247,7 +256,7 @@ One node in full: state, property changes (whole values, never truncated), compo
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
-| `--fields` | string | query `fields` | Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage. |
+| `--fields` | string | query `fields` | Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, screen, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage. |
 | `--changes` | auto\|diff\|names | query `changes` | diff (default): the whole built→now diff, never truncated — the way to read an added node's values; auto: omitted for added nodes; names: never `changes`, only `changedProps`. |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 
@@ -294,7 +303,7 @@ Leases nodes to `worker` so parallel agents do not implement the same nodes. Cla
 | `--type` | string | body `filter.type` | Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. |
 | `--change-type` | string | body `filter.changeType` | Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes). |
 | `--changed` | string | body `filter.changed` | Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). |
-| `--category` | string | body `filter.category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. |
+| `--category` | string | body `filter.category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note, render. |
 | `--component` | string | body `filter.component` | Comma-separated main component ids: the components and all their instances. |
 | `--instance` | true\|false | body `filter.instance` | true: only component instances (`isInstance`); false: only other nodes. |
 | `--name` | string | body `filter.name` | Comma-separated case-insensitive name globs (`*`, `?`), e.g. Button*. |
@@ -344,7 +353,7 @@ Ends the claim and frees the nodes still under it, so other agents can take them
 
 `GET /v3/files/{fileKey}/events`
 
-The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
+The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed, render_check.requested, render_check.passed, render_check.mismatch. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
 
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
@@ -352,7 +361,7 @@ The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, count
 | `--after` | integer | query `after` | Only events with a greater id: the previous page's `nextAfter` (default 0 = from the start of the log). |
 | `--before` | integer | query `before` | Only events with a smaller id: with order=desc, the previous page's `nextBefore` (default: from the newest event). JSON pages only. |
 | `--order` | asc\|desc | query `order` | Default `"asc"`. `asc` (default): oldest first, page with `after` / `nextAfter`. `desc`: newest first, page with `before` / `nextBefore`. JSON pages only; SSE is unchanged. |
-| `--types` | string | query `types` | Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. |
+| `--types` | string | query `types` | Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed, render_check.requested, render_check.passed, render_check.mismatch. |
 | `--limit` | integer | query `limit` | JSON page size (default 100, max 1000). |
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--node-id` | string | query `nodeId` | Only events mentioning this node in data.nodeId or data.nodeIds (1:2 or 1-2); JSON and SSE. |
@@ -421,6 +430,100 @@ Closes an open note without changing the build (e.g. it is wrong or already hand
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
 | `--reason` | string | body `reason` | Why it was dismissed. |
 
+### rds-agent attachments get
+
+`GET /v3/files/{fileKey}/attachments/{attachmentId}` — arguments: `<attachmentId>`
+
+The bytes of a stored image: a note screenshot, a screen's reference image or a render check's built screenshot or heatmap. `size=thumb` returns the thumbnail (WebP, at most 480 px wide). Any signed-in caller (agent, viewer, portal session) of the file; served with `cache-control: private` and `x-content-type-options: nosniff`.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+| `--size` | full\|thumb | query `size` | full (default) or thumb. |
+
+### rds-agent screens ls
+
+`GET /v3/files/{fileKey}/screens`
+
+The frames configured for render checks, by node id, each with its settings and computed `status` (building: nodes under it are dirty; ready: built and no result for its current design; requested; passed; mismatch; error), `stale` (the last result is for an older design) and last check.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+| `--under` | string | query `under` | Only screens at or under this node id (e.g. a section). |
+
+### rds-agent screens set
+
+`PUT /v3/files/{fileKey}/screens/{nodeId}` — arguments: `<nodeId>`
+
+Makes a FRAME or COMPONENT a screen for render checks, or changes its settings: the `route` its built page renders at, the `viewport` (200–8192 px; default: the frame's size), optional `theme` / `query`, `masks` (rectangles inside the viewport ignored by the comparison) and `threshold` (0–100 % of pixels; default 1). The plugin uploads its reference image at its next sync. Agent tokens and agent sessions only.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+| `--route` | string | body `route` | **Required.** App route, starting with `/` (e.g. `/settings`). |
+| `--width` | integer | body `viewport.width` |  |
+| `--height` | integer | body `viewport.height` |  |
+| `--theme` | string | body `theme` | Theme the page renders in (e.g. `dark`), passed to the renderer. |
+| `--query` | string | body `query` | Query string added to the route (no leading `?`). |
+| `--threshold` | number | body `threshold` | Max % of differing pixels that still passes (default 1). |
+
+### rds-agent screens rm
+
+`DELETE /v3/files/{fileKey}/screens/{nodeId}` — arguments: `<nodeId>`
+
+Stops render-checking a frame: deletes its settings, reference image and checks (their images too). Agent tokens and agent sessions only.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+
+### rds-agent checks request
+
+`POST /v3/files/{fileKey}/screens/{nodeId}/checks` — arguments: `<nodeId>`
+
+Asks for a render check of a screen; an agent runs it (`rds-agent check`) and submits the result. Returns the open request when one is already pending (idempotent). Any signed-in caller, viewers included. Emits `render_check.requested`.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+
+### rds-agent checks ls
+
+`GET /v3/files/{fileKey}/checks`
+
+Render checks, newest first; `status=requested` lists the ones waiting for an agent to run them (with each screen's route, viewport, theme, query and masks). The 10 newest checks of each screen are kept.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+| `--status` | requested\|passed\|mismatch\|error | query `status` | Only checks in this status (`requested`: waiting for an agent). |
+| `--node-id` | string | query `nodeId` | Only this screen's checks. |
+| `--limit` | integer | query `limit` | Default 100. |
+
+### rds-agent checks show
+
+`GET /v3/files/{fileKey}/checks/{checkId}` — arguments: `<checkId>`
+
+One render check with its score, differing regions and the reference, built and heatmap images (get_attachment fetches them).
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+
+### rds-agent checks submit
+
+`POST /v3/files/{fileKey}/checks/{checkId}/result` — arguments: `<checkId>`
+
+Submits the built screenshot (PNG, base64, rendered at the screen's viewport) for a requested check. The API compares it with the reference for the screen's current design (no resizing; pixels outside the smaller image differ; masks are skipped) and returns the score, regions and a heatmap. score <= threshold passes (resolves open render-check notes; emits `render_check.passed`); otherwise mismatch: a `render_check` note with the images is added to the screen (dirty, category `render`) and `render_check.mismatch` is emitted. Send `error` instead of `image` when the page could not be rendered. reference_missing when the plugin has not uploaded a reference for the current design. Agent tokens only.
+
+| Flag | Type | Sent as | Description |
+|------|------|---------|-------------|
+| `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
+| `--error` | string | body `error` | Why the screen could not be rendered (instead of image). |
+| `--commit-ref` | string | body `commitRef` | The commit the screenshot was rendered from. |
+| `--source` | string | body `source` | What rendered it (e.g. `rds-agent check`, a CI job). |
+
 ### rds-agent summary
 
 `GET /v3/files/{fileKey}/summary`
@@ -436,7 +539,7 @@ Counts of the nodes the `list_nodes` filters match (default: dirty) by state, ch
 | `--type` | string | query `type` | Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. |
 | `--change-type` | string | query `changeType` | Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes). |
 | `--changed` | string | query `changed` | Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). |
-| `--category` | string | query `category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. |
+| `--category` | string | query `category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note, render. |
 | `--component` | string | query `component` | Comma-separated main component ids: the components and all their instances. |
 | `--instance` | true\|false | query `instance` | true: only component instances (`isInstance`); false: only other nodes. |
 | `--name` | string | query `name` | Comma-separated case-insensitive name globs (`*`, `?`), e.g. Button*. |
@@ -476,7 +579,7 @@ The nodes the `list_nodes` filters match (default: dirty) bundled into work item
 | `--type` | string | query `type` | Comma-separated Figma node types, e.g. TEXT,INSTANCE,FRAME. |
 | `--change-type` | string | query `changeType` | Comma-separated: added, modified, deleted, requested (dirty nodes only; `requested`: built as designed but with open notes). |
 | `--changed` | string | query `changed` | Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). |
-| `--category` | string | query `category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. |
+| `--category` | string | query `category` | Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note, render. |
 | `--component` | string | query `component` | Comma-separated main component ids: the components and all their instances. |
 | `--instance` | true\|false | query `instance` | true: only component instances (`isInstance`); false: only other nodes. |
 | `--name` | string | query `name` | Comma-separated case-insensitive name globs (`*`, `?`), e.g. Button*. |

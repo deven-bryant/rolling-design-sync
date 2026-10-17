@@ -67,6 +67,19 @@ function flag(where, name, schema, { required = false, object } = {}) {
   return out;
 }
 
+/** Objects with exactly two required string keys. Optional arrays of other objects are API / MCP only. */
+function isPairs(item) {
+  const keys = item.required || [];
+  return keys.length === 2 && keys.every(k => item.properties && typeOf(item.properties[k]) === 'string');
+}
+
+/** Base64 file content (or an array of it): not something to type as a flag, so the CLI leaves it out. */
+function isBinary(schema) {
+  if (schema.format === 'byte') return true;
+  const item = schema.items || {};
+  return Object.values(item.properties || {}).some(p => p.format === 'byte');
+}
+
 /** A body array of objects with exactly two required string keys: `<a>=<b>` arguments. */
 function itemsInput(name, schema, required) {
   const item = schema.items || {};
@@ -116,10 +129,12 @@ function commandOf(method, route, op) {
       const body = op.requestBody.content['application/json'].schema;
       const required = body.required || [];
       for (const [name, schema] of Object.entries(body.properties || {})) {
+        if (isBinary(schema)) continue;
         const type = typeOf(schema);
         if (type === 'object' && schema.properties) {
           for (const [sub, subSchema] of Object.entries(schema.properties)) flags.push(flag('body', sub, subSchema, { object: name }));
         } else if (type === 'array' && typeOf(schema.items || {}) === 'object') {
+          if (!required.includes(name) && !isPairs(schema.items)) continue;
           if (items) throw new Error('More than one item array in the body');
           items = itemsInput(name, schema, required.includes(name));
         } else {

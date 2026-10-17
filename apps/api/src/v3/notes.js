@@ -87,7 +87,7 @@ const addNote = {
           type: 'object',
           required: ['data'],
           properties: {
-            data: { type: 'string', minLength: 1, description: 'The image file, base64.' },
+            data: { type: 'string', minLength: 1, format: 'byte', description: 'The image file, base64.' },
             name: { type: 'string', maxLength: 200, description: 'Optional file name (not used for the type).' },
           },
         },

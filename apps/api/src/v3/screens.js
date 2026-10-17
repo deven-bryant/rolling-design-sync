@@ -50,7 +50,7 @@ const rect = {
   properties: { x: { type: 'integer', minimum: 0 }, y: { type: 'integer', minimum: 0 }, width: { type: 'integer', minimum: 1 }, height: { type: 'integer', minimum: 1 } },
 };
 const region = { type: 'object', properties: { ...rect.properties, pixels: { type: 'integer', description: 'Differing pixels in it.' } } };
-const imageData = { type: 'string', minLength: 1, description: 'The PNG, base64.' };
+const imageData = { type: 'string', minLength: 1, format: 'byte', description: 'The PNG, base64.' };
 
 const lastCheck = nullable('object', {
   description: 'The newest check of the screen.',

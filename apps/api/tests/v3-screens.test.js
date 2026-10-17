@@ -248,7 +248,7 @@ for (const kind of Object.keys(STORES)) {
     const four = Array.from({ length: 4 }, () => ({ data: jpeg }));
     assertProblem(await call(app, 'POST', '/nodes/2:1/notes', { payload: { body: 'x', images: four } }), 400, 'invalid_parameter');
     assertProblem(await call(app, 'POST', '/nodes/2:1/notes', { payload: { body: 'x', images: [{ data: Buffer.from('GIF89a-------').toString('base64') }] } }), 400, 'invalid_image');
-    assertProblem(await call(app, 'POST', '/nodes/2:1/notes', { payload: { body: 'x', images: [{ data: '<html>' }] } }), 400, 'invalid_image');
+    assertProblem(await call(app, 'POST', '/nodes/2:1/notes', { payload: { body: 'x', images: [{ data: '<html>' }] } }), 400, 'invalid_parameter');
 
     const before = blobs.blobs.size;
     ok(await call(app, 'DELETE', `/notes/${added.note.noteId}`, { headers: viewer }));

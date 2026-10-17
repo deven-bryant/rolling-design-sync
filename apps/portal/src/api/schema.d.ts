@@ -406,6 +406,8 @@ export interface paths {
                                 settings?: {
                                     /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
                                     trackLibraryComponents?: boolean;
+                                    /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
+                                    storeImages?: boolean;
                                 };
                                 counts?: {
                                     total?: number;
@@ -556,6 +558,8 @@ export interface paths {
                             settings?: {
                                 /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
                                 trackLibraryComponents?: boolean;
+                                /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
+                                storeImages?: boolean;
                             };
                             counts?: {
                                 total?: number;
@@ -685,7 +689,7 @@ export interface paths {
         head?: never;
         /**
          * Change file settings
-         * @description Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
+         * @description Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. `storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
          */
         patch: {
             parameters: {
@@ -703,10 +707,12 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        /** @description The settings to change (trackLibraryComponents); others keep their value. */
+                        /** @description The settings to change (trackLibraryComponents, storeImages); others keep their value. */
                         settings: {
                             /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
                             trackLibraryComponents?: boolean;
+                            /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
+                            storeImages?: boolean;
                         };
                         /** @description Your worker id; recorded as the event actor (default: the token label). */
                         worker?: string;
@@ -729,6 +735,8 @@ export interface paths {
                             settings?: {
                                 /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
                                 trackLibraryComponents?: boolean;
+                                /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
+                                storeImages?: boolean;
                             };
                             counts?: {
                                 total?: number;
@@ -1056,7 +1064,7 @@ export interface paths {
                     hasNotes?: "true" | "false";
                     /** @description Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). */
                     changed?: string;
-                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. */
+                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note, render. */
                     category?: string;
                     /** @description Comma-separated main component ids: the components and all their instances. */
                     component?: string;
@@ -1078,7 +1086,7 @@ export interface paths {
                     view?: "compact" | "full";
                     /** @description auto (default): the built→now diff for modified and deleted nodes, omitted for added ones (their property names are in `changedProps`) — keeps fresh-sync pages small; diff: the diff for every node, including added ones' full values; names: never `changes`, only `changedProps`. Ask for `changes=diff` (or `get_node`) when you need the values of added nodes. */
                     changes?: "auto" | "diff" | "names";
-                    /** @description Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage, via (`via` needs `expand=instances`). */
+                    /** @description Comma-separated node fields to return (overrides view): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, screen, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage, via (`via` needs `expand=instances`). */
                     fields?: string;
                     /** @description Comma-separated: counts, usage. `counts` adds subtree counts (`descendants`) to each node; `usage` adds `usage: { layers }` to each design token (`token:<variableKey>`). */
                     include?: string;
@@ -1173,7 +1181,33 @@ export interface paths {
                                     body?: string;
                                     author?: string;
                                     createdAt?: string;
+                                    /** @description Only when not a person's note: `render_check` (a failed render check; its screenshots show the difference). */
+                                    source?: string;
+                                    /** @description Its screenshots, when it has any (get_attachment fetches one). */
+                                    attachments?: {
+                                        attachmentId?: string;
+                                        /** @enum {string} */
+                                        kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                        contentType?: string;
+                                        /** @description Bytes of the full image. */
+                                        size?: number;
+                                        width?: number;
+                                        height?: number;
+                                        /** @description API path of the full image. */
+                                        url?: string;
+                                        /** @description API path of the thumbnail (at most 480 px wide). */
+                                        thumbUrl?: null | string;
+                                        createdBy?: string;
+                                        createdAt?: string;
+                                    }[];
                                 }[];
+                                /** @description Set on frames configured as screens for render checks: `status` (building: nodes under it are dirty; ready: built, no check for this design yet; requested; passed; mismatch; error), `stale` (the last result is for an older design) and the last `score` (% of pixels that differ). */
+                                screen?: null | {
+                                    /** @enum {string} */
+                                    status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                    stale?: boolean;
+                                    score?: null | number;
+                                };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
                                 attrs?: null | {
@@ -1361,7 +1395,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    /** @description Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage. */
+                    /** @description Comma-separated node fields to return (default: all): nodeId, name, type, parentId, isInstance, mainComponentId, component, state, changeType, changedProps, changes, changesKnown, contentHash, figmaUrl, library, claim, blocked, notes, screen, attrs, implementedAttrs, path, deleted, notesResolved, history, descendants, usage. */
                     fields?: string;
                     /** @description diff (default): the whole built→now diff, never truncated — the way to read an added node's values; auto: omitted for added nodes; names: never `changes`, only `changedProps`. */
                     changes?: "auto" | "diff" | "names";
@@ -1445,7 +1479,33 @@ export interface paths {
                                 body?: string;
                                 author?: string;
                                 createdAt?: string;
+                                /** @description Only when not a person's note: `render_check` (a failed render check; its screenshots show the difference). */
+                                source?: string;
+                                /** @description Its screenshots, when it has any (get_attachment fetches one). */
+                                attachments?: {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                }[];
                             }[];
+                            /** @description Set on frames configured as screens for render checks: `status` (building: nodes under it are dirty; ready: built, no check for this design yet; requested; passed; mismatch; error), `stale` (the last result is for an older design) and the last `score` (% of pixels that differ). */
+                            screen?: null | {
+                                /** @enum {string} */
+                                status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                stale?: boolean;
+                                score?: null | number;
+                            };
                             /** @description `get_node` only: how many of its notes clears have resolved. */
                             notesResolved?: number;
                             attrs?: null | {
@@ -1948,7 +2008,7 @@ export interface paths {
                             changeType?: string;
                             /** @description Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). */
                             changed?: string;
-                            /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. */
+                            /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note, render. */
                             category?: string;
                             /** @description Comma-separated main component ids: the components and all their instances. */
                             component?: string;
@@ -2047,7 +2107,33 @@ export interface paths {
                                     body?: string;
                                     author?: string;
                                     createdAt?: string;
+                                    /** @description Only when not a person's note: `render_check` (a failed render check; its screenshots show the difference). */
+                                    source?: string;
+                                    /** @description Its screenshots, when it has any (get_attachment fetches one). */
+                                    attachments?: {
+                                        attachmentId?: string;
+                                        /** @enum {string} */
+                                        kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                        contentType?: string;
+                                        /** @description Bytes of the full image. */
+                                        size?: number;
+                                        width?: number;
+                                        height?: number;
+                                        /** @description API path of the full image. */
+                                        url?: string;
+                                        /** @description API path of the thumbnail (at most 480 px wide). */
+                                        thumbUrl?: null | string;
+                                        createdBy?: string;
+                                        createdAt?: string;
+                                    }[];
                                 }[];
+                                /** @description Set on frames configured as screens for render checks: `status` (building: nodes under it are dirty; ready: built, no check for this design yet; requested; passed; mismatch; error), `stale` (the last result is for an older design) and the last `score` (% of pixels that differ). */
+                                screen?: null | {
+                                    /** @enum {string} */
+                                    status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                    stale?: boolean;
+                                    score?: null | number;
+                                };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
                                 attrs?: null | {
@@ -2632,7 +2718,33 @@ export interface paths {
                                     body?: string;
                                     author?: string;
                                     createdAt?: string;
+                                    /** @description Only when not a person's note: `render_check` (a failed render check; its screenshots show the difference). */
+                                    source?: string;
+                                    /** @description Its screenshots, when it has any (get_attachment fetches one). */
+                                    attachments?: {
+                                        attachmentId?: string;
+                                        /** @enum {string} */
+                                        kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                        contentType?: string;
+                                        /** @description Bytes of the full image. */
+                                        size?: number;
+                                        width?: number;
+                                        height?: number;
+                                        /** @description API path of the full image. */
+                                        url?: string;
+                                        /** @description API path of the thumbnail (at most 480 px wide). */
+                                        thumbUrl?: null | string;
+                                        createdBy?: string;
+                                        createdAt?: string;
+                                    }[];
                                 }[];
+                                /** @description Set on frames configured as screens for render checks: `status` (building: nodes under it are dirty; ready: built, no check for this design yet; requested; passed; mismatch; error), `stale` (the last result is for an older design) and the last `score` (% of pixels that differ). */
+                                screen?: null | {
+                                    /** @enum {string} */
+                                    status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                    stale?: boolean;
+                                    score?: null | number;
+                                };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
                                 attrs?: null | {
@@ -2962,7 +3074,7 @@ export interface paths {
         };
         /**
          * List file events
-         * @description The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
+         * @description The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed, render_check.requested, render_check.passed, render_check.mismatch. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
          */
         get: {
             parameters: {
@@ -2973,7 +3085,7 @@ export interface paths {
                     before?: number;
                     /** @description `asc` (default): oldest first, page with `after` / `nextAfter`. `desc`: newest first, page with `before` / `nextBefore`. JSON pages only; SSE is unchanged. */
                     order?: "asc" | "desc";
-                    /** @description Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. */
+                    /** @description Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed, render_check.requested, render_check.passed, render_check.mismatch. */
                     types?: string;
                     /** @description JSON page size (default 100, max 1000). */
                     limit?: number;
@@ -3008,7 +3120,7 @@ export interface paths {
                                 id?: number;
                                 fileKey?: string;
                                 /** @enum {string} */
-                                type?: "sync.completed" | "nodes.cleared" | "claim.created" | "claim.renewed" | "claim.released" | "node.blocked" | "node.unblocked" | "file.settings_changed" | "note.added" | "note.resolved" | "note.dismissed";
+                                type?: "sync.completed" | "nodes.cleared" | "claim.created" | "claim.renewed" | "claim.released" | "node.blocked" | "node.unblocked" | "file.settings_changed" | "note.added" | "note.resolved" | "note.dismissed" | "render_check.requested" | "render_check.passed" | "render_check.mismatch";
                                 /** @description `plugin`, or the worker / token label that caused it. */
                                 actor?: null | string;
                                 /** @description IDs, counts, labels and commit refs; never design content. */
@@ -3155,7 +3267,7 @@ export interface paths {
         };
         /**
          * List events across files
-         * @description Activity across all files in global event-id order. Every event includes fileKey and, on JSON pages, fileName; fileKey optionally narrows to a tracked file. The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
+         * @description Activity across all files in global event-id order. Every event includes fileKey and, on JSON pages, fileName; fileKey optionally narrows to a tracked file. The file's activity log, oldest first: syncs, clears, claims, blocks (IDs, counts and labels, never design content). Use it to see what changed since you last looked, or who holds what. JSON page `{ events, nextAfter }`: poll with `after` = the previous `nextAfter`; `after=0` starts from the oldest retained event. After a `sync.completed`, re-read the affected nodes. To read the newest events first, pass `order=desc`: the page `{ events, nextBefore }` is newest first; pass `before` = the previous `nextBefore` for the next older page (omit `before` to start at the newest event). A page shorter than `limit` is the last one. Filters apply the same in both orders. Types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed, render_check.requested, render_check.passed, render_check.mismatch. With `Accept: text/event-stream`: a server-sent-event stream. Each message has `id` (the event id), `event` (the type) and `data` (the event as JSON). It replays the events after `Last-Event-ID` (header, sent by EventSource on reconnect) or `?after=`, then streams live; without either it streams live only. A `: heartbeat` comment is sent every 20 s. When the requested id is older than the replay window (RDS_EVENT_REPLAY_HOURS), one `event: reset` is sent instead of the replay — re-fetch state — and the stream continues live. `format` applies to the JSON page only (`ndjson` / `md` stream every event after `after` — with order=desc, before `before`, newest first — up to `limit` when given). `nodeId` matches data.nodeId or a member of data.nodeIds in JSON and SSE. `since` is an inclusive ISO timestamp lower bound on JSON pages (ignored for SSE). Filters combine with types, after and before. `order` and `before` apply to JSON pages only (SSE is always oldest first).
          */
         get: {
             parameters: {
@@ -3166,7 +3278,7 @@ export interface paths {
                     before?: number;
                     /** @description `asc` (default): oldest first, page with `after` / `nextAfter`. `desc`: newest first, page with `before` / `nextBefore`. JSON pages only; SSE is unchanged. */
                     order?: "asc" | "desc";
-                    /** @description Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed. */
+                    /** @description Comma-separated event types: sync.completed, nodes.cleared, claim.created, claim.renewed, claim.released, node.blocked, node.unblocked, file.settings_changed, note.added, note.resolved, note.dismissed, render_check.requested, render_check.passed, render_check.mismatch. */
                     types?: string;
                     /** @description JSON page size (default 100, max 1000). */
                     limit?: number;
@@ -3200,7 +3312,7 @@ export interface paths {
                                 id?: number;
                                 fileKey?: string;
                                 /** @enum {string} */
-                                type?: "sync.completed" | "nodes.cleared" | "claim.created" | "claim.renewed" | "claim.released" | "node.blocked" | "node.unblocked" | "file.settings_changed" | "note.added" | "note.resolved" | "note.dismissed";
+                                type?: "sync.completed" | "nodes.cleared" | "claim.created" | "claim.renewed" | "claim.released" | "node.blocked" | "node.unblocked" | "file.settings_changed" | "note.added" | "note.resolved" | "note.dismissed" | "render_check.requested" | "render_check.passed" | "render_check.mismatch";
                                 /** @description `plugin`, or the worker / token label that caused it. */
                                 actor?: null | string;
                                 /** @description IDs, counts, labels and commit refs; never design content. */
@@ -3447,7 +3559,33 @@ export interface paths {
                                     body?: string;
                                     author?: string;
                                     createdAt?: string;
+                                    /** @description Only when not a person's note: `render_check` (a failed render check; its screenshots show the difference). */
+                                    source?: string;
+                                    /** @description Its screenshots, when it has any (get_attachment fetches one). */
+                                    attachments?: {
+                                        attachmentId?: string;
+                                        /** @enum {string} */
+                                        kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                        contentType?: string;
+                                        /** @description Bytes of the full image. */
+                                        size?: number;
+                                        width?: number;
+                                        height?: number;
+                                        /** @description API path of the full image. */
+                                        url?: string;
+                                        /** @description API path of the thumbnail (at most 480 px wide). */
+                                        thumbUrl?: null | string;
+                                        createdBy?: string;
+                                        createdAt?: string;
+                                    }[];
                                 }[];
+                                /** @description Set on frames configured as screens for render checks: `status` (building: nodes under it are dirty; ready: built, no check for this design yet; requested; passed; mismatch; error), `stale` (the last result is for an older design) and the last `score` (% of pixels that differ). */
+                                screen?: null | {
+                                    /** @enum {string} */
+                                    status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                    stale?: boolean;
+                                    score?: null | number;
+                                };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
                                 attrs?: null | {
@@ -3716,7 +3854,33 @@ export interface paths {
                                     body?: string;
                                     author?: string;
                                     createdAt?: string;
+                                    /** @description Only when not a person's note: `render_check` (a failed render check; its screenshots show the difference). */
+                                    source?: string;
+                                    /** @description Its screenshots, when it has any (get_attachment fetches one). */
+                                    attachments?: {
+                                        attachmentId?: string;
+                                        /** @enum {string} */
+                                        kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                        contentType?: string;
+                                        /** @description Bytes of the full image. */
+                                        size?: number;
+                                        width?: number;
+                                        height?: number;
+                                        /** @description API path of the full image. */
+                                        url?: string;
+                                        /** @description API path of the thumbnail (at most 480 px wide). */
+                                        thumbUrl?: null | string;
+                                        createdBy?: string;
+                                        createdAt?: string;
+                                    }[];
                                 }[];
+                                /** @description Set on frames configured as screens for render checks: `status` (building: nodes under it are dirty; ready: built, no check for this design yet; requested; passed; mismatch; error), `stale` (the last result is for an older design) and the last `score` (% of pixels that differ). */
+                                screen?: null | {
+                                    /** @enum {string} */
+                                    status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                    stale?: boolean;
+                                    score?: null | number;
+                                };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
                                 attrs?: null | {
@@ -3922,6 +4086,28 @@ export interface paths {
                                 author?: string;
                                 /** @description The worker id passed when it was added, if any. */
                                 worker?: null | string;
+                                /**
+                                 * @description `render_check`: written by the system for a failed render check (author `render-check`); fix it like any note.
+                                 * @enum {string}
+                                 */
+                                source?: "user" | "render_check";
+                                /** @description Its screenshots (get_attachment fetches one). */
+                                attachments?: {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                }[];
                                 /** @enum {string} */
                                 status?: "open" | "resolved" | "dismissed";
                                 createdAt?: string;
@@ -4074,6 +4260,16 @@ export interface paths {
                         body: string;
                         /** @description Your worker id, recorded on the note. */
                         worker?: string;
+                        /** @description Up to 3 screenshots (PNG, JPEG or WebP, base64, at most RDS_IMAGE_MAX_BYTES — 5 MB by default — and 8192 px a side). They are re-encoded (metadata stripped) and get thumbnails. Refused with images_disabled when the file's storeImages setting is false. */
+                        images?: {
+                            /**
+                             * Format: byte
+                             * @description The image file, base64.
+                             */
+                            data: string;
+                            /** @description Optional file name (not used for the type). */
+                            name?: string;
+                        }[];
                     };
                 };
             };
@@ -4094,6 +4290,28 @@ export interface paths {
                                 author?: string;
                                 /** @description The worker id passed when it was added, if any. */
                                 worker?: null | string;
+                                /**
+                                 * @description `render_check`: written by the system for a failed render check (author `render-check`); fix it like any note.
+                                 * @enum {string}
+                                 */
+                                source?: "user" | "render_check";
+                                /** @description Its screenshots (get_attachment fetches one). */
+                                attachments?: {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                }[];
                                 /** @enum {string} */
                                 status?: "open" | "resolved" | "dismissed";
                                 createdAt?: string;
@@ -4164,7 +4382,33 @@ export interface paths {
                                     body?: string;
                                     author?: string;
                                     createdAt?: string;
+                                    /** @description Only when not a person's note: `render_check` (a failed render check; its screenshots show the difference). */
+                                    source?: string;
+                                    /** @description Its screenshots, when it has any (get_attachment fetches one). */
+                                    attachments?: {
+                                        attachmentId?: string;
+                                        /** @enum {string} */
+                                        kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                        contentType?: string;
+                                        /** @description Bytes of the full image. */
+                                        size?: number;
+                                        width?: number;
+                                        height?: number;
+                                        /** @description API path of the full image. */
+                                        url?: string;
+                                        /** @description API path of the thumbnail (at most 480 px wide). */
+                                        thumbUrl?: null | string;
+                                        createdBy?: string;
+                                        createdAt?: string;
+                                    }[];
                                 }[];
+                                /** @description Set on frames configured as screens for render checks: `status` (building: nodes under it are dirty; ready: built, no check for this design yet; requested; passed; mismatch; error), `stale` (the last result is for an older design) and the last `score` (% of pixels that differ). */
+                                screen?: null | {
+                                    /** @enum {string} */
+                                    status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                    stale?: boolean;
+                                    score?: null | number;
+                                };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
                                 attrs?: null | {
@@ -4272,6 +4516,50 @@ export interface paths {
                 };
                 /** @description RFC 9457 problem details, plus `code` and `hint`. */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                413: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -4420,7 +4708,33 @@ export interface paths {
                                     body?: string;
                                     author?: string;
                                     createdAt?: string;
+                                    /** @description Only when not a person's note: `render_check` (a failed render check; its screenshots show the difference). */
+                                    source?: string;
+                                    /** @description Its screenshots, when it has any (get_attachment fetches one). */
+                                    attachments?: {
+                                        attachmentId?: string;
+                                        /** @enum {string} */
+                                        kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                        contentType?: string;
+                                        /** @description Bytes of the full image. */
+                                        size?: number;
+                                        width?: number;
+                                        height?: number;
+                                        /** @description API path of the full image. */
+                                        url?: string;
+                                        /** @description API path of the thumbnail (at most 480 px wide). */
+                                        thumbUrl?: null | string;
+                                        createdBy?: string;
+                                        createdAt?: string;
+                                    }[];
                                 }[];
+                                /** @description Set on frames configured as screens for render checks: `status` (building: nodes under it are dirty; ready: built, no check for this design yet; requested; passed; mismatch; error), `stale` (the last result is for an older design) and the last `score` (% of pixels that differ). */
+                                screen?: null | {
+                                    /** @enum {string} */
+                                    status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                    stale?: boolean;
+                                    score?: null | number;
+                                };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
                                 attrs?: null | {
@@ -4615,6 +4929,28 @@ export interface paths {
                                 author?: string;
                                 /** @description The worker id passed when it was added, if any. */
                                 worker?: null | string;
+                                /**
+                                 * @description `render_check`: written by the system for a failed render check (author `render-check`); fix it like any note.
+                                 * @enum {string}
+                                 */
+                                source?: "user" | "render_check";
+                                /** @description Its screenshots (get_attachment fetches one). */
+                                attachments?: {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                }[];
                                 /** @enum {string} */
                                 status?: "open" | "resolved" | "dismissed";
                                 createdAt?: string;
@@ -4685,7 +5021,33 @@ export interface paths {
                                     body?: string;
                                     author?: string;
                                     createdAt?: string;
+                                    /** @description Only when not a person's note: `render_check` (a failed render check; its screenshots show the difference). */
+                                    source?: string;
+                                    /** @description Its screenshots, when it has any (get_attachment fetches one). */
+                                    attachments?: {
+                                        attachmentId?: string;
+                                        /** @enum {string} */
+                                        kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                        contentType?: string;
+                                        /** @description Bytes of the full image. */
+                                        size?: number;
+                                        width?: number;
+                                        height?: number;
+                                        /** @description API path of the full image. */
+                                        url?: string;
+                                        /** @description API path of the thumbnail (at most 480 px wide). */
+                                        thumbUrl?: null | string;
+                                        createdBy?: string;
+                                        createdAt?: string;
+                                    }[];
                                 }[];
+                                /** @description Set on frames configured as screens for render checks: `status` (building: nodes under it are dirty; ready: built, no check for this design yet; requested; passed; mismatch; error), `stale` (the last result is for an older design) and the last `score` (% of pixels that differ). */
+                                screen?: null | {
+                                    /** @enum {string} */
+                                    status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                    stale?: boolean;
+                                    score?: null | number;
+                                };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
                                 attrs?: null | {
@@ -4890,6 +5252,28 @@ export interface paths {
                                 author?: string;
                                 /** @description The worker id passed when it was added, if any. */
                                 worker?: null | string;
+                                /**
+                                 * @description `render_check`: written by the system for a failed render check (author `render-check`); fix it like any note.
+                                 * @enum {string}
+                                 */
+                                source?: "user" | "render_check";
+                                /** @description Its screenshots (get_attachment fetches one). */
+                                attachments?: {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                }[];
                                 /** @enum {string} */
                                 status?: "open" | "resolved" | "dismissed";
                                 createdAt?: string;
@@ -4960,7 +5344,33 @@ export interface paths {
                                     body?: string;
                                     author?: string;
                                     createdAt?: string;
+                                    /** @description Only when not a person's note: `render_check` (a failed render check; its screenshots show the difference). */
+                                    source?: string;
+                                    /** @description Its screenshots, when it has any (get_attachment fetches one). */
+                                    attachments?: {
+                                        attachmentId?: string;
+                                        /** @enum {string} */
+                                        kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                        contentType?: string;
+                                        /** @description Bytes of the full image. */
+                                        size?: number;
+                                        width?: number;
+                                        height?: number;
+                                        /** @description API path of the full image. */
+                                        url?: string;
+                                        /** @description API path of the thumbnail (at most 480 px wide). */
+                                        thumbUrl?: null | string;
+                                        createdBy?: string;
+                                        createdAt?: string;
+                                    }[];
                                 }[];
+                                /** @description Set on frames configured as screens for render checks: `status` (building: nodes under it are dirty; ready: built, no check for this design yet; requested; passed; mismatch; error), `stale` (the last result is for an older design) and the last `score` (% of pixels that differ). */
+                                screen?: null | {
+                                    /** @enum {string} */
+                                    status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                    stale?: boolean;
+                                    score?: null | number;
+                                };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
                                 attrs?: null | {
@@ -5118,6 +5528,1799 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v3/files/{fileKey}/attachments/{attachmentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an attached image
+         * @description The bytes of a stored image: a note screenshot, a screen's reference image or a render check's built screenshot or heatmap. `size=thumb` returns the thumbnail (WebP, at most 480 px wide). Any signed-in caller (agent, viewer, portal session) of the file; served with `cache-control: private` and `x-content-type-options: nosniff`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description full (default) or thumb. */
+                    size?: "full" | "thumb";
+                };
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The attachment id (`attachments[].attachmentId` of a note, or a render check's image ids). */
+                    attachmentId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The image (image/png, image/jpeg or image/webp). */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/screens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List screens
+         * @description The frames configured for render checks, by node id, each with its settings and computed `status` (building: nodes under it are dirty; ready: built and no result for its current design; requested; passed; mismatch; error), `stale` (the last result is for an older design) and last check.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Only screens at or under this node id (e.g. a section). */
+                    under?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            screens?: {
+                                nodeId?: string;
+                                name?: null | string;
+                                /** @description The app route the screen renders at (e.g. `/settings`). */
+                                route?: string;
+                                viewport?: {
+                                    width?: number;
+                                    height?: number;
+                                };
+                                theme?: null | string;
+                                /** @description Query string added to the route. */
+                                query?: null | string;
+                                /** @description Rectangles (screen px) ignored by the comparison (dynamic content). */
+                                masks?: {
+                                    x: number;
+                                    y: number;
+                                    width: number;
+                                    height: number;
+                                }[];
+                                /** @description Max % of differing pixels that still passes. */
+                                threshold?: number;
+                                /** @description Hash of the content hashes of the screen and every node under it. */
+                                designVersion?: string;
+                                /** @description The design version of the stored reference image. */
+                                referenceVersion?: null | string;
+                                reference?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                /** @enum {string} */
+                                status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                /** @description The last result is for an older design version. */
+                                stale?: boolean;
+                                score?: null | number;
+                                /** @description The newest check of the screen. */
+                                lastCheck?: null | {
+                                    checkId?: string;
+                                    /** @enum {string} */
+                                    status?: "requested" | "passed" | "mismatch" | "error";
+                                    score?: null | number;
+                                    designVersion?: string;
+                                    requestedAt?: string;
+                                    submittedAt?: null | string;
+                                };
+                                updatedBy?: string;
+                                updatedAt?: string;
+                            }[];
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/screens/{nodeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Configure a screen
+         * @description Makes a FRAME or COMPONENT a screen for render checks, or changes its settings: the `route` its built page renders at, the `viewport` (200–8192 px; default: the frame's size), optional `theme` / `query`, `masks` (rectangles inside the viewport ignored by the comparison) and `threshold` (0–100 % of pixels; default 1). The plugin uploads its reference image at its next sync. Agent tokens and agent sessions only.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`. */
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description App route, starting with `/` (e.g. `/settings`). */
+                        route: string;
+                        /** @description Render size in px (default: the frame size). */
+                        viewport?: {
+                            width: number;
+                            height: number;
+                        };
+                        /** @description Theme the page renders in (e.g. `dark`), passed to the renderer. */
+                        theme?: string | null;
+                        /** @description Query string added to the route (no leading `?`). */
+                        query?: string | null;
+                        /** @description Up to 50 rectangles (screen px from the top-left) the comparison ignores, e.g. dates or avatars. */
+                        masks?: {
+                            x: number;
+                            y: number;
+                            width: number;
+                            height: number;
+                        }[];
+                        /** @description Max % of differing pixels that still passes (default 1). */
+                        threshold?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            screen?: {
+                                nodeId?: string;
+                                name?: null | string;
+                                /** @description The app route the screen renders at (e.g. `/settings`). */
+                                route?: string;
+                                viewport?: {
+                                    width?: number;
+                                    height?: number;
+                                };
+                                theme?: null | string;
+                                /** @description Query string added to the route. */
+                                query?: null | string;
+                                /** @description Rectangles (screen px) ignored by the comparison (dynamic content). */
+                                masks?: {
+                                    x: number;
+                                    y: number;
+                                    width: number;
+                                    height: number;
+                                }[];
+                                /** @description Max % of differing pixels that still passes. */
+                                threshold?: number;
+                                /** @description Hash of the content hashes of the screen and every node under it. */
+                                designVersion?: string;
+                                /** @description The design version of the stored reference image. */
+                                referenceVersion?: null | string;
+                                reference?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                /** @enum {string} */
+                                status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                /** @description The last result is for an older design version. */
+                                stale?: boolean;
+                                score?: null | number;
+                                /** @description The newest check of the screen. */
+                                lastCheck?: null | {
+                                    checkId?: string;
+                                    /** @enum {string} */
+                                    status?: "requested" | "passed" | "mismatch" | "error";
+                                    score?: null | number;
+                                    designVersion?: string;
+                                    requestedAt?: string;
+                                    submittedAt?: null | string;
+                                };
+                                updatedBy?: string;
+                                updatedAt?: string;
+                            };
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
+        /**
+         * Remove a screen
+         * @description Stops render-checking a frame: deletes its settings, reference image and checks (their images too). Agent tokens and agent sessions only.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`. */
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            nodeId?: string;
+                            deleted?: boolean;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/screens/{nodeId}/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Request a render check
+         * @description Asks for a render check of a screen; an agent runs it (`rds-agent check`) and submits the result. Returns the open request when one is already pending (idempotent). Any signed-in caller, viewers included. Emits `render_check.requested`.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`. */
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            created?: boolean;
+                            check?: {
+                                checkId?: string;
+                                nodeId?: string;
+                                /** @enum {string} */
+                                status?: "requested" | "passed" | "mismatch" | "error";
+                                designVersion?: string;
+                                requestedBy?: string;
+                                requestedAt?: string;
+                                submittedBy?: null | string;
+                                submittedAt?: null | string;
+                                commitRef?: null | string;
+                                source?: null | string;
+                                /** @description % of the compared pixels that differ. */
+                                score?: null | number;
+                                threshold?: null | number;
+                                /** @description Up to 10 differing areas, largest first. */
+                                regions?: {
+                                    x?: number;
+                                    y?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description Differing pixels in it. */
+                                    pixels?: number;
+                                }[];
+                                error?: null | string;
+                                route?: null | string;
+                                viewport?: null | {
+                                    width?: number;
+                                    height?: number;
+                                };
+                                theme?: null | string;
+                                query?: null | string;
+                                masks?: {
+                                    x: number;
+                                    y: number;
+                                    width: number;
+                                    height: number;
+                                }[];
+                                reference?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                built?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                heatmap?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List render checks
+         * @description Render checks, newest first; `status=requested` lists the ones waiting for an agent to run them (with each screen's route, viewport, theme, query and masks). The 10 newest checks of each screen are kept.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Only checks in this status (`requested`: waiting for an agent). */
+                    status?: "requested" | "passed" | "mismatch" | "error";
+                    /** @description Only this screen's checks. */
+                    nodeId?: string;
+                    /** @description Default 100. */
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            checks?: {
+                                checkId?: string;
+                                nodeId?: string;
+                                /** @enum {string} */
+                                status?: "requested" | "passed" | "mismatch" | "error";
+                                designVersion?: string;
+                                requestedBy?: string;
+                                requestedAt?: string;
+                                submittedBy?: null | string;
+                                submittedAt?: null | string;
+                                commitRef?: null | string;
+                                source?: null | string;
+                                /** @description % of the compared pixels that differ. */
+                                score?: null | number;
+                                threshold?: null | number;
+                                /** @description Up to 10 differing areas, largest first. */
+                                regions?: {
+                                    x?: number;
+                                    y?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description Differing pixels in it. */
+                                    pixels?: number;
+                                }[];
+                                error?: null | string;
+                                route?: null | string;
+                                viewport?: null | {
+                                    width?: number;
+                                    height?: number;
+                                };
+                                theme?: null | string;
+                                query?: null | string;
+                                masks?: {
+                                    x: number;
+                                    y: number;
+                                    width: number;
+                                    height: number;
+                                }[];
+                                reference?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                built?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                heatmap?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                            }[];
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/checks/{checkId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a render check
+         * @description One render check with its score, differing regions and the reference, built and heatmap images (get_attachment fetches them).
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The check id (`checkId` from request_render_check / list_render_checks). */
+                    checkId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            check?: {
+                                checkId?: string;
+                                nodeId?: string;
+                                /** @enum {string} */
+                                status?: "requested" | "passed" | "mismatch" | "error";
+                                designVersion?: string;
+                                requestedBy?: string;
+                                requestedAt?: string;
+                                submittedBy?: null | string;
+                                submittedAt?: null | string;
+                                commitRef?: null | string;
+                                source?: null | string;
+                                /** @description % of the compared pixels that differ. */
+                                score?: null | number;
+                                threshold?: null | number;
+                                /** @description Up to 10 differing areas, largest first. */
+                                regions?: {
+                                    x?: number;
+                                    y?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description Differing pixels in it. */
+                                    pixels?: number;
+                                }[];
+                                error?: null | string;
+                                route?: null | string;
+                                viewport?: null | {
+                                    width?: number;
+                                    height?: number;
+                                };
+                                theme?: null | string;
+                                query?: null | string;
+                                masks?: {
+                                    x: number;
+                                    y: number;
+                                    width: number;
+                                    height: number;
+                                }[];
+                                reference?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                built?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                heatmap?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/checks/{checkId}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a render check result
+         * @description Submits the built screenshot (PNG, base64, rendered at the screen's viewport) for a requested check. The API compares it with the reference for the screen's current design (no resizing; pixels outside the smaller image differ; masks are skipped) and returns the score, regions and a heatmap. score <= threshold passes (resolves open render-check notes; emits `render_check.passed`); otherwise mismatch: a `render_check` note with the images is added to the screen (dirty, category `render`) and `render_check.mismatch` is emitted. Send `error` instead of `image` when the page could not be rendered. reference_missing when the plugin has not uploaded a reference for the current design. Agent tokens only.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The check id (`checkId` from request_render_check / list_render_checks). */
+                    checkId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /**
+                         * Format: byte
+                         * @description The PNG, base64.
+                         */
+                        image?: string;
+                        /** @description Why the screen could not be rendered (instead of image). */
+                        error?: string;
+                        /** @description The commit the screenshot was rendered from. */
+                        commitRef?: string;
+                        /** @description What rendered it (e.g. `rds-agent check`, a CI job). */
+                        source?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            check?: {
+                                checkId?: string;
+                                nodeId?: string;
+                                /** @enum {string} */
+                                status?: "requested" | "passed" | "mismatch" | "error";
+                                designVersion?: string;
+                                requestedBy?: string;
+                                requestedAt?: string;
+                                submittedBy?: null | string;
+                                submittedAt?: null | string;
+                                commitRef?: null | string;
+                                source?: null | string;
+                                /** @description % of the compared pixels that differ. */
+                                score?: null | number;
+                                threshold?: null | number;
+                                /** @description Up to 10 differing areas, largest first. */
+                                regions?: {
+                                    x?: number;
+                                    y?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description Differing pixels in it. */
+                                    pixels?: number;
+                                }[];
+                                error?: null | string;
+                                route?: null | string;
+                                viewport?: null | {
+                                    width?: number;
+                                    height?: number;
+                                };
+                                theme?: null | string;
+                                query?: null | string;
+                                masks?: {
+                                    x: number;
+                                    y: number;
+                                    width: number;
+                                    height: number;
+                                }[];
+                                reference?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                built?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                heatmap?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v3/files/{fileKey}/summary": {
         parameters: {
             query?: never;
@@ -5144,7 +7347,7 @@ export interface paths {
                     changeType?: string;
                     /** @description Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). */
                     changed?: string;
-                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. */
+                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note, render. */
                     category?: string;
                     /** @description Comma-separated main component ids: the components and all their instances. */
                     component?: string;
@@ -5214,6 +7417,7 @@ export interface paths {
                                 token?: number;
                                 other?: number;
                                 note?: number;
+                                render?: number;
                             };
                             /** @description Node type → count. */
                             byType?: {
@@ -5575,7 +7779,7 @@ export interface paths {
                     changeType?: string;
                     /** @description Comma-separated changed property names (fills, paddingLeft); a trailing `*` matches a prefix (padding*). */
                     changed?: string;
-                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note. */
+                    /** @description Comma-separated change categories: layout, color, typography, effects, component, content, structure, prototype, token, other, note, render. */
                     category?: string;
                     /** @description Comma-separated main component ids: the components and all their instances. */
                     component?: string;
@@ -6129,6 +8333,8 @@ export interface paths {
                             settings?: {
                                 /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
                                 trackLibraryComponents?: boolean;
+                                /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
+                                storeImages?: boolean;
                             };
                             /** @description `under=tokens` only: every stored live variable (`token:<variableKey>`) with its Figma `variableId` (null when not captured), `remote` (a library variable) and `collectionId` (its collection node). */
                             tokens?: {
@@ -6637,6 +8843,380 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/screens/references-needed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Screens needing a reference (plugin)
+         * @description Configured screens under `under` whose reference image is missing or for an older design version: export each at 1x and upload it. Plugin tokens only.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Only screens at or under this node id (e.g. a section). */
+                    under?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            screens?: {
+                                nodeId?: string;
+                                designVersion?: string;
+                            }[];
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/screens/{nodeId}/reference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upload a screen reference (plugin)
+         * @description The 1x PNG export of a screen for `designVersion` (from references-needed). Plugin tokens only.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`. */
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        designVersion: string;
+                        /**
+                         * Format: byte
+                         * @description The PNG, base64.
+                         */
+                        image: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            nodeId?: string;
+                            designVersion?: string;
+                            current?: boolean;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
