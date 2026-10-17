@@ -7912,6 +7912,13 @@ export interface paths {
                                     componentId?: string;
                                     livePlacements?: number;
                                 }[];
+                                /** @description Items whose key is a screen root (group=frame per frame): its render-check state, as on the node. */
+                                screen?: null | {
+                                    /** @enum {string} */
+                                    status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
+                                    stale?: boolean;
+                                    score?: null | number;
+                                };
                                 /** @description Token items with `include=usage`: `{ nodeId: { layers } }` for the listed tokens — how many live layers use each. */
                                 usage?: {
                                     [key: string]: {

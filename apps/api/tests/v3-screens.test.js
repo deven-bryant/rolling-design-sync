@@ -154,6 +154,9 @@ for (const kind of Object.keys(STORES)) {
     assert.equal(note.source, 'render_check');
     assert.equal(note.author, 'render-check');
     assert.deepEqual(note.attachments.map(a => a.kind).sort(), ['built', 'heatmap', 'reference']);
+    const frames = ok(await call(app, 'GET', '/work?group=frame&under=1:1&state=all')).items;
+    assert.deepEqual(frames.find(i => i.key === '2:1').screen, { status: 'mismatch', stale: false, score: bad.score }, 'work items carry the screen state');
+    assert.ok(frames.filter(i => i.key !== '2:1').every(i => i.screen === undefined));
     const listed = ok(await call(app, 'GET', '/nodes?state=dirty&category=render')).nodes.map(n => n.nodeId);
     assert.deepEqual(listed, ['2:1']);
 
@@ -171,6 +174,10 @@ for (const kind of Object.keys(STORES)) {
     const thumb = await app.inject({ method: 'GET', url: heat.thumbUrl, headers: agent });
     assert.equal(thumb.statusCode, 200);
     assertProblem(await app.inject({ method: 'GET', url: `/v3/files/${FK}/attachments/00000000-0000-4000-8000-000000000000`, headers: agent }), 404, 'attachment_not_found');
+    const OTHER = 'ZzYyXx987654WwVvUu3210';
+    const other = await app.inject({ method: 'POST', url: `/v3/files/${OTHER}/sync`, headers: plugin, payload: { fileKey: OTHER, fileName: 'Other', rootNodeId: '1:1', upserts: TREE(), markImplemented: true } });
+    assert.equal(other.statusCode, 200, other.body);
+    assertProblem(await app.inject({ method: 'GET', url: heat.url.replace(FK, OTHER), headers: agent }), 404, 'attachment_not_found');
 
     // A passing check resolves the render note.
     const second = await request(app);
