@@ -7,6 +7,9 @@ import { Button, CloseButton } from '../../components/Button';
 import { Drawer } from '../../components/Drawer';
 import { agentInitials } from '../../components/domain/AgentSprite';
 import { ChangeBadge } from '../../components/domain/ChangeBadge';
+import { filesFromClipboard, NoteScreenshots } from '../../components/domain/NoteScreenshots';
+import { RenderCheckBadge } from '../../components/domain/RenderCheck';
+import { ImageThumbnail } from '../../components/Lightbox';
 import {
   NodeDetails,
   type NodeDetailsChange,
@@ -23,6 +26,8 @@ import { Text } from '../../components/primitives';
 import { showToast } from '../../components/Toast';
 import { Tooltip, TooltipTrigger } from '../../components/Tooltip';
 import { categoriesOf, type Category } from './categories';
+import { RenderCheckPanel } from './RenderCheckPanel';
+import { acceptScreenshots, fileToBase64, formatBytes, SCREENSHOT_MAX } from './screenshots';
 import {
   changeEntries,
   formatValue,
@@ -52,6 +57,7 @@ import {
   useSessionAuthor,
   useSessionRole,
   useUnblockNode,
+  useFile,
 } from './queries';
 import type { FileEvent, NodeDetail, NodeNote, SessionRole } from './types';
 
@@ -163,6 +169,7 @@ const CATEGORY_COLORS: Record<Category, NonNullable<BadgeProps['color']>> = {
   token: 'brand',
   other: 'gray',
   note: 'orange',
+  render: 'error',
 };
 
 interface ClaimProps {
@@ -267,16 +274,45 @@ function BlockForm({ fileKey, nodeId, onDone }: { fileKey: string; nodeId: strin
   );
 }
 
-function NoteForm({ fileKey, nodeId, onDone }: { fileKey: string; nodeId: string; onDone: () => void }) {
+interface PendingShot {
+  id: string;
+  file: File;
+  url: string;
+}
+
+let shotSeq = 0;
+
+function NoteForm({ fileKey, nodeId, storeImages, onDone }: { fileKey: string; nodeId: string; storeImages: boolean; onDone: () => void }) {
   const add = useAddNote(fileKey);
   const [body, setBody] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [shots, setShots] = useState<PendingShot[]>([]);
+  const [shotError, setShotError] = useState<string | null>(null);
+  const [encoding, setEncoding] = useState(false);
   const error = noteBodyError(body);
-  const submit = () => {
+  useEffect(() => () => shots.forEach(shot => URL.revokeObjectURL(shot.url)), [shots]);
+  const addFiles = (files: readonly File[]) => {
+    if (!storeImages || !files.length) return;
+    const { accepted, error: problem } = acceptScreenshots(files, shots.length);
+    setShotError(problem);
+    if (accepted.length) setShots(prev => [...prev, ...accepted.map(file => ({ id: `shot-${++shotSeq}`, file, url: URL.createObjectURL(file) }))]);
+  };
+  const removeShot = (id: string) => {
+    setShotError(null);
+    setShots(prev => prev.filter(shot => shot.id !== id));
+  };
+  const submit = async () => {
     setSubmitted(true);
     if (error) return;
+    setEncoding(true);
+    let images: { data: string; name: string }[];
+    try {
+      images = await Promise.all(shots.map(async shot => ({ data: await fileToBase64(shot.file), name: shot.file.name.slice(0, 200) })));
+    } finally {
+      setEncoding(false);
+    }
     add.mutate(
-      { nodeId, body: body.trim() },
+      { nodeId, body: body.trim(), images },
       {
         onSuccess: () => {
           void showToast('Note added — the node needs a change');
@@ -290,9 +326,15 @@ function NoteForm({ fileKey, nodeId, onDone }: { fileKey: string; nodeId: string
       noValidate
       aria-label="Add change note"
       className="flex flex-col gap-3xl"
+      onPaste={event => {
+        const files = filesFromClipboard(event.clipboardData);
+        if (!files.length || !storeImages) return;
+        event.preventDefault();
+        addFiles(files);
+      }}
       onSubmit={event => {
         event.preventDefault();
-        submit();
+        void submit();
       }}
     >
       <Textarea
@@ -306,13 +348,40 @@ function NoteForm({ fileKey, nodeId, onDone }: { fileKey: string; nodeId: string
         isInvalid={submitted && !!error}
         hint={submitted && error ? error : `${body.trim().length}/${NOTE_MAX}`}
       />
+      {storeImages ? (
+        <NoteScreenshots
+          screenshots={shots.map(shot => ({ id: shot.id, src: shot.url, name: shot.file.name || 'Pasted image', detail: formatBytes(shot.file.size) }))}
+          max={SCREENSHOT_MAX}
+          onAdd={addFiles}
+          onRemove={removeShot}
+          error={shotError}
+        />
+      ) : (
+        <Text as="p" color="tertiary">
+          Screenshots are off for this file: its settings don’t store images.
+        </Text>
+      )}
       {add.isError && <Text color="error-primary">{add.error.message}</Text>}
       <div className="flex justify-end">
-        <Button hierarchy="secondary" size="sm" type="submit" loading={add.isPending}>
+        <Button hierarchy="secondary" size="sm" type="submit" loading={add.isPending || encoding}>
           Add Change Note
         </Button>
       </div>
     </form>
+  );
+}
+
+function NoteImages({ attachments }: { attachments: NonNullable<NodeNote['attachments']> }) {
+  const images = attachments.filter(a => a.url);
+  if (!images.length) return null;
+  return (
+    <ul aria-label="Screenshots" className="flex flex-wrap justify-end gap-lg">
+      {images.map((a, i) => (
+        <li key={a.attachmentId ?? i}>
+          <ImageThumbnail src={a.thumbUrl ?? a.url!} fullSrc={a.url} alt={`Screenshot ${i + 1}`} caption={a.size ? formatBytes(a.size) : undefined} />
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -345,6 +414,11 @@ function NoteItem({ fileKey, note, mine, canDismiss, now }: { fileKey: string; n
             <time dateTime={note.createdAt}>{timeAgo(note.createdAt, now)}</time>
           </Text>
         </div>
+        {note.source === 'render_check' && (
+          <Badge size="sm" color="error">
+            Render mismatch
+          </Badge>
+        )}
       </div>
       {mode === 'edit' ? (
         <form
@@ -378,6 +452,7 @@ function NoteItem({ fileKey, note, mine, canDismiss, now }: { fileKey: string; n
           {note.body}
         </Text>
       )}
+      {note.attachments?.length ? <NoteImages attachments={note.attachments} /> : null}
       {mode === 'dismiss' && (
         <div role="alertdialog" aria-label="Dismiss this note?" className="flex flex-col gap-lg rounded-lg border border-secondary bg-secondary p-xl">
           <Text color="secondary">Dismissing it says the built node matches the design after all; the node goes back to its design changes only.</Text>
@@ -565,7 +640,13 @@ function LoadedNode({
 
   const main = node.isInstance && node.mainComponentId ? ` → main ${node.mainComponentId}` : '';
   const notes = node.notes ?? [];
-  const categories: Category[] = [...categoriesOf(node.changedProps ?? []), ...(notes.length ? (['note'] as const) : [])];
+  const renderMismatch = node.screen?.status === 'mismatch' || notes.some(n => n.source === 'render_check');
+  const categories: Category[] = [
+    ...categoriesOf(node.changedProps ?? []),
+    ...(notes.some(n => n.source !== 'render_check') ? (['note'] as const) : []),
+    ...(renderMismatch ? (['render'] as const) : []),
+  ];
+  const storeImages = useFile(fileKey).data?.settings?.storeImages !== false;
   const blocked = node.state === 'blocked' || !!node.blocked;
   const name = node.name ?? nodeId;
   const componentKey = node.library?.key;
@@ -596,6 +677,7 @@ function LoadedNode({
           <>
             {node.state && <StateBadge state={node.state} size="md" dot={false} />}
             {node.changeType && <ChangeBadge change={node.changeType} size="md" />}
+            {renderMismatch && <RenderCheckBadge status="mismatch" size="md" />}
             {categories.map(category => (
               <Badge key={category} size="md" color={CATEGORY_COLORS[category]}>
                 {category}
@@ -604,11 +686,12 @@ function LoadedNode({
           </>
         }
         {...claim}
+        renderCheck={<RenderCheckPanel fileKey={fileKey} node={node} canAct={canAct} now={now} />}
         changes={node.changesKnown === false ? [] : changeRows(node, onOpenNode)}
         changesDescription={changedSince(node, now)}
         hideEmptyChanges={notes.length > 0}
         notes={notes.length > 0 && <NoteList fileKey={fileKey} notes={notes} role={role} now={now} />}
-        addChange={!node.deleted && <NoteForm fileKey={fileKey} nodeId={nodeId} onDone={() => onTabChange('change-list')} />}
+        addChange={!node.deleted && <NoteForm fileKey={fileKey} nodeId={nodeId} storeImages={storeImages} onDone={() => onTabChange('change-list')} />}
         changesEmpty={
           node.changesKnown === false
             ? 'The property changes aren’t known for this node (it has no built baseline).'

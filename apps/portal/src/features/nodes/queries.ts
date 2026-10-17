@@ -295,8 +295,11 @@ function refreshAfterNote(queryClient: QueryClient, fileKey: string) {
 export function useAddNote(fileKey: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ nodeId, body }: { nodeId: string; body: string }) =>
-      api.post('/v3/files/{fileKey}/nodes/{nodeId}/notes', { path: { fileKey, nodeId }, body: { body } }),
+    mutationFn: ({ nodeId, body, images }: { nodeId: string; body: string; images?: { data: string; name?: string }[] }) =>
+      api.post('/v3/files/{fileKey}/nodes/{nodeId}/notes', {
+        path: { fileKey, nodeId },
+        body: images?.length ? { body, images } : { body },
+      }),
     onSuccess: data => {
       const { nodeId, state, changeType, notes } = data.node ?? {};
       if (nodeId) patchNodes(queryClient, fileKey, [nodeId], { state, changeType, notes });
