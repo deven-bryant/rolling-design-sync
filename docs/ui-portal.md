@@ -299,8 +299,9 @@ follows the OS `prefers-color-scheme`, live.
   *Expand instances* on loads its main component (`under=<mainComponentId>`,
   shown as `↳ … via <instanceId>`). Columns: Node (Node cell: indent, chevron,
   name, a gray **Library** badge on library nodes, `TYPE · id`, `→ main` for
-  instances), State, Change, Categories, What
-  changed (first changed prop with its token change, or "N properties"), Agent.
+  instances; 375px), Scope (the name of the synced scope the row is under,
+  hugging its text), State, Change, Categories, What changed (first changed
+  prop with its token change, or "N properties"), Agent, Notes.
 - **Design tokens** (the `TOKENS` scope, "Design tokens"): selecting it lists
   its collections (`VARIABLE_COLLECTION · 2 modes`), each expanding to its
   tokens. Its levels are listed with `fields=…,attrs` so token rows can show
@@ -320,21 +321,25 @@ follows the OS `prefers-color-scheme`, live.
 ### Node detail drawer — `?node=<nodeId>` on the Node tree
 - 583px wide (the Change List tab, and its Add Change view, widen it).
 - `GET /v3/files/:fileKey/nodes/:nodeId?changes=diff`: header (name with a
-  **Library** badge on library nodes, type, id, `→ main`), status badges, **What changed** (Diff rows: built → now as token
+  **Library** badge on library nodes, type, id, `→ main`) with the status badges
+  under it in the header (Figma *Node Details Header*), **What changed** (Diff rows: built → now as token
   chips, raw values beneath, category badge; "since cleared at <commit> (<age>)").
 - **Claim Holder** (Figma *Node Details - Claim Holder*): from `/claims` —
   Name, Claim Time, Lease Expiration as key / value rows, or "Unclaimed · the
   next agent pass you start picks this up"; **Release claim** (agent
   session) → `DELETE /v3/files/:fileKey/claims/:claimId`, confirming first when
   the claim covers other nodes.
-- **Notes** (Figma *Node Details* `State=Add Change`): an *Add change note*
-  dropdown above the Change List opens a **Description** textarea (required,
-  1–4000 characters, `N/4000` counter) with **Add Change Note** and a
-  *Cancel* link back. Adding (`POST …/nodes/:nodeId/notes`, any session —
+- **Notes** (Figma *Node Details - Note Section*): an **Add note** button
+  (`Default`) above the Change List opens a **Description** textarea
+  (`Edit`; required, 1–4000 characters, `N/4000` counter) with **Add change
+  note**; while it is open *Add note* is disabled and a *Cancel* button goes
+  back. Adding (`POST …/nodes/:nodeId/notes`, any session —
   viewers too) toasts "Note added — the node needs a change", returns to the
   list and makes the node dirty with a **Requested** badge (and a `note`
-  category) when it had no design change. Open notes (author, age, text) sit
-  above the Change List; a requested node with no design change shows only
+  category) when it had no design change. Open notes sit above the Change List
+  (`Preview`): *Open notes (N)* with a **Requested** (or **Render mismatch**)
+  badge and the note's secondary buttons on one row, then its text, author and
+  age, and its screenshots right-aligned; a requested node with no design change shows only
   them, not "nothing changed". The author can **Edit** (`PATCH
   …/notes/:noteId`) or **Delete** their open note; the author or an agent can
   **Dismiss** it after confirming (`POST …/notes/:noteId/dismiss`; the node
