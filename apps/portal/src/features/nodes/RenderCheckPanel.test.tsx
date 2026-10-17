@@ -198,7 +198,7 @@ describe('note screenshots', () => {
     const utils = renderDrawer('viewer', routes({ settings }), '1:3');
     const dialog = within(await screen.findByRole('dialog'));
     await user.click(await dialog.findByRole('tab', { name: 'Change List' }));
-    await user.click(await dialog.findByRole('button', { name: 'Add change note' }));
+    await user.click(await dialog.findByRole('button', { name: 'Add note' }));
     return { user, form: within(await dialog.findByRole('form', { name: 'Add change note' })), ...utils };
   }
 
@@ -213,7 +213,7 @@ describe('note screenshots', () => {
     expect(list.getAllByRole('img').map(i => i.getAttribute('alt'))).toEqual(['b.png']);
     await expectNoAxeViolations(container);
     await user.type(form.getByRole('textbox', { name: /Description/ }), 'Spacing is off');
-    await user.click(form.getByRole('button', { name: 'Add Change Note' }));
+    await user.click(form.getByRole('button', { name: 'Add change note' }));
     await waitFor(() => expect(api.find('POST', `/v3/files/${FILE}/nodes/1:3/notes`)).toHaveLength(1));
     expect(api.find('POST', `/v3/files/${FILE}/nodes/1:3/notes`)[0]?.body).toEqual({
       body: 'Spacing is off',

@@ -331,6 +331,14 @@ describe('NodeTable notes', () => {
     expect(onFiltersChange).toHaveBeenLastCalledWith({ state: 'all', changeType: 'requested' });
   });
 
+  it('shows each row’s scope in the Scope column, after Node', async () => {
+    renderTable();
+    await screen.findByText('Breadcrumbs');
+    const headers = screen.getAllByRole('columnheader').map(h => h.textContent);
+    expect(headers.slice(0, 3)).toEqual(['Node', 'Scope', 'State']);
+    expect(within(row('1:3')).getByText('Team View')).toBeTruthy();
+  });
+
   it('shows a file icon in the Notes column for nodes with open notes', async () => {
     const base = treeRoutes();
     const routes: Route = call => {

@@ -29,6 +29,7 @@ import type { ChangeFilter, FileClaim, NodeFilters, NodeItem, StateFilter } from
 export const SEARCH_DEBOUNCE_MS = 300;
 
 const COLUMNS = [
+  { id: 'scope', label: 'Scope', width: 'whitespace-nowrap' },
   { id: 'state', label: 'State', width: 'w-25' },
   { id: 'change', label: 'Change', width: 'w-28' },
   { id: 'categories', label: 'Categories', width: 'w-43' },
@@ -158,6 +159,8 @@ interface RowContextValue {
   selectedNodeId?: string | null;
   live: NodeLiveUpdates;
   claims: ReadonlyMap<string, FileClaim>;
+  /** The file's scope names by root node id. */
+  scopeNames: ReadonlyMap<string, string>;
   now: number;
   /** Rows the user opened or closed, by row key; others fall back to their default. */
   expansion: ReadonlyMap<string, boolean>;
@@ -244,6 +247,8 @@ function TokenChanges({ modes }: { modes: TokenModeChange[] }) {
 
 interface NodeRowViewProps {
   node: NodeItem;
+  /** The row's scope name. */
+  scope?: string;
   depth: number;
   via?: string;
   expandable: boolean;
@@ -251,7 +256,7 @@ interface NodeRowViewProps {
   onToggle: (expanded: boolean) => void;
 }
 
-function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeRowViewProps) {
+function NodeRowView({ node, scope, depth, via, expandable, expanded, onToggle }: NodeRowViewProps) {
   const { columns, onOpenNode, selectedNodeId } = useRowContext();
   const id = node.nodeId ?? '';
   const name = node.name ?? id;
@@ -265,7 +270,7 @@ function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeR
       selected={!!selectedNodeId && selectedNodeId === id}
       onAction={onOpenNode ? () => onOpenNode(id) : undefined}
     >
-      <Table.Cell className="w-88 py-lg">
+      <Table.Cell className="w-93.75 py-lg">
         <NodeCell
           name={name}
           meta={token ? tokenMeta(node) : nodeMeta(node, via)}
@@ -278,6 +283,7 @@ function NodeRowView({ node, depth, via, expandable, expanded, onToggle }: NodeR
           toggleLabel={`${expanded ? 'Collapse' : 'Expand'} ${name}`}
         />
       </Table.Cell>
+      {columns.has('scope') && <Table.Cell>{scope ? <Text color="tertiary" className="whitespace-nowrap">{scope}</Text> : <Dash />}</Table.Cell>}
       {columns.has('state') && <Table.Cell>{node.state ? <StateBadge state={node.state} /> : <Dash />}</Table.Cell>}
       {columns.has('change') && <Table.Cell>{node.changeType ? <ChangeBadge change={node.changeType} /> : <Dash />}</Table.Cell>}
       {columns.has('categories') && (
@@ -334,11 +340,24 @@ interface TreeRowProps {
   preloaded?: NodeItem[];
   more?: ReactNode;
   defaultExpanded?: boolean;
+  /** The parent row's scope name; a row under a scope root takes that root's name. */
+  scope?: string;
+}
+
+/** The scope a row belongs to: the nearest scope root on its path, else its parent row's. */
+function scopeOf(node: NodeItem, scopeNames: ReadonlyMap<string, string>, inherited?: string): string | undefined {
+  const path = node.path ?? [node.nodeId ?? ''];
+  for (let i = path.length - 1; i >= 0; i--) {
+    const name = scopeNames.get(path[i] ?? '');
+    if (name) return name;
+  }
+  return inherited;
 }
 
 /** A row and, once expanded, its lazily loaded children. */
-function TreeRow({ node, depth, via, instances = '', preloaded, more, defaultExpanded = false }: TreeRowProps) {
-  const { filters, expansion, setExpanded } = useRowContext();
+function TreeRow({ node, depth, via, instances = '', preloaded, more, defaultExpanded = false, scope: inherited }: TreeRowProps) {
+  const { filters, expansion, setExpanded, scopeNames } = useRowContext();
+  const scope = scopeOf(node, scopeNames, inherited);
   const rowKey = rowKeyOf(instances, node.nodeId ?? '');
   const expanded = expansion.get(rowKey) ?? defaultExpanded;
   const followMain = !!filters.expandInstances && !!node.isInstance && !!node.mainComponentId && !via;
@@ -349,18 +368,19 @@ function TreeRow({ node, depth, via, instances = '', preloaded, more, defaultExp
       children = (
         <>
           {preloaded.map(child => (
-            <TreeRow key={child.nodeId} node={child} depth={depth + 1} instances={instances} />
+            <TreeRow key={child.nodeId} node={child} depth={depth + 1} instances={instances} scope={scope} />
           ))}
           {more}
         </>
       );
-    } else if (followMain) children = <MainComponentRows instance={node} depth={depth + 1} instances={instances} />;
-    else children = <ChildRows parentId={node.nodeId ?? ''} depth={depth + 1} instances={instances} />;
+    } else if (followMain) children = <MainComponentRows instance={node} depth={depth + 1} instances={instances} scope={scope} />;
+    else children = <ChildRows parentId={node.nodeId ?? ''} depth={depth + 1} instances={instances} scope={scope} />;
   }
   return (
     <>
       <NodeRowView
         node={node}
+        scope={scope}
         depth={depth}
         via={via}
         expandable={expandable}
@@ -395,7 +415,7 @@ function MoreRow({ loading, onMore }: { loading: boolean; onMore: () => void }) 
   );
 }
 
-function ChildRows({ parentId, depth, instances }: { parentId: string; depth: number; instances: string }) {
+function ChildRows({ parentId, depth, instances, scope }: { parentId: string; depth: number; instances: string; scope?: string }) {
   const { query, nodes, more } = useLevel(parentId);
   const children = nodes.filter(n => n.nodeId !== parentId);
   if (query.isPending) return <StatusRow depth={depth}>Loading…</StatusRow>;
@@ -404,7 +424,7 @@ function ChildRows({ parentId, depth, instances }: { parentId: string; depth: nu
   return (
     <>
       {children.map(n => (
-        <TreeRow key={n.nodeId} node={n} depth={depth} instances={instances} />
+        <TreeRow key={n.nodeId} node={n} depth={depth} instances={instances} scope={scope} />
       ))}
       {more}
     </>
@@ -412,7 +432,7 @@ function ChildRows({ parentId, depth, instances }: { parentId: string; depth: nu
 }
 
 /** *Expand instances*: an instance's main component (`↳ … via <instanceId>`) and its children. */
-function MainComponentRows({ instance, depth, instances }: { instance: NodeItem; depth: number; instances: string }) {
+function MainComponentRows({ instance, depth, instances, scope }: { instance: NodeItem; depth: number; instances: string; scope?: string }) {
   const mainId = instance.mainComponentId ?? '';
   const through = rowKeyOf(instances, `${instance.nodeId ?? ''}>`);
   const { query, nodes, more } = useLevel(mainId);
@@ -421,13 +441,13 @@ function MainComponentRows({ instance, depth, instances }: { instance: NodeItem;
   const main = nodes.find(n => n.nodeId === mainId);
   const children = nodes.filter(n => n.nodeId !== mainId);
   if (main) {
-    return <TreeRow node={main} depth={depth} via={instance.nodeId} instances={through} preloaded={children} more={more} defaultExpanded />;
+    return <TreeRow node={main} depth={depth} via={instance.nodeId} instances={through} preloaded={children} more={more} defaultExpanded scope={scope} />;
   }
   if (!children.length) return <StatusRow depth={depth}>Main component {mainId} has no nodes that match the filters.</StatusRow>;
   return (
     <>
       {children.map(n => (
-        <TreeRow key={n.nodeId} node={n} depth={depth} instances={through} />
+        <TreeRow key={n.nodeId} node={n} depth={depth} instances={through} scope={scope} />
       ))}
       {more}
     </>
@@ -520,7 +540,8 @@ export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNo
   const live = useNodeLiveUpdates(fileKey);
   const claimsQuery = useFileClaims(fileKey);
   const file = useFile(fileKey);
-  const { scope, selected } = useScope(fileKey, scopeId);
+  const { scope, selected, data: scopeList } = useScope(fileKey, scopeId);
+  const scopeNames = new Map((scopeList?.scopes ?? []).flatMap(s => (s.nodeId && s.name ? [[s.nodeId, s.name] as const] : [])));
   const now = useNow(30_000);
   const [columns, setColumns] = useState<ReadonlySet<NodeColumn>>(() => new Set(COLUMNS.map(c => c.id)));
   const [expansion, setExpansion] = useState<{ scopeId?: string; rows: ReadonlyMap<string, boolean> }>(() => ({ scopeId, rows: new Map() }));
@@ -576,14 +597,14 @@ export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNo
         <div className="overflow-x-auto">
           <Table aria-label="Nodes" aria-describedby={undefined}>
             <Table.Header>
-              <Table.HeaderCell className="w-88">Node</Table.HeaderCell>
+              <Table.HeaderCell className="w-93.75">Node</Table.HeaderCell>
               {visible.map(c => (
                 <Table.HeaderCell key={c.id} className={c.width}>
                   {c.label}
                 </Table.HeaderCell>
               ))}
             </Table.Header>
-            <RowContext value={{ fileKey, filters, columns, onOpenNode, selectedNodeId, live, claims, now, expansion: expansion.rows, setExpanded }}>
+            <RowContext value={{ fileKey, filters, columns, onOpenNode, selectedNodeId, live, claims, scopeNames, now, expansion: expansion.rows, setExpanded }}>
               <PagedRows key={pageKey} fileKey={fileKey} scopeId={scopeId} filters={filters} colSpan={visible.length + 1} />
             </RowContext>
           </Table>

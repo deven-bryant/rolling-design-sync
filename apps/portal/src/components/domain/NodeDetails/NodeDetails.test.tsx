@@ -130,6 +130,14 @@ describe('NodeDetails', () => {
     expect(screen.getByText('No history yet.')).toBeTruthy();
   });
 
+  it('puts the status row in the header (Node Details Header), under the description', () => {
+    render(<Example />);
+    const header = screen.getAllByRole('banner')[0]!;
+    const status = within(header).getByRole('group', { name: 'Status' });
+    expect(within(status).getByText('Dirty')).toBeTruthy();
+    expect(status.closest('.gap-xs')).toBeTruthy();
+  });
+
   it('renders the claim note, content and the content under the status row', () => {
     render(
       <Example claimNote="covers 2 other nodes too" claimContent={<p>Confirm?</p>}>
@@ -168,24 +176,25 @@ describe('NodeDetails State=Add Change', () => {
     expect(figmaNodeDetails.axes.State['Add Change']).toEqual({ nodeId: '173:34249', props: { state: 'add-change' } });
   });
 
-  it('toggles between the change list and the note input with the dropdown, and Cancel goes back', async () => {
+  it('opens the note input with Add note (disabled while open), and Cancel goes back', async () => {
     const onStateChange = vi.fn();
     render(<Example addChange={form} onStateChange={onStateChange} />);
     const user = userEvent.setup();
-    const toggle = screen.getByRole('button', { name: 'Add change note' });
+    const toggle = screen.getByRole('button', { name: 'Add note' });
+    expect(toggle.className).toContain('ring-primary');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByRole('table', { name: 'Change list' })).toBeTruthy();
     await user.click(toggle);
     expect(onStateChange).toHaveBeenLastCalledWith('add-change');
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('textbox', { name: 'Description' })).toBeTruthy();
     expect(screen.queryByRole('table', { name: 'Change list' })).toBeNull();
     expect(screen.getByRole('tab', { name: 'Change List' }).getAttribute('aria-selected')).toBe('true');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onStateChange).toHaveBeenLastCalledWith('change-list');
     expect(screen.getByRole('table', { name: 'Change list' })).toBeTruthy();
-    await user.click(toggle);
-    await user.click(toggle);
+    expect(toggle.hasAttribute('disabled')).toBe(false);
     expect(screen.queryByRole('textbox', { name: 'Description' })).toBeNull();
   });
 
@@ -199,7 +208,7 @@ describe('NodeDetails State=Add Change', () => {
 
   it('has no dropdown without addChange', () => {
     render(<Example />);
-    expect(screen.queryByRole('button', { name: 'Add change note' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add note' })).toBeNull();
   });
 
   it('has no axe violations in State=Add Change', async () => {

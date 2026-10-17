@@ -377,28 +377,28 @@ describe('NodeDrawer notes', () => {
     );
     const dialog = await openList();
     const user = userEvent.setup();
+    await user.click(dialog.getByRole('button', { name: 'Add note' }));
     await user.click(dialog.getByRole('button', { name: 'Add change note' }));
-    await user.click(dialog.getByRole('button', { name: 'Add Change Note' }));
     expect(dialog.getByText('Describe what doesn’t match the design.')).toBeTruthy();
     expect(api.find('POST', `/v3/files/${FILE}/nodes/1:3/notes`)).toHaveLength(0);
     await user.type(dialog.getByRole('textbox', { name: /Description/ }), 'The divider should be 2px.');
     expect(dialog.getByText('26/4000')).toBeTruthy();
-    await user.click(dialog.getByRole('button', { name: 'Add Change Note' }));
+    await user.click(dialog.getByRole('button', { name: 'Add change note' }));
     expect(await screen.findByText('Note added — the node needs a change')).toBeTruthy();
     expect(api.find('POST', `/v3/files/${FILE}/nodes/1:3/notes`)[0]?.body).toEqual({ body: 'The divider should be 2px.' });
     expect(await dialog.findByRole('table', { name: 'Change list' })).toBeTruthy();
-    expect(dialog.getByRole('button', { name: 'Add change note' }).getAttribute('aria-expanded')).toBe('false');
+    expect(dialog.getByRole('button', { name: 'Add note' }).getAttribute('aria-expanded')).toBe('false');
   });
 
   it('rejects a note over 4000 characters', async () => {
     renderDrawer({ role: 'viewer' });
     const dialog = await openList();
     const user = userEvent.setup();
-    await user.click(dialog.getByRole('button', { name: 'Add change note' }));
+    await user.click(dialog.getByRole('button', { name: 'Add note' }));
     const box = dialog.getByRole('textbox', { name: /Description/ });
     await user.click(box);
     await user.paste('x'.repeat(4001));
-    await user.click(dialog.getByRole('button', { name: 'Add Change Note' }));
+    await user.click(dialog.getByRole('button', { name: 'Add change note' }));
     expect(dialog.getByText('Keep the note to 4000 characters (4001 now).')).toBeTruthy();
   });
 
@@ -409,6 +409,9 @@ describe('NodeDrawer notes', () => {
     const first = within(notes.getByRole('listitem', { name: 'Note by devin' }));
     expect(first.getByText('The divider should be 2px.')).toBeTruthy();
     expect(first.getByText('2 min ago')).toBeTruthy();
+    expect(first.getByRole('heading', { name: 'Open notes (2)' })).toBeTruthy();
+    expect(first.getByText('Requested')).toBeTruthy();
+    expect(within(notes.getByRole('listitem', { name: 'Note by alex' })).getByRole('heading', { name: 'Note 2' })).toBeTruthy();
     expect(dialog.queryByText('Nothing changed since it was last cleared.')).toBeNull();
     const status = within(dialog.getByRole('group', { name: 'Status' }));
     expect(status.getByText('Requested')).toBeTruthy();
@@ -431,7 +434,7 @@ describe('NodeDrawer notes', () => {
   it('a viewer can add notes but not dismiss others’ (and keeps no agent actions)', async () => {
     renderDrawer({ role: 'viewer' }, drawerRoutes(noted(requested)));
     const dialog = await openList();
-    expect(dialog.getByRole('button', { name: 'Add change note' })).toBeTruthy();
+    expect(dialog.getByRole('button', { name: 'Add note' })).toBeTruthy();
     const second = within(dialog.getByRole('listitem', { name: 'Note by alex' }));
     expect(second.queryByRole('button', { name: 'Dismiss' })).toBeNull();
     expect(dialog.queryByRole('button', { name: 'Block…' })).toBeNull();
@@ -488,7 +491,7 @@ describe('NodeDrawer notes', () => {
     await dialog.findByRole('button', { name: 'Edit' });
     const el = await screen.findByRole('dialog');
     await expectNoAxeViolations(el);
-    await userEvent.setup().click(dialog.getByRole('button', { name: 'Add change note' }));
+    await userEvent.setup().click(dialog.getByRole('button', { name: 'Add note' }));
     await expectNoAxeViolations(el);
   });
 });
