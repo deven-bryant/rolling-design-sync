@@ -184,7 +184,7 @@ for (const kind of Object.keys(STORES)) {
       assert.ok(ttl > 14 * 60e3 && ttl <= 15 * 60e3 + 5e3, `default TTL ${ttl}`);
       assert.deepEqual(ids(w1.nodes), ['2:3', '2:4']);
       for (const n of w1.nodes) {
-        assert.deepEqual(Object.keys(n).sort(), [...COMPACT_FIELDS].sort());
+        assert.deepEqual(Object.keys(n).sort(), COMPACT_FIELDS.filter(k => k !== 'screen').sort());
         assert.deepEqual(n.claim, { claimId: w1.claimId, worker: 'w1', label: 'Sprite', expiresAt: w1.expiresAt });
       }
       assert.deepEqual((await getNode(app, '2:3')).claim, { claimId: w1.claimId, worker: 'w1', label: 'Sprite', expiresAt: w1.expiresAt });

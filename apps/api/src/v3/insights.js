@@ -17,6 +17,7 @@ const {
   withUsage, parseInclude, isVariableToken,
 } = require('./read');
 const { documentSortKey } = require('../documentOrder');
+const { withScreens } = require('./screens');
 
 const GROUPS = ['component', 'frame', 'set'];
 /** `nodeIds` of a work item holds at most this many ids; `more` counts the rest. */
@@ -169,6 +170,7 @@ const workItem = {
       type: 'array', items: removedWarning,
       description: 'Removed items only (empty when none): main components removed with the design while other instances of them are still live.',
     },
+    screen: { ...schemas.screenState, description: 'Items whose key is a screen root (group=frame per frame): its render-check state, as on the node.' },
     usage: {
       type: 'object', additionalProperties: { type: 'object', properties: { layers: { type: 'integer' } } },
       description: 'Token items with `include=usage`: `{ nodeId: { layers } }` for the listed tokens — how many live layers use each.',
@@ -253,6 +255,7 @@ const itemOut = (group, expanded) => i => ({
   ...(group === 'component' && (!i.kind || i.kind === 'library') && expanded ? { placementsInScope: i.placementsInScope } : {}),
   ...(i.kind === 'removed' ? { uses: i.uses, warnings: i.warnings } : {}),
   ...(i.usage ? { usage: i.usage } : {}),
+  ...(i.screen ? { screen: i.screen } : {}),
   ...(i.kind === 'library' ? {} : { nodeIds: i.nodeIds, more: i.nodeCount - i.nodeIds.length }),
 });
 
@@ -486,6 +489,13 @@ function registerInsightRoutes(app, { store, now, config, libraryLinks = null })
     const limit = outline ? format.STREAM_PAGE : format.pageSize(fmt, query.limit, schemas.DEFAULT_LIMIT);
     let truncated = false;
     /** Adds each token item's `usage` (`{ nodeId: { layers } }` for its listed tokens) from one batched read and one usage query per page. */
+    /** Items keyed by a screen root (a frame or component set up for render checks) carry its `screen` state. */
+    async function withItemScreens(items) {
+      const keyed = items.filter(i => !i.kind && i.keyId).map(i => ({ nodeId: i.keyId, item: i, screen: undefined }));
+      await withScreens(store, fileKey, keyed);
+      const states = new Map(keyed.filter(k => k.screen).map(k => [k.item, k.screen]));
+      return states.size ? items.map(i => (states.has(i) ? { ...i, screen: states.get(i) } : i)) : items;
+    }
     async function withItemUsage(items) {
       const ids = [...new Set(items.filter(i => i.kind === 'tokens').flatMap(i => i.nodeIds))];
       if (!usage || !ids.length) return items;
@@ -509,7 +519,7 @@ function registerInsightRoutes(app, { store, now, config, libraryLinks = null })
     }
     const read = async next => {
       const r = await listItems(fileKey, filter, { group, limit, after: next, maxIds: MAX_ITEM_NODE_IDS, progress }, refs);
-      return { ...r, items: await withItemUsage(await withChanges(r.items)) };
+      return { ...r, items: await withItemScreens(await withItemUsage(await withChanges(r.items))) };
     };
     const toItem = itemOut(group, !!expansion);
     if (outline) return outlineWork(reply, { fileKey, filter, group, pos, fp, limit, toItem, lineLimit: query.limit ?? null, progress, refs });

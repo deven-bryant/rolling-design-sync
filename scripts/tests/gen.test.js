@@ -47,8 +47,13 @@ test('one command per x-rds-cli operation, with its method, path, summary and ev
     }
     const body = op.requestBody && op.requestBody.content['application/json'].schema;
     for (const [name, schema] of Object.entries((body && body.properties) || {})) {
-      if (schema.type === 'object') for (const [sub, s] of Object.entries(schema.properties)) expected.push({ in: 'body', name: sub, object: name, required: false, schema: s });
-      else if (schema.type === 'array' && schema.items.type === 'object') assert.equal(cmd.items.name, name);
+      const binary = schema.format === 'byte' || Object.values((schema.items && schema.items.properties) || {}).some(x => x.format === 'byte');
+      if (binary) assert.ok(!cmd.flags.some(f => f.name === name) && !(cmd.items && cmd.items.name === name), `${cmd.command}: ${name} is API / MCP only`);
+      else if (schema.type === 'object') for (const [sub, s] of Object.entries(schema.properties)) expected.push({ in: 'body', name: sub, object: name, required: false, schema: s });
+      else if (schema.type === 'array' && schema.items.type === 'object') {
+        if ((schema.items.required || []).length === 2) assert.equal(cmd.items.name, name);
+        else assert.ok(!(cmd.items && cmd.items.name === name), `${cmd.command}: ${name} is API / MCP only`);
+      }
       else expected.push({ in: 'body', name, required: (body.required || []).includes(name), schema });
     }
     assert.equal(cmd.flags.length, expected.length, cmd.command);

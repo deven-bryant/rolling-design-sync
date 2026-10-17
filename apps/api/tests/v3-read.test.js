@@ -350,7 +350,7 @@ for (const kind of Object.keys(STORES)) {
 
     await t.test('compact shape, claim and blocked objects', async () => {
       const list = (await nodes('state=all')).json().nodes;
-      for (const n of list) assert.deepEqual(Object.keys(n).sort(), COMPACT_FIELDS.filter(k => k !== 'changes' || n.changeType !== 'added').sort());
+      for (const n of list) assert.deepEqual(Object.keys(n).sort(), COMPACT_FIELDS.filter(k => (k !== 'changes' || n.changeType !== 'added') && k !== 'screen').sort());
       const card = list.find(n => n.nodeId === '2:1');
       assert.equal(card.state, 'dirty');
       assert.equal(card.changeType, 'modified');
@@ -386,7 +386,7 @@ for (const kind of Object.keys(STORES)) {
 
     await t.test('view=full and fields', async () => {
       const full = (await nodes('view=full&under=2:1&depth=0')).json().nodes[0];
-      assert.deepEqual(Object.keys(full).sort(), [...FULL_FIELDS].sort());
+      assert.deepEqual(Object.keys(full).sort(), FULL_FIELDS.filter(k => k !== 'screen').sort());
       assert.deepEqual(full.attrs, { paddingLeft: 24, fills: ['red'] });
       assert.deepEqual(full.implementedAttrs, { paddingLeft: 16, fills: ['red'] });
       assert.deepEqual(full.path, ['1:1', '2:1']);
@@ -732,13 +732,19 @@ test('/v3/openapi.json is an OpenAPI 3 document listing every v3 route', async t
     '/v3/files/{fileKey}/nodes/{nodeId}/block': ['post'], '/v3/files/{fileKey}/nodes/{nodeId}/unblock': ['post'],
     '/v3/files/{fileKey}/nodes/{nodeId}/notes': ['get', 'post'], '/v3/files/{fileKey}/notes/{noteId}': ['delete', 'patch'],
     '/v3/files/{fileKey}/notes/{noteId}/dismiss': ['post'],
+    '/v3/files/{fileKey}/attachments/{attachmentId}': ['get'],
+    '/v3/files/{fileKey}/screens': ['get'], '/v3/files/{fileKey}/screens/{nodeId}': ['delete', 'put'],
+    '/v3/files/{fileKey}/screens/references-needed': ['get'], '/v3/files/{fileKey}/screens/{nodeId}/reference': ['put'],
+    '/v3/files/{fileKey}/screens/{nodeId}/checks': ['post'], '/v3/files/{fileKey}/checks': ['get'],
+    '/v3/files/{fileKey}/checks/{checkId}': ['get'], '/v3/files/{fileKey}/checks/{checkId}/result': ['post'],
     '/v3/files/{fileKey}/summary': ['get'], '/v3/files/{fileKey}/work': ['get'], '/v3/insights/trends': ['get'],
     '/v3/files/{fileKey}/hashes': ['get'], '/v3/files/{fileKey}/sync': ['post'], '/v3/files/{fileKey}/exists': ['post'],
     '/v3/session': ['get', 'delete', 'post'],
     '/v3/status': ['get'], '/v3/tokens': ['get'], '/v3/claims': ['get'],
     '/v3/events': ['get'],
   };
-  const pluginRoutes = ['/v3/files/{fileKey}/hashes', '/v3/files/{fileKey}/sync', '/v3/files/{fileKey}/exists'];
+  const pluginRoutes = ['/v3/files/{fileKey}/hashes', '/v3/files/{fileKey}/sync', '/v3/files/{fileKey}/exists',
+    '/v3/files/{fileKey}/screens/references-needed', '/v3/files/{fileKey}/screens/{nodeId}/reference'];
   assert.deepEqual(Object.keys(doc.paths).sort(), Object.keys(routes).sort());
   for (const [route, item] of Object.entries(doc.paths)) {
     assert.deepEqual(Object.keys(item).sort(), [...routes[route]].sort(), route);
@@ -759,7 +765,7 @@ test('/v3/openapi.json is an OpenAPI 3 document listing every v3 route', async t
         // Sign-in itself takes no credential; GET reads the session cookie.
         assert.deepEqual(op.security ?? null, method === 'get' ? [{ sessionCookie: [] }] : null, route);
       } else {
-        const viewerWrite = route.includes('/notes');
+        const viewerWrite = route.includes('/notes') || route.endsWith('/screens/{nodeId}/checks');
         const security = pluginRoutes.includes(route) ? [{ pluginToken: [] }]
           : method === 'get' || viewerWrite ? [{ agentToken: [] }, { viewerToken: [] }, { sessionCookie: [] }] : [{ agentToken: [] }, { sessionCookie: [] }];
         assert.deepEqual(op.security, security, route);
@@ -813,6 +819,14 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     'post /v3/files/{fileKey}/notes/{noteId}/dismiss': ['dismiss_note', 'notes dismiss'],
     'get /v3/files/{fileKey}/events': ['list_events', 'events'],
     'get /v3/resolve': ['resolve_url', 'resolve'],
+    'get /v3/files/{fileKey}/attachments/{attachmentId}': ['get_attachment', 'attachments get'],
+    'get /v3/files/{fileKey}/screens': ['list_screens', 'screens ls'],
+    'put /v3/files/{fileKey}/screens/{nodeId}': ['set_screen', 'screens set'],
+    'delete /v3/files/{fileKey}/screens/{nodeId}': ['delete_screen', 'screens rm'],
+    'post /v3/files/{fileKey}/screens/{nodeId}/checks': ['request_render_check', 'checks request'],
+    'get /v3/files/{fileKey}/checks': ['list_render_checks', 'checks ls'],
+    'get /v3/files/{fileKey}/checks/{checkId}': ['get_render_check', 'checks show'],
+    'post /v3/files/{fileKey}/checks/{checkId}/result': ['submit_render_check', 'checks submit'],
   };
   const ops = Object.entries(doc.paths).flatMap(([route, item]) => Object.entries(item).map(([method, op]) => [`${method} ${route}`, op]));
   const annotated = {};
@@ -833,8 +847,8 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     assert.equal(op['x-rds-mcp'], undefined, key);
     assert.equal(op['x-rds-cli'], undefined, key);
   }
-  assert.equal(new Set(Object.values(expected).map(([tool]) => tool)).size, 21);
-  assert.equal(new Set(Object.values(expected).map(([, command]) => command)).size, 21);
+  assert.equal(new Set(Object.values(expected).map(([tool]) => tool)).size, 29);
+  assert.equal(new Set(Object.values(expected).map(([, command]) => command)).size, 29);
 
   const described = s => typeof s === 'string' && s.trim().length > 0;
   for (const [key, op] of ops.filter(([k]) => expected[k])) {

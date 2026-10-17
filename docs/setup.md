@@ -398,6 +398,24 @@ Each worker needs `RDS_API_BASE_URL` (the API base URL, e.g.
 Code, Cursor or Devin (as secrets, never committed), the MCP server and CLI, and
 the agent recipes.
 
+## Image storage
+
+Note screenshots, the plugin's screen reference images and render-check
+results (built screenshot + heatmap) are re-encoded (metadata stripped), get a
+thumbnail and are served only to token / session holders
+(`GET /v3/files/{fileKey}/attachments/{id}`). Where they live:
+
+- **`DATABASE_URL`:** the `blob` table, capped at `RDS_BLOB_MAX_BYTES` (1 GiB).
+- **`RDS_STORE=local`:** files under `RDS_DATA_DIR/blobs`.
+- **`RDS_STORE=memory`:** memory (gone on restart).
+- **`RDS_BLOB_URL=s3://bucket/prefix`** (any mode): an S3-compatible bucket,
+  with `RDS_BLOB_ACCESS_KEY_ID` / `RDS_BLOB_SECRET_ACCESS_KEY`, plus
+  `RDS_BLOB_ENDPOINT` for non-AWS providers and `RDS_BLOB_PATH_STYLE=true` for
+  MinIO. The bucket stays private: the API proxies every image.
+
+A file's `storeImages` setting (`PATCH /v3/files/{fileKey}`, default `true`)
+turns image uploads off for it (`409 images_disabled`); text notes still work.
+
 ## Environment variable summary
 
 Only the `RDS_` names are read. A leftover pre-0.10 `FDS_`-prefixed variable is
@@ -431,6 +449,13 @@ replacement, so rename it.
 | `RDS_EVENT_REPLAY_HOURS` | API | `24` | How far back an event stream replays on reconnect; older cursors get a `reset` |
 | `RDS_EVENT_RETENTION_DAYS` | API | `30` | Events older than this are pruned (startup and hourly) |
 | `RDS_FIGMA_TOKEN` | API (optional) | — | Figma personal access token with the `library_assets:read` scope: library component keys resolve to their library file, so library nodes link there. Without it their `figmaUrl` is null. Server-side only; never logged or returned |
+| `RDS_IMAGE_MAX_BYTES` | API | 5 MiB | Max size of one uploaded image (note screenshot, screen reference, render-check result) |
+| `RDS_BLOB_URL` | API (optional) | — | `s3://<bucket>/<prefix>`: keep images in an S3-compatible bucket instead of the store (see [Image storage](#image-storage)) |
+| `RDS_BLOB_ENDPOINT` | API (optional) | AWS | S3-compatible endpoint (R2, MinIO, …), `http(s)://` |
+| `RDS_BLOB_REGION` | API (optional) | `us-east-1` | Bucket region (signing) |
+| `RDS_BLOB_ACCESS_KEY_ID` / `RDS_BLOB_SECRET_ACCESS_KEY` | API (with `RDS_BLOB_URL`) | — | Bucket credentials; never logged or returned |
+| `RDS_BLOB_PATH_STYLE` | API (optional) | `false` | `true` for path-style bucket URLs (MinIO) |
+| `RDS_BLOB_MAX_BYTES` | API | 1 GiB | Postgres driver: total image bytes kept in the database; more is `507 blob_store_full` |
 | `RDS_API_BASE_URL` | CLI / MCP | — | API base URL |
 | `RDS_AGENT_TOKEN` | CLI / MCP | — | This worker's agent token (one of `RDS_AGENT_TOKENS`) |
 | `RDS_FILE_KEY` | MCP (optional) | — | Default Figma file key, so tools can omit `fileKey` |

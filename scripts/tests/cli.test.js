@@ -450,11 +450,28 @@ test('v3 problem errors print "error: <title> — <detail>" and "hint: …" with
 });
 
 test('every generated command sends its method and path to buildApp and succeeds', async t => {
-  const { cli, calls } = await server(t);
+  const { cli, calls, base } = await server(t);
   const claim = await cli(['claim', '--file-key', FK, '--worker', 'w1', '--node-ids', '2:1']);
   const { claimId } = claim.json;
   const noted = await cli(['notes', 'add', '2-1', '--file-key', FK, '--body', 'Padding is too tight']);
+  const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
+  const shot = await fetch(`${base}/v3/files/${FK}/nodes/2:1/notes`, {
+    method: 'POST', headers: { authorization: 'Bearer agent-secret', 'content-type': 'application/json' },
+    body: JSON.stringify({ body: 'See screenshot', images: [{ data: PNG }] }),
+  });
+  assert.equal(shot.status, 200, await shot.clone().text());
+  const { attachmentId } = (await shot.json()).note.attachments[0];
+  assert.equal((await cli(['screens', 'set', '2-1', '--file-key', FK, '--route', '/card', '--width', '320', '--height', '240'])).code, 0);
+  const { checkId } = (await cli(['checks', 'request', '2-1', '--file-key', FK])).json.check;
   const argv = {
+    'attachments get': ['attachments', 'get', attachmentId, '--file-key', FK, '--size', 'thumb'],
+    'screens ls': ['screens', 'ls', '--file-key', FK],
+    'screens set': ['screens', 'set', '2-2', '--file-key', FK, '--route', '/header', '--width', '400', '--height', '300'],
+    'screens rm': ['screens', 'rm', '2-2', '--file-key', FK],
+    'checks request': ['checks', 'request', '2-1', '--file-key', FK],
+    'checks ls': ['checks', 'ls', '--file-key', FK, '--status', 'requested'],
+    'checks show': ['checks', 'show', checkId, '--file-key', FK],
+    'checks submit': ['checks', 'submit', checkId, '--file-key', FK, '--error', 'Dev server down'],
     'files ls': ['files', 'ls'],
     'files show': ['files', 'show', '--file-key', FK],
     'files settings': ['files', 'settings', '--file-key', FK, '--track-library-components=false'],

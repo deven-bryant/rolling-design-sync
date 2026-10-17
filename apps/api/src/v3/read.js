@@ -12,6 +12,15 @@ const schemas = require('./schemas');
 const format = require('./format');
 const { documentSortKey } = require('../documentOrder');
 const { fileSettings } = require('../nodeService');
+const { attachmentsByOwner } = require('./attachments');
+const { withScreens } = require('./screens');
+
+/** Open notes (with screenshots) and screen state on `nodes`. */
+async function withNotes(store, fileKey, nodes, options) {
+  await withNotesOnly(store, fileKey, nodes, options);
+  await withScreens(store, fileKey, nodes);
+  return nodes;
+}
 
 const TOKENS_SCOPE_NAME = 'Design tokens';
 const TOKENS_TYPE = 'TOKENS';
@@ -140,12 +149,15 @@ function buildFilter(p, nowIso) {
  *
  * @param {import('../store/types').Store} store
  */
-async function withNotes(store, fileKey, rows, { resolved = false } = {}) {
+async function withNotesOnly(store, fileKey, rows, { resolved = false } = {}) {
   const live = rows.filter(Boolean);
   if (!live.length) return rows;
   const ids = [...new Set(live.map(n => n.nodeId))];
   const byNode = new Map();
-  for (const note of await store.listNotes(fileKey, ids, { status: 'open' })) {
+  const open = await store.listNotes(fileKey, ids, { status: 'open' });
+  const shots = await attachmentsByOwner(store, fileKey, 'note', open.map(n => n.noteId));
+  for (const note of /** @type {any[]} */ (open)) {
+    note.attachments = shots.get(note.noteId) || [];
     if (!byNode.has(note.nodeId)) byNode.set(note.nodeId, []);
     byNode.get(note.nodeId).push(note);
   }
@@ -509,8 +521,15 @@ function nodeFields(fileKey, n, nowIso, changes = 'diff') {
       deletedAt: n.deletedAt ?? null,
     },
   };
-  if (n.notes) out.notes = n.notes.map(note => ({ noteId: note.noteId, body: note.body, author: note.author, createdAt: note.createdAt }));
+  if (n.notes) {
+    out.notes = n.notes.map(note => ({
+      noteId: note.noteId, body: note.body, author: note.author, createdAt: note.createdAt,
+      ...(note.source && note.source !== 'user' ? { source: note.source } : {}),
+      ...(note.attachments && note.attachments.length ? { attachments: note.attachments } : {}),
+    }));
+  }
   if (n.notesResolved !== undefined) out.notesResolved = n.notesResolved;
+  if (n.screen) out.screen = n.screen;
   if (n.descendants) out.descendants = n.descendants;
   if (n.usage) out.usage = n.usage;
   return out;

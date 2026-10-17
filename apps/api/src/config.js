@@ -168,7 +168,36 @@ function loadConfig(env = process.env, envOptions = {}) {
     // Postgres mode (schemaCheck.js): probe the schema at startup; optionally apply the missing migrations.
     schemaCheck: !/^off$/i.test(rds('SCHEMA_CHECK') || ''),
     autoMigrate: /^true$/i.test(rds('AUTO_MIGRATE') || ''),
+    imageMaxBytes: intOr(rds('IMAGE_MAX_BYTES'), 5 * 1024 * 1024),
+    blob: blobConfig(rds),
   };
+}
+
+/**
+ * Image blob storage (blobs/index.js): an S3-compatible bucket when
+ * RDS_BLOB_URL is set, else the store's default driver. Validated at startup;
+ * the credentials are kept out of every message.
+ */
+function blobConfig(rds) {
+  const url = rds('BLOB_URL') || '';
+  const blob = {
+    url,
+    endpoint: rds('BLOB_ENDPOINT') || '',
+    region: rds('BLOB_REGION') || 'us-east-1',
+    accessKeyId: rds('BLOB_ACCESS_KEY_ID') || '',
+    secretAccessKey: rds('BLOB_SECRET_ACCESS_KEY') || '',
+    pathStyle: /^true$/i.test(rds('BLOB_PATH_STYLE') || ''),
+    maxBytes: intOr(rds('BLOB_MAX_BYTES'), 1024 * 1024 * 1024),
+  };
+  if (!url) return blob;
+  if (!/^s3:\/\/[a-z0-9][a-z0-9.-]{1,61}[a-z0-9](\/.*)?$/.test(url)) throw new Error('RDS_BLOB_URL must look like s3://<bucket>/<prefix>.');
+  if (!blob.accessKeyId || !blob.secretAccessKey) throw new Error('RDS_BLOB_URL needs RDS_BLOB_ACCESS_KEY_ID and RDS_BLOB_SECRET_ACCESS_KEY.');
+  if (blob.endpoint) {
+    let parsed = null;
+    try { parsed = new URL(blob.endpoint); } catch (_) { /* reported below */ }
+    if (!parsed || !/^https?:$/.test(parsed.protocol)) throw new Error('RDS_BLOB_ENDPOINT must be an http(s) URL.');
+  }
+  return blob;
 }
 
 function chmodBestEffort(file, mode) {

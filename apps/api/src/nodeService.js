@@ -23,7 +23,7 @@ const COMPONENT_TYPES = ['COMPONENT', 'COMPONENT_SET'];
 const remoteRef = attrs => !!attrs && !!attrs.componentReference && attrs.componentReference.remote === true;
 
 /** Per-file settings and their defaults (docs/api-v3-design.md, "Library components"). */
-const DEFAULT_SETTINGS = Object.freeze({ trackLibraryComponents: true });
+const DEFAULT_SETTINGS = Object.freeze({ trackLibraryComponents: true, storeImages: true });
 
 /** A file's effective settings: the stored known ones over the defaults. */
 function fileSettings(file) {
@@ -44,25 +44,39 @@ const CLEAN_CHANGES = Object.freeze({ changeType: null, changedProps: [], change
 const REQUESTED_CHANGES = Object.freeze({ changeType: 'requested', changedProps: [], changeCategories: ['note'] });
 
 /**
+ * Open note tally: a count of open notes, or `{ open, render }` where
+ * `render` of them are render-check notes (category `render`, not `note`).
+ * @typedef {number | { open: number, render: number }} OpenNotes
+ */
+
+/** @param {OpenNotes | undefined} n */
+function noteCategories(n) {
+  const open = typeof n === 'number' ? n : (n && n.open) || 0;
+  const render = typeof n === 'number' ? 0 : (n && n.render) || 0;
+  return [...(open - render > 0 ? ['note'] : []), ...(render > 0 ? ['render'] : [])];
+}
+
+/**
  * The v3 change columns for a node row (docs/api-v3-design.md, "The change
  * model"): clean -> `null`/`[]`/`[]`; tombstoned -> `deleted`, diffed against
  * `null`; never implemented -> `added`; implemented -> `modified`, diffed
  * against `implementedAttrs` (empty when those are unknown, i.e. migrated).
- * With `openNotes` (a live node's open note count): design-clean ->
- * `requested`/`[]`/`['note']`; design-dirty -> its change plus category `note`.
+ * With `openNotes` (a live node's open notes): design-clean ->
+ * `requested`/`[]`/`['note']` (`render` for render-check notes); design-dirty
+ * -> its change plus category `note` / `render`.
  *
- * @param {{ dirty?: boolean, deletedAt?: string | null, implementedHash?: string | null, implementedAttrs?: object | null, attrs?: object | null, openNotes?: number }} row
+ * @param {{ dirty?: boolean, deletedAt?: string | null, implementedHash?: string | null, implementedAttrs?: object | null, attrs?: object | null, openNotes?: OpenNotes }} row
  */
 function changeColumns({ dirty, deletedAt, implementedHash, implementedAttrs, attrs, openNotes = 0 }) {
-  const noted = openNotes > 0 && !deletedAt;
-  if (!dirty) return noted ? { ...REQUESTED_CHANGES, changedProps: [], changeCategories: ['note'] } : { ...CLEAN_CHANGES };
+  const noted = deletedAt ? [] : noteCategories(openNotes);
+  if (!dirty) return noted.length ? { ...REQUESTED_CHANGES, changedProps: [], changeCategories: noted } : { ...CLEAN_CHANGES };
   const built = implementedAttrs ?? null;
   let changeType, diff;
   if (deletedAt) { changeType = 'deleted'; diff = core.diffAttrs(built, null); }
   else if (implementedHash === null || implementedHash === undefined) { changeType = 'added'; diff = core.diffAttrs(null, attrs ?? {}); }
   else { changeType = 'modified'; diff = built ? core.diffAttrs(built, attrs ?? {}) : null; }
   const categories = diff ? diff.categories : [];
-  return { changeType, changedProps: diff ? diff.changedProps : [], changeCategories: noted && !categories.includes('note') ? [...categories, 'note'] : categories };
+  return { changeType, changedProps: diff ? diff.changedProps : [], changeCategories: [...categories, ...noted.filter(c => !categories.includes(c))] };
 }
 
 /**
@@ -71,18 +85,21 @@ function changeColumns({ dirty, deletedAt, implementedHash, implementedAttrs, at
  * has open notes; a tombstone keeps its stored `dirty`.
  *
  * @param {{ dirty?: boolean, deletedAt?: string | null, contentHash?: string | null, implementedHash?: string | null, implementedAttrs?: object | null, attrs?: object | null }} node
- * @param {number} openNotes
+ * @param {OpenNotes} openNotes
  */
 function noteState(node, openNotes) {
   if (node.deletedAt) return { dirty: !!node.dirty, ...changeColumns(node) };
   const dirty = node.contentHash !== node.implementedHash;
-  return { dirty: dirty || openNotes > 0, ...changeColumns({ ...node, dirty, openNotes }) };
+  return { dirty: dirty || noteCategories(openNotes).length > 0, ...changeColumns({ ...node, dirty, openNotes }) };
 }
 
-/** Open note counts by node id for `nodeIds` (absent: none). */
+/**
+ * Open note tallies by node id for `nodeIds` (absent: none).
+ * @returns {Promise<Map<string, { open: number, render: number }>>}
+ */
 async function openNoteCounts(store, fileKey, nodeIds) {
   if (!nodeIds.length) return new Map();
-  return new Map((await store.noteCounts(fileKey, nodeIds)).filter(c => c.open > 0).map(c => [c.nodeId, c.open]));
+  return new Map((await store.noteCounts(fileKey, nodeIds)).filter(c => c.open > 0).map(c => [c.nodeId, { open: c.open, render: c.openRender || 0 }]));
 }
 
 /** Rewrites a node's dirty / change columns after its open notes changed; returns the stored row (null if unknown). */

@@ -21,6 +21,7 @@ const updateFile = {
   description: [
     'Changes a tracked file\'s settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class).',
     '`trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items.',
+    '`storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled.',
     'Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body\'s `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.',
   ].join(' '),
   tags: schemas.listNodes.tags, security: schemas.listNodes.security,

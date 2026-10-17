@@ -477,7 +477,7 @@ for (const kind of Object.keys(STORES)) {
     const json = ok(await get(app, `/v3/files/${FK}/nodes?format=json`));
     const lines = ndjson(await get(app, `/v3/files/${FK}/nodes?format=ndjson`));
     assert.deepEqual(lines, json.nodes);
-    assert.deepEqual(Object.keys(lines[0]).sort(), [...COMPACT_FIELDS].sort());
+    assert.deepEqual(Object.keys(lines[0]).sort(), COMPACT_FIELDS.filter(k => k !== 'screen').sort());
     const res = await get(app, `/v3/files/${FK}/nodes?format=ndjson`);
     assert.equal(res.headers['x-total-count'], '5');
     assert.deepEqual(ndjson(await get(app, `/v3/files/${FK}/nodes?format=ndjson&fields=nodeId,state&limit=2`)), [
@@ -712,7 +712,7 @@ for (const kind of Object.keys(STORES)) {
     assert.deepEqual(viaPairs(all), EXPANDED, 'scope first, then A, C (depth 1) and B (depth 2); the B → A cycle ends');
     assert.equal(all.total, EXPANDED.length);
     assert.deepEqual(all.expansion, { components: 3, truncated: false, unresolved: ['99:9'] });
-    assert.deepEqual(Object.keys(all.nodes[0]), [...COMPACT_FIELDS, 'via'], 'via is a compact field with expand');
+    assert.deepEqual(Object.keys(all.nodes[0]), [...COMPACT_FIELDS.filter(k => k !== 'screen'), 'via'], 'via is a compact field with expand');
 
     const plain = ok(await get(app, `/v3/files/${XK}/nodes?under=2:1&state=all`));
     assert.deepEqual(plain.nodes.map(n => n.nodeId), SCOPE);

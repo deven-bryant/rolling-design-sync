@@ -71,9 +71,32 @@ export interface ClaimListing extends Claim { fileName: string | null; nodeCount
 export interface ClaimResult { claim: Claim; nodes: V3Node[] }
 
 export interface NodeNote {
-  noteId: string; fileKey: string; nodeId: string; body: string; author: string; worker: string | null;
+  noteId: string; fileKey: string; nodeId: string; body: string; author: string; worker: string | null; source: 'user' | 'render_check';
   status: 'open' | 'resolved' | 'dismissed'; createdAt: string; updatedAt: string;
   resolvedAt: string | null; resolvedBy: string | null; commitRef: string | null;
+}
+
+export interface Attachment {
+  attachmentId: string; fileKey: string; ownerKind: 'note' | 'screen' | 'check'; ownerId: string;
+  kind: 'screenshot' | 'reference' | 'built' | 'heatmap'; contentType: string; size: number; width: number; height: number;
+  sha256: string; blobKey: string; thumbKey: string | null; createdBy: string; createdAt: string;
+}
+
+export interface ScreenMask { x: number; y: number; width: number; height: number }
+
+export interface Screen {
+  fileKey: string; nodeId: string; route: string; viewport: { width: number; height: number }; theme: string | null; query: string | null;
+  masks: ScreenMask[]; threshold: number; referenceId: string | null; referenceVersion: string | null;
+  createdBy: string; updatedBy: string; createdAt: string; updatedAt: string;
+}
+
+export interface RenderRegion { x: number; y: number; width: number; height: number; pixels: number }
+
+export interface RenderCheck {
+  checkId: string; fileKey: string; nodeId: string; status: 'requested' | 'passed' | 'mismatch' | 'error'; designVersion: string;
+  requestedBy: string; requestedAt: string; submittedBy: string | null; submittedAt: string | null; commitRef: string | null; source: string | null;
+  score: number | null; threshold: number | null; regions: RenderRegion[]; builtId: string | null; heatmapId: string | null;
+  referenceId: string | null; error: string | null;
 }
 
 export interface StoredEvent { id: number; fileKey: string; type: string; actor: string | null; data: Record<string, any>; createdAt: string }
@@ -181,16 +204,39 @@ export interface Store {
   unblockNode(fileKey: string, nodeId: string): Promise<{ node: V3Node; prior: { at: string | null; by: string | null; reason: string | null } } | null>;
 
   // --- notes (newest first; edit / close / delete touch open notes only and return null otherwise)
-  insertNote(note: { fileKey: string; nodeId: string; body: string; author: string; worker?: string | null; at: string }): Promise<NodeNote>;
+  insertNote(note: { fileKey: string; nodeId: string; body: string; author: string; worker?: string | null; source?: 'user' | 'render_check'; at: string }): Promise<NodeNote>;
   getNote(fileKey: string, noteId: string): Promise<NodeNote | null>;
   listNotes(fileKey: string, nodeIds: string[], options?: { status?: 'open' | 'all' }): Promise<NodeNote[]>;
   /** Open and resolved note counts of the nodes that have any (dismissed notes are not counted). */
-  noteCounts(fileKey: string, nodeIds: string[]): Promise<{ nodeId: string; open: number; resolved: number }[]>;
+  noteCounts(fileKey: string, nodeIds: string[]): Promise<{ nodeId: string; open: number; resolved: number; openRender: number }[]>;
   editNote(fileKey: string, noteId: string, edit: { body: string; at: string }): Promise<NodeNote | null>;
   closeNote(fileKey: string, noteId: string, close: { status: 'resolved' | 'dismissed'; by: string; at: string; commitRef?: string | null }): Promise<NodeNote | null>;
   deleteNote(fileKey: string, noteId: string): Promise<NodeNote | null>;
   /** Resolves the open notes of `nodeIds`; returns them, oldest first. */
   resolveNotes(fileKey: string, nodeIds: string[], resolve: { by: string; at: string; commitRef?: string | null }): Promise<NodeNote[]>;
+
+  // --- attachments (oldest first), screens (by node id), render checks (newest first)
+  insertAttachment(attachment: Omit<Attachment, 'attachmentId' | 'thumbKey'> & { attachmentId?: string; thumbKey?: string | null }): Promise<Attachment>;
+  getAttachment(fileKey: string, attachmentId: string): Promise<Attachment | null>;
+  listAttachments(fileKey: string, ownerKind: Attachment['ownerKind'], ownerIds: string[]): Promise<Attachment[]>;
+  /** Deletes the rows; returns them so the caller can delete their blobs. */
+  deleteAttachments(fileKey: string, attachmentIds: string[]): Promise<Attachment[]>;
+  upsertScreen(screen: { fileKey: string; nodeId: string; route: string; viewport: { width: number; height: number }; theme?: string | null;
+    query?: string | null; masks?: ScreenMask[]; threshold: number; by: string; at: string }): Promise<Screen>;
+  getScreen(fileKey: string, nodeId: string): Promise<Screen | null>;
+  listScreens(fileKey: string): Promise<Screen[]>;
+  deleteScreen(fileKey: string, nodeId: string): Promise<Screen | null>;
+  setScreenReference(fileKey: string, nodeId: string, ref: { referenceId: string; referenceVersion: string; at: string }): Promise<Screen | null>;
+  insertCheck(check: { fileKey: string; nodeId: string; designVersion: string; requestedBy: string; at: string }): Promise<RenderCheck>;
+  getCheck(fileKey: string, checkId: string): Promise<RenderCheck | null>;
+  listChecks(fileKey: string, options?: { status?: RenderCheck['status'] | null; nodeId?: string | null; limit?: number }): Promise<RenderCheck[]>;
+  /** The newest check of each of `nodeIds` that has any. */
+  latestChecks(fileKey: string, nodeIds: string[]): Promise<RenderCheck[]>;
+  /** Records the result of a requested check; null when it isn't requested (anymore). */
+  finishCheck(fileKey: string, checkId: string, result: Pick<RenderCheck, 'status' | 'designVersion' | 'submittedBy' | 'submittedAt'>
+    & Partial<Pick<RenderCheck, 'commitRef' | 'source' | 'score' | 'threshold' | 'regions' | 'builtId' | 'heatmapId' | 'referenceId' | 'error'>>): Promise<RenderCheck | null>;
+  /** Deletes the screen's checks but the newest `keep`; returns the deleted ones. */
+  deleteChecks(fileKey: string, nodeId: string, options?: { keep?: number }): Promise<RenderCheck[]>;
 
   // --- events
   insertEvent(event: { fileKey: string; type: string; actor?: string | null; data?: Record<string, any>; createdAt?: string | null }): Promise<StoredEvent>;

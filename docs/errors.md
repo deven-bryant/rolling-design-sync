@@ -29,6 +29,7 @@ v1 and v2 routes keep their `{ "error": "..." }` bodies.
 | [`invalid_cursor`](#invalid-cursor) | 400 | Invalid cursor |
 | [`invalid_url`](#invalid-url) | 400 | Not a Figma link |
 | [`url_mismatch`](#url-mismatch) | 400 | Link does not match the path |
+| [`invalid_image`](#invalid-image) | 400 | Invalid image |
 | [`unauthorized`](#unauthorized) | 401 | Missing bearer token |
 | [`invalid_token`](#invalid-token) | 401 | Invalid bearer token |
 | [`wrong_token_class`](#wrong-token-class) | 403 | Wrong token class |
@@ -38,10 +39,18 @@ v1 and v2 routes keep their `{ "error": "..." }` bodies.
 | [`node_not_found`](#node-not-found) | 404 | Node not found |
 | [`claim_not_found`](#claim-not-found) | 404 | Claim not found |
 | [`note_not_found`](#note-not-found) | 404 | Note not found |
+| [`attachment_not_found`](#attachment-not-found) | 404 | Attachment not found |
+| [`screen_not_found`](#screen-not-found) | 404 | Screen not found |
+| [`check_not_found`](#check-not-found) | 404 | Render check not found |
 | [`route_not_found`](#route-not-found) | 404 | Route not found |
+| [`images_disabled`](#images-disabled) | 409 | Images disabled |
+| [`reference_missing`](#reference-missing) | 409 | Reference image missing |
+| [`check_not_requested`](#check-not-requested) | 409 | Render check not requested |
+| [`image_too_large`](#image-too-large) | 413 | Image too large |
 | [`rate_limited`](#rate-limited) | 429 | Too many requests |
 | [`internal_error`](#internal-error) | 500 | Internal server error |
 | [`sessions_disabled`](#sessions-disabled) | 503 | Sessions disabled |
+| [`blob_store_full`](#blob-store-full) | 507 | Image store full |
 
 <a id="bad-request"></a>
 ## `bad_request`
@@ -222,6 +231,90 @@ edit or delete it, and only its author or an agent may dismiss it.
 - **Fix:** use a `noteId` from `POST …/nodes/{nodeId}/notes` or
   `GET …/nodes/{nodeId}/notes?status=all` on the same file.
 
+<a id="invalid-image"></a>
+## `invalid_image`
+
+**400.** An uploaded image (note screenshot, screen reference or render-check
+result) is not a PNG, JPEG or WebP, does not decode, or is larger than 8192 px
+on a side. The type is read from the bytes, never from a name; SVG, GIF and
+HTML are refused.
+
+- **Usual cause:** a data URL prefix (`data:image/png;base64,`) left in front of
+  the base64, a truncated file, or an unsupported format.
+- **Fix:** send the raw file bytes, base64-encoded, as PNG, JPEG or WebP.
+
+<a id="attachment-not-found"></a>
+## `attachment_not_found`
+
+**404.** No image with this id is stored for this file (or its note, screen or
+check was deleted).
+
+- **Usual cause:** an attachment id from another file, or one whose note was
+  deleted or whose render check was pruned (each screen keeps its 10 newest).
+- **Fix:** use the `url` / `thumbUrl` from a current note, screen or check.
+
+<a id="screen-not-found"></a>
+## `screen_not_found`
+
+**404.** The node is not set up as a screen for render checks.
+
+- **Usual cause:** `request_render_check` or a reference upload for a frame
+  nobody configured, or one whose screen was deleted.
+- **Fix:** `PUT /v3/files/{fileKey}/screens/{nodeId}` (`set_screen`) with its
+  `route` first; `list_screens` shows the configured ones.
+
+<a id="check-not-found"></a>
+## `check_not_found`
+
+**404.** No render check with this id exists on this file.
+
+- **Usual cause:** a mistyped `checkId`, one from another file, or an old check
+  pruned after newer ones (each screen keeps its 10 newest).
+- **Fix:** take ids from `list_render_checks` (`status=requested` for the ones
+  waiting to run).
+
+<a id="images-disabled"></a>
+## `images_disabled`
+
+**409.** The file's `storeImages` setting is `false`, so the API stores no
+images for it: note screenshots, screen references and render-check results
+are refused. Text-only notes still work.
+
+- **Usual cause:** a team that opted out of keeping screenshots.
+- **Fix:** send the note without `images`, or turn it back on with
+  `PATCH /v3/files/{fileKey} {"settings": {"storeImages": true}}`.
+
+<a id="reference-missing"></a>
+## `reference_missing`
+
+**409.** The screen has no reference image for its current design yet, so a
+built screenshot has nothing to be compared with.
+
+- **Usual cause:** a screen configured (or redesigned) since the plugin's last
+  sync; the plugin uploads references for `references-needed` screens when it
+  syncs.
+- **Fix:** run a sync from the plugin, then submit the result again (the check
+  stays `requested`).
+
+<a id="check-not-requested"></a>
+## `check_not_requested`
+
+**409.** The check already has a result (`passed`, `mismatch` or `error`);
+results are accepted once.
+
+- **Usual cause:** two agents running the same check, or a retry after a
+  successful submit.
+- **Fix:** request a new check (`request_render_check`) and submit to that one.
+
+<a id="image-too-large"></a>
+## `image_too_large`
+
+**413.** The decoded image is over `RDS_IMAGE_MAX_BYTES` (5 MB by default).
+
+- **Usual cause:** a full-page or retina screenshot.
+- **Fix:** crop it, or render at 1× (render checks compare 1× screenshots at the
+  screen's viewport).
+
 <a id="route-not-found"></a>
 ## `route_not_found`
 
@@ -282,6 +375,16 @@ routes outside `/v3` (except `/health`).
 - **Fix:** set `RDS_SESSION_SECRET` to a random 32+-character value (see
   `docs/setup.md`). `RDS_STORE` modes generate one into `tokens.json`
   automatically.
+
+<a id="blob-store-full"></a>
+## `blob_store_full`
+
+**507.** The image store reached its size limit (`RDS_BLOB_MAX_BYTES`, 1 GiB by
+default, for the Postgres driver).
+
+- **Usual cause:** many note screenshots on the default database driver.
+- **Fix:** delete old notes with screenshots, raise `RDS_BLOB_MAX_BYTES`, or
+  move images to a bucket with `RDS_BLOB_URL` (see `docs/setup.md`).
 
 <a id="clear-statuses"></a>
 ## Clear result statuses

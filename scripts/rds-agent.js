@@ -369,6 +369,11 @@ async function execute(request, { env = process.env, fetchImpl = globalThis.fetc
     init.body = JSON.stringify(request.body);
   }
   const res = await fetchImpl(buildUrl(baseUrl, request), init);
+  const type = (res.headers && typeof res.headers.get === 'function' && res.headers.get('content-type')) || '';
+  if (res.ok && /^\s*image\//i.test(type)) {
+    const bytes = Buffer.from(await res.arrayBuffer());
+    return { contentType: type.split(';')[0].trim(), bytes: bytes.length, data: bytes.toString('base64') };
+  }
   const text = await res.text();
   if (res.ok && streamed(request)) {
     if (!withCursor) return text;

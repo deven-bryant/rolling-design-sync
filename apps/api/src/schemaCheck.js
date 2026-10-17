@@ -50,6 +50,9 @@ const PROBES = Object.freeze({
   '20261012000000_api_v3_auto_resolve_never_built.sql': 'select not exists (select 1 from public.node where deleted_at is not null and implemented_hash is null and dirty) as ok',
   '20261013000000_api_v3_library_components.sql': all(column('node', 'library'), column('file', 'settings'), table('library_component')),
   '20261014000000_api_v3_node_notes.sql': all(table('node_note'), constraint('node', 'node_change_type_check', '%requested%')),
+  '20261017000000_api_v3_render_checks.sql': all(
+    table('blob'), table('attachment'), table('screen'), table('render_check'), column('node_note', 'source'),
+  ),
 });
 
 /** The `*.sql` filenames in `dir`, in apply order. */
