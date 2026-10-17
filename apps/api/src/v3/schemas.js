@@ -24,7 +24,7 @@ const MAX_EXPAND_DEPTH = 20;
 const EXPANSION_LIMIT = 500;
 
 const COMPACT_FIELDS = ['nodeId', 'name', 'type', 'parentId', 'isInstance', 'mainComponentId', 'component', 'state', 'changeType', 'changedProps',
-  'changes', 'changesKnown', 'contentHash', 'figmaUrl', 'library', 'claim', 'blocked', 'notes'];
+  'changes', 'changesKnown', 'contentHash', 'figmaUrl', 'library', 'claim', 'blocked', 'notes', 'screen'];
 const FULL_FIELDS = [...COMPACT_FIELDS, 'attrs', 'implementedAttrs', 'path'];
 const DETAIL_FIELDS = [...FULL_FIELDS, 'deleted', 'notesResolved', 'history'];
 const NODE_FIELDS = [...DETAIL_FIELDS, 'descendants', 'usage'];
@@ -83,6 +83,35 @@ const library = {
   properties: { key: nullable('string'), fileKey: { type: 'string' }, resolved: { type: 'boolean' } },
 };
 
+const attachment = {
+  type: 'object',
+  description: 'A stored image. `url` / `thumbUrl` need the same bearer token or portal session as the API (get_attachment).',
+  properties: {
+    attachmentId: { type: 'string' },
+    kind: { type: 'string', enum: ['screenshot', 'reference', 'built', 'heatmap'] },
+    contentType: { type: 'string' },
+    size: { type: 'integer', description: 'Bytes of the full image.' },
+    width: { type: 'integer' },
+    height: { type: 'integer' },
+    url: { type: 'string', description: 'API path of the full image.' },
+    thumbUrl: { type: ['string', 'null'], description: 'API path of the thumbnail (at most 480 px wide).' },
+    createdBy: { type: 'string' },
+    createdAt: { type: 'string' },
+  },
+};
+
+const SCREEN_STATUSES = ['building', 'ready', 'requested', 'passed', 'mismatch', 'error'];
+
+const screenState = {
+  type: ['object', 'null'],
+  description: 'Set on frames configured as screens for render checks: `status` (building: nodes under it are dirty; ready: built, no check for this design yet; requested; passed; mismatch; error), `stale` (the last result is for an older design) and the last `score` (% of pixels that differ).',
+  properties: {
+    status: { type: 'string', enum: SCREEN_STATUSES },
+    stale: { type: 'boolean' },
+    score: { type: ['number', 'null'] },
+  },
+};
+
 const fileSettings = {
   type: 'object',
   description: 'Per-file settings, defaults filled in.',
@@ -130,8 +159,16 @@ const node = {
     notes: {
       type: 'array',
       description: 'Open notes, newest first: what a person or agent says does not match the design. Read them, fix the code to match the design as they describe, then clear the node — clearing resolves them. A node with open notes is dirty (`changeType: requested` when its design is otherwise built).',
-      items: { type: 'object', properties: { noteId: { type: 'string' }, body: { type: 'string' }, author: { type: 'string' }, createdAt: { type: 'string' } } },
+      items: {
+        type: 'object',
+        properties: {
+          noteId: { type: 'string' }, body: { type: 'string' }, author: { type: 'string' }, createdAt: { type: 'string' },
+          source: { type: 'string', description: 'Only when not a person\'s note: `render_check` (a failed render check; its screenshots show the difference).' },
+          attachments: { type: 'array', items: attachment, description: 'Its screenshots, when it has any (get_attachment fetches one).' },
+        },
+      },
     },
+    screen: screenState,
     notesResolved: { type: 'integer', description: '`get_node` only: how many of its notes clears have resolved.' },
     attrs: nullable('object', { additionalProperties: true }),
     implementedAttrs: nullable('object', { additionalProperties: true }),
@@ -388,7 +425,7 @@ const OPENAPI_OPTIONS = {
 module.exports = {
   componentSet, library, fileSettings, LIBRARY_MODES,
   problemResponses,
-  LISTING_INCLUDES, CATEGORIES, STATES, CHANGE_TYPES, SORTS, MAX_LIMIT, DEFAULT_LIMIT, CHANGES_MODES, MAX_CHANGE_SIDE_BYTES, COMPACT_FIELDS, FULL_FIELDS, DETAIL_FIELDS, NODE_FIELDS,
+  attachment, screenState, SCREEN_STATUSES, LISTING_INCLUDES, CATEGORIES, STATES, CHANGE_TYPES, SORTS, MAX_LIMIT, DEFAULT_LIMIT, CHANGES_MODES, MAX_CHANGE_SIDE_BYTES, COMPACT_FIELDS, FULL_FIELDS, DETAIL_FIELDS, NODE_FIELDS,
   LISTING_FIELDS, EXPANDS, DEFAULT_EXPAND_DEPTH, MAX_EXPAND_DEPTH, EXPANSION_LIMIT, expansion, expandQuery,
   agentOp, listFiles, getFile, listScopes, listNodes, getNode, resolve, openapi, OPENAPI_OPTIONS,
 };

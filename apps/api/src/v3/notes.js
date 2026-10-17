@@ -15,10 +15,12 @@ const schemas = require('./schemas');
 const { problem } = require('./problem');
 const { nodeFields, pick, withLibraryRefs, withNotes } = require('./read');
 const { rejectUnknownKeys } = require('./actions');
+const { attachmentSchema, assertImagesEnabled, prepareImage, putImage, deleteBlobs, withNoteAttachments } = require('./attachments');
 
 const MAX_NOTE_LENGTH = 4000;
 const MAX_DISMISS_REASON_LENGTH = 500;
 const NOTE_STATUSES = ['open', 'all'];
+const MAX_NOTE_IMAGES = 3;
 
 // --- schemas -------------------------------------------------------------------
 const { security, tags } = schemas.listNodes;
@@ -46,6 +48,8 @@ const note = {
     body: { type: 'string' },
     author: { type: 'string', description: 'Who wrote it: the token label, or `portal:<label>` from a portal session.' },
     worker: nullable('string', { description: 'The worker id passed when it was added, if any.' }),
+    source: { type: 'string', enum: ['user', 'render_check'], description: '`render_check`: written by the system for a failed render check (author `render-check`); fix it like any note.' },
+    attachments: { type: 'array', items: attachmentSchema, description: 'Its screenshots (get_attachment fetches one).' },
     status: { type: 'string', enum: ['open', 'resolved', 'dismissed'] },
     createdAt: { type: 'string' },
     updatedAt: { type: 'string' },
@@ -75,9 +79,22 @@ const addNote = {
     properties: {
       body: noteBody,
       worker: { type: 'string', minLength: 1, maxLength: 200, description: 'Your worker id, recorded on the note.' },
+      images: {
+        type: 'array',
+        maxItems: MAX_NOTE_IMAGES,
+        description: `Up to ${MAX_NOTE_IMAGES} screenshots (PNG, JPEG or WebP, base64, at most RDS_IMAGE_MAX_BYTES — 5 MB by default — and 8192 px a side). They are re-encoded (metadata stripped) and get thumbnails. Refused with images_disabled when the file's storeImages setting is false.`,
+        items: {
+          type: 'object',
+          required: ['data'],
+          properties: {
+            data: { type: 'string', minLength: 1, description: 'The image file, base64.' },
+            name: { type: 'string', maxLength: 200, description: 'Optional file name (not used for the type).' },
+          },
+        },
+      },
     },
   },
-  response: { 200: noteReply, ...problemResponses(ERRORS) },
+  response: { 200: noteReply, ...problemResponses([...ERRORS, 409, 413]) },
 };
 
 const listNotes = {
@@ -137,7 +154,7 @@ const dismissNote = {
  * @param {any} app
  * @param {{ store: import('../store/types').Store } & Record<string, any>} deps
  */
-function registerNoteRoutes(app, { store, now, bus = null, libraryLinks = null }) {
+function registerNoteRoutes(app, { store, now, bus = null, libraryLinks = null, blobs, config = {} }) {
   const viewerWrite = { viewerWrite: true };
 
   async function file(request) {
@@ -192,10 +209,11 @@ function registerNoteRoutes(app, { store, now, bus = null, libraryLinks = null }
     const raw = address.resolveNodeParam(request.params.nodeId, urlNodeId);
     const node = await storedNode(store, fileKey, raw);
     const notes = await store.listNotes(fileKey, [node.nodeId], { status: request.query.status === 'all' ? 'all' : 'open' });
-    return { fileKey, nodeId: node.nodeId, notes };
+    return { fileKey, nodeId: node.nodeId, notes: await withNoteAttachments(store, fileKey, notes) };
   });
 
-  app.post('/files/:fileKey/nodes/:nodeId/notes', { schema: addNote, config: viewerWrite }, async (/** @type {any} */ request) => {
+  const imageBodyLimit = Math.ceil(MAX_NOTE_IMAGES * (config.imageMaxBytes || 5 * 1024 * 1024) * 1.4) + 64 * 1024;
+  app.post('/files/:fileKey/nodes/:nodeId/notes', { schema: addNote, config: viewerWrite, bodyLimit: Math.max(imageBodyLimit, config.bodyLimit || 0) }, async (/** @type {any} */ request) => {
     rejectUnknownKeys('body', request.body, addNote.body);
     const { fileKey, urlNodeId } = await file(request);
     const raw = address.resolveNodeParam(request.params.nodeId, urlNodeId);
@@ -203,20 +221,35 @@ function registerNoteRoutes(app, { store, now, bus = null, libraryLinks = null }
     const worker = typeof request.body.worker === 'string' ? request.body.worker.trim() || null : null;
     if (!request.body.body.trim()) throw problem('invalid_body', 'body must not be blank.', { hint: 'Describe what does not match the design.' });
     const at = now().toISOString();
-    const added = await withEvents(store, bus, async (tx, emit) => {
-      const node = await storedNode(tx, fileKey, raw);
-      if (node.deletedAt) {
-        throw problem('invalid_parameter', `nodeId: node ${node.nodeId} was deleted from the design.`, {
-          hint: 'Notes go on live nodes. Clear the deleted node once its code is removed.',
-        });
-      }
-      const created = await tx.insertNote({ fileKey, nodeId: node.nodeId, body: request.body.body, author, worker, at });
-      const after = await refreshNoteState(tx, fileKey, node.nodeId);
-      const dirtied = !node.dirty && !!(after && after.dirty);
-      await emit(fileKey, 'note.added', { actor: author, data: { nodeId: node.nodeId, noteId: created.noteId, author, dirtied } });
-      return created;
-    });
-    return { fileKey, note: added, node: await nodeOut(fileKey, added.nodeId, at) };
+    const uploads = request.body.images || [];
+    if (uploads.length) await assertImagesEnabled(store, fileKey);
+    const images = [];
+    for (const [i, img] of uploads.entries()) images.push(await prepareImage(img.data, { field: `images[${i}]`, config }));
+    const stored = [];
+    let added;
+    try {
+      for (const image of images) stored.push(await putImage(blobs, { fileKey, ownerKind: 'note', ownerId: '', kind: 'screenshot', image, by: author, at }));
+      added = await withEvents(store, bus, async (tx, emit) => {
+        const node = await storedNode(tx, fileKey, raw);
+        if (node.deletedAt) {
+          throw problem('invalid_parameter', `nodeId: node ${node.nodeId} was deleted from the design.`, {
+            hint: 'Notes go on live nodes. Clear the deleted node once its code is removed.',
+          });
+        }
+        const created = await tx.insertNote({ fileKey, nodeId: node.nodeId, body: request.body.body, author, worker, at });
+        for (const a of stored) await tx.insertAttachment({ ...a, ownerId: created.noteId });
+        const after = await refreshNoteState(tx, fileKey, node.nodeId);
+        const dirtied = !node.dirty && !!(after && after.dirty);
+        const data = { nodeId: node.nodeId, noteId: created.noteId, author, dirtied, ...(stored.length ? { attachmentIds: stored.map(a => a.attachmentId) } : {}) };
+        await emit(fileKey, 'note.added', { actor: author, data });
+        return created;
+      });
+    } catch (err) {
+      await deleteBlobs(blobs, stored, request.log);
+      throw err;
+    }
+    const [note] = await withNoteAttachments(store, fileKey, [added]);
+    return { fileKey, note, node: await nodeOut(fileKey, added.nodeId, at) };
   });
 
   app.patch('/files/:fileKey/notes/:noteId', { schema: editNote, config: viewerWrite }, async (/** @type {any} */ request) => {
@@ -231,6 +264,7 @@ function registerNoteRoutes(app, { store, now, bus = null, libraryLinks = null }
       return tx.editNote(fileKey, noteId, { body: request.body.body, at });
     });
     if (!edited) throw notFound(fileKey, noteId);
+    await withNoteAttachments(store, fileKey, [edited]);
     return { fileKey, note: edited, node: await nodeOut(fileKey, edited.nodeId, at) };
   });
 
@@ -239,13 +273,19 @@ function registerNoteRoutes(app, { store, now, bus = null, libraryLinks = null }
     const { noteId } = request.params;
     const author = authorOf(request);
     const at = now().toISOString();
+    /** @type {import('../store/types').Attachment[]} */
+    let removed = [];
     const deleted = await withEvents(store, bus, async tx => {
       await openNote(tx, fileKey, noteId, n => n.author === author, 'delete');
       const done = await tx.deleteNote(fileKey, noteId);
-      if (done) await refreshNoteState(tx, fileKey, done.nodeId);
+      if (!done) return null;
+      const attachments = await tx.listAttachments(fileKey, 'note', [noteId]);
+      removed = await tx.deleteAttachments(fileKey, attachments.map(a => a.attachmentId));
+      await refreshNoteState(tx, fileKey, done.nodeId);
       return done;
     });
     if (!deleted) throw notFound(fileKey, noteId);
+    await deleteBlobs(blobs, removed, request.log);
     return { fileKey, noteId, deleted: true, node: await nodeOut(fileKey, deleted.nodeId, at) };
   });
 
@@ -265,6 +305,7 @@ function registerNoteRoutes(app, { store, now, bus = null, libraryLinks = null }
       return done;
     });
     if (!dismissed) throw notFound(fileKey, noteId);
+    await withNoteAttachments(store, fileKey, [dismissed]);
     return { fileKey, note: dismissed, node: await nodeOut(fileKey, dismissed.nodeId, at) };
   });
 }

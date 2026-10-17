@@ -24,6 +24,8 @@ const { registerTokenRoutes } = require('./tokens');
 const { registerClaimRoutes } = require('./claims');
 const { registerFileRoutes } = require('./files');
 const { registerNoteRoutes } = require('./notes');
+const { registerAttachmentRoutes } = require('./attachments');
+const { registerScreenRoutes, registerScreenPluginRoutes } = require('./screens');
 const schemas = require('./schemas');
 const { version: SERVER_VERSION } = require('../../package.json');
 
@@ -200,12 +202,17 @@ async function v3Routes(v3, { config, store, now, bus, nodes, libraryLinks, blob
     registerActionRoutes(authed, { store, now, config, bus, libraryLinks });
     registerEventRoutes(authed, { store, now, config, bus });
     registerBlockRoutes(authed, { store, now, bus, libraryLinks });
-    registerNoteRoutes(authed, { store, now, bus, libraryLinks });
+    registerNoteRoutes(authed, { store, now, bus, libraryLinks, blobs, config });
+    registerAttachmentRoutes(authed, { store, blobs });
+    registerScreenRoutes(authed, { store, blobs, now, bus, config });
     registerInsightRoutes(authed, { store, now, config, libraryLinks });
     registerStatusRoutes(authed, { store, config, bus, libraryLinks });
     tokenRoutes(authed);
   });
-  v3.register(async plugin => registerPluginRoutes(plugin, { config, nodes }));
+  v3.register(async plugin => {
+    registerPluginRoutes(plugin, { config, nodes });
+    registerScreenPluginRoutes(plugin, { store, blobs, now, config });
+  });
 }
 
 /** Registered from app.js: `app.register(require('./v3'), { config })`. */
