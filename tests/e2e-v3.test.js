@@ -712,7 +712,7 @@ test('v3 block: block releases the lease → listing shows blocked → unblock �
 test('v3 summary and work items after a sync; format=ndjson and format=md', async () => {
   const fileKey = newFileKey();
   await seed(fileKey);
-  const zero = { layout: 0, color: 0, typography: 0, effects: 0, component: 0, content: 0, structure: 0, prototype: 0, token: 0, other: 0, note: 0 };
+  const zero = { layout: 0, color: 0, typography: 0, effects: 0, component: 0, content: 0, structure: 0, prototype: 0, token: 0, other: 0, note: 0, render: 0 };
 
   assert.deepEqual(await ok(files(fileKey, '/summary')), {
     fileKey,
@@ -854,7 +854,7 @@ test('v3 plugin routes: a full sync as the plugin runs it', async () => {
 
   // First scan: nothing stored yet, so the plugin baselines.
   assert.deepEqual(await ok(call('POST', `/v3/files/${fileKey}/exists`, { headers: client, body: { nodeIds: IDS.map(dashed) } })), { present: [], stale: [] });
-  assert.deepEqual(await ok(call('GET', `/v3/files/${fileKey}/hashes`, { headers: client, query: { under: dashed(ROOT) } })), { settings: { trackLibraryComponents: true } });
+  assert.deepEqual(await ok(call('GET', `/v3/files/${fileKey}/hashes`, { headers: client, query: { under: dashed(ROOT) } })), { settings: { trackLibraryComponents: true, storeImages: true } });
   const baseline = await ok(call('POST', '/v3/files/-/sync', {
     headers: client, query: url, body: { fileName: 'E2E File', rootNodeId: dashed(ROOT), upserts: BUILT.map(dashedUp), markImplemented: true },
   }));
@@ -1207,7 +1207,7 @@ test('v3 sync markImplemented: never-seen nodes are baselined clean; existing an
   const fileKey = newFileKey();
   const bad = await sync(fileKey, { upserts: BUILT, markImplemented: 'yes' });
   assertProblem(bad, 400, 'invalid_parameter');
-  assert.deepEqual(await hashesUnder(fileKey, ROOT), { settings: { trackLibraryComponents: true } }, 'a rejected sync writes nothing');
+  assert.deepEqual(await hashesUnder(fileKey, ROOT), { settings: { trackLibraryComponents: true, storeImages: true } }, 'a rejected sync writes nothing');
 
   // Existing dirty rows: 2:1 + 3:1 synced without the flag, then 3:1 tombstoned.
   await batch(fileKey, { upserts: BUILT.slice(1, 3) });
@@ -1364,16 +1364,16 @@ test('v3 library components: flagged at sync, the setting off hides them and lis
   assert.deepEqual(label.library, { key: 'E2ELIBKEY', resolved: false });
   assert.equal(label.figmaUrl, null);
   assert.equal((await ok(call('GET', '/v3/status', { headers: viewer }))).libraryLinks, false);
-  assert.deepEqual((await ok(files(fileKey))).settings, { trackLibraryComponents: true });
+  assert.deepEqual((await ok(files(fileKey))).settings, { trackLibraryComponents: true, storeImages: true });
   sameSet(await listIds(fileKey, {}), [ROOT, '2:1', '3:1', '9:1', '9:2']);
 
   const denied = await call('PATCH', `/v3/files/${fileKey}`, { headers: viewer, body: { settings: { trackLibraryComponents: false } } });
   assert.equal(denied.status, 403);
   assert.equal((await call('PATCH', `/v3/files/${fileKey}`, { body: { settings: { nope: true } } })).body.code, 'invalid_parameter');
   const off = await ok(call('PATCH', `/v3/files/${fileKey}`, { body: { settings: { trackLibraryComponents: false } } }));
-  assert.deepEqual(off.settings, { trackLibraryComponents: false });
+  assert.deepEqual(off.settings, { trackLibraryComponents: false, storeImages: true });
   assert.equal(off.counts.dirty, 3);
-  assert.deepEqual((await hashesUnder(fileKey, ROOT)).settings, { trackLibraryComponents: false });
+  assert.deepEqual((await hashesUnder(fileKey, ROOT)).settings, { trackLibraryComponents: false, storeImages: true });
 
   sameSet(await listIds(fileKey, {}), [ROOT, '2:1', '3:1']);
   sameSet(await listIds(fileKey, { library: 'only' }), ['9:1', '9:2']);
@@ -1385,7 +1385,7 @@ test('v3 library components: flagged at sync, the setting off hides them and lis
   assert.equal(ref.nodeIds, undefined);
   assert.equal(ref.placementsInScope, 1);
   const events = await ok(files(fileKey, '/events', { query: { types: 'file.settings_changed' } }));
-  assert.deepEqual(events.events.at(-1).data.settings, { trackLibraryComponents: false });
+  assert.deepEqual(events.events.at(-1).data.settings, { trackLibraryComponents: false, storeImages: true });
 });
 
 // --- design tokens ------------------------------------------------------------------
@@ -1462,4 +1462,57 @@ test('v3 notes: a viewer note makes a clean node requested, survives re-sync; on
   const [resolved] = (await ok(call('GET', `/v3/files/${fileKey}/nodes/3:1/notes`, { query: { status: 'all' } }))).notes;
   assert.equal(resolved.status, 'resolved');
   assert.equal(resolved.commitRef, 'e2e');
+});
+
+test('v3 render checks: a screen gets a reference, a mismatch makes a render note with a heatmap, a pass resolves it', async () => {
+  const sharp = require('sharp');
+  const png = async (box = null) => {
+    let img = sharp({ create: { width: 200, height: 200, channels: 3, background: { r: 255, g: 255, b: 255 } } });
+    if (box) img = img.composite([{ input: { create: { width: box, height: box, channels: 3, background: { r: 0, g: 0, b: 0 } } }, left: 20, top: 20 }]);
+    return (await img.png().toBuffer()).toString('base64');
+  };
+  const fileKey = newFileKey();
+  await seed(fileKey);
+  const route = suffix => `/v3/files/${fileKey}${suffix}`;
+  assert.equal((await call('PUT', route('/screens/2:1'), { headers: viewer, body: { route: '/card' } })).status, 403);
+  const screen = (await ok(call('PUT', route('/screens/2:1'), { body: { route: '/card', viewport: { width: 200, height: 200 } } }))).screen;
+  assert.equal(screen.status, 'building', 'the card still has design changes');
+
+  const needed = (await ok(call('GET', route('/screens/references-needed'), { headers: plugin }))).screens;
+  assert.deepEqual(needed.map(s => s.nodeId), ['2:1']);
+  await ok(call('PUT', route('/screens/2:1/reference'), { headers: plugin, body: { designVersion: needed[0].designVersion, image: await png() } }));
+
+  const first = (await ok(call('POST', route('/screens/2:1/checks'), { headers: viewer }))).check;
+  assert.equal(first.status, 'requested');
+  const bad = (await ok(call('POST', route(`/checks/${first.checkId}/result`), { body: { image: await png(40), commitRef: 'e2e' } }))).check;
+  assert.equal(bad.status, 'mismatch');
+  assert.deepEqual(bad.regions[0], { x: 20, y: 20, width: 40, height: 40, pixels: 1600 });
+  assert.equal((await fetch(API + bad.heatmap.url)).status, 401, 'images need a token');
+  const heat = await fetch(API + bad.heatmap.url, { headers: viewer });
+  assert.equal(heat.status, 200);
+  assert.equal(heat.headers.get('content-type'), 'image/png');
+  assert.equal(heat.headers.get('x-content-type-options'), 'nosniff');
+  const noted = await node(fileKey, '2:1');
+  assert.deepEqual(noted.screen, { status: 'mismatch', stale: false, score: bad.score });
+  const renderNote = noted.notes.find(n => n.source === 'render_check');
+  assert.ok(renderNote, 'a render note on the screen root');
+  assert.deepEqual(renderNote.attachments.map(a => a.kind).sort(), ['built', 'heatmap', 'reference']);
+  sameSet(await listIds(fileKey, { category: 'render' }), ['2:1']);
+
+  const second = (await ok(call('POST', route('/screens/2:1/checks')))).check;
+  const good = (await ok(call('POST', route(`/checks/${second.checkId}/result`), { body: { image: await png() } }))).check;
+  assert.equal(good.status, 'passed');
+  assert.equal(good.score, 0);
+  const passed = await node(fileKey, '2:1');
+  assert.equal(passed.screen.status, 'passed');
+  assert.ok(!(passed.notes || []).some(n => n.source === 'render_check'), 'a pass resolves the render note');
+
+  const shot = (await ok(call('POST', route('/nodes/3:1/notes'), { headers: viewer, body: { body: 'Spacing off', images: [{ data: await png(10) }] } }))).note;
+  assert.equal(shot.attachments.length, 1);
+  assert.equal((await fetch(API + shot.attachments[0].thumbUrl, { headers: agent })).status, 200);
+  await ok(call('PATCH', route(''), { body: { settings: { storeImages: false } } }));
+  const refused = await call('POST', route('/nodes/3:1/notes'), { headers: viewer, body: { body: 'x', images: [{ data: await png() }] } });
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.code, 'images_disabled');
+  assert.ok(ERRORS_MD.includes('<a id="images-disabled"></a>'));
 });
