@@ -126,9 +126,9 @@ for (const kind of Object.keys(STORES)) {
   test(`[${kind}] settings: defaults, PATCH by agents only, unknown setting and file, event, returned to the plugin`, async t => {
     const { app, store, close } = await openApp(kind);
     t.after(close);
-    assert.deepEqual(ok(await get(app, `/v3/files/${FK}`)).settings, { trackLibraryComponents: true });
-    assert.deepEqual(ok(await get(app, '/v3/files')).files[0].settings, { trackLibraryComponents: true });
-    assert.deepEqual(ok(await get(app, `/v3/files/${FK}/hashes?under=1:1`, plugin)).settings, { trackLibraryComponents: true });
+    assert.deepEqual(ok(await get(app, `/v3/files/${FK}`)).settings, { trackLibraryComponents: true, storeImages: true });
+    assert.deepEqual(ok(await get(app, '/v3/files')).files[0].settings, { trackLibraryComponents: true, storeImages: true });
+    assert.deepEqual(ok(await get(app, `/v3/files/${FK}/hashes?under=1:1`, plugin)).settings, { trackLibraryComponents: true, storeImages: true });
 
     const asViewer = await patch(app, { settings: { trackLibraryComponents: false } }, viewer);
     assert.equal(asViewer.statusCode, 403);
@@ -140,12 +140,12 @@ for (const kind of Object.keys(STORES)) {
     assert.equal((await patch(app, { settings: { trackLibraryComponents: false } }, agent, 'NoSuchFile1234')).json().code, 'file_not_found');
 
     const file = await trackOff(app);
-    assert.deepEqual(file.settings, { trackLibraryComponents: false });
-    assert.deepEqual(ok(await get(app, `/v3/files/${FK}/hashes?under=1:1`, plugin)).settings, { trackLibraryComponents: false });
+    assert.deepEqual(file.settings, { trackLibraryComponents: false, storeImages: true });
+    assert.deepEqual(ok(await get(app, `/v3/files/${FK}/hashes?under=1:1`, plugin)).settings, { trackLibraryComponents: false, storeImages: true });
     const events = await store.listEvents({ fileKey: FK, types: ['file.settings_changed'] });
     assert.equal(events.length, 1);
     assert.equal(events[0].actor, 'w-1');
-    assert.deepEqual(events[0].data, { settings: { trackLibraryComponents: false } });
+    assert.deepEqual(events[0].data, { settings: { trackLibraryComponents: false, storeImages: true } });
     ok(await patch(app, { settings: { trackLibraryComponents: false } }));
     assert.equal((await store.listEvents({ fileKey: FK, types: ['file.settings_changed'] })).length, 1, 'no change, no event');
 

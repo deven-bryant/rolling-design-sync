@@ -169,7 +169,7 @@ test('a failing migration rolls back, names the file and keeps the database as i
   await applyPrefix(db, FILES.length - 1);
   const pool = poolOf(db);
   const last = FILES[FILES.length - 1];
-  await db.exec('create table public.node_note (note_id uuid primary key)'); // probe still fails (constraint), the file's index creation fails
+  await db.exec('create table public.render_check (check_id uuid primary key)'); // probe still fails (other tables), the file's index creation fails
   await assert.rejects(checkSchema(pool, AUTO, { log: recorder() }), new RegExp(`Migration ${last} failed`));
   assert.ok(pool.statements.includes('rollback'));
   assert.deepEqual(await missingMigrations(pool), [last]);

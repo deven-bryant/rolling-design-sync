@@ -7,7 +7,7 @@
  */
 const core = require('@rolling-design-sync/core');
 
-const CATEGORIES = [...Object.keys(core.CATEGORY_RULES), 'other', 'note'];
+const CATEGORIES = [...Object.keys(core.CATEGORY_RULES), 'other', 'note', 'render'];
 const STATES = ['dirty', 'clean', 'blocked', 'requested', 'all'];
 const CHANGE_TYPES = ['added', 'modified', 'deleted', 'requested'];
 const SORTS = ['document', 'path', 'updatedAt', 'name'];
@@ -90,6 +90,10 @@ const fileSettings = {
     trackLibraryComponents: {
       type: 'boolean',
       description: 'Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked.',
+    },
+    storeImages: {
+      type: 'boolean',
+      description: 'Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept).',
     },
   },
 };

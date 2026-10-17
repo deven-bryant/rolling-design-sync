@@ -28,7 +28,26 @@ const mapLibraryComponent = r => r && ({
 });
 const mapNote = r => r && ({
   noteId: r.note_id, fileKey: r.file_key, nodeId: r.node_id, body: r.body, author: r.author, worker: r.worker ?? null, status: r.status,
+  source: r.source ?? 'user',
   createdAt: iso(r.created_at), updatedAt: iso(r.updated_at), resolvedAt: iso(r.resolved_at), resolvedBy: r.resolved_by ?? null, commitRef: r.commit_ref ?? null,
+});
+const mapAttachment = r => r && ({
+  attachmentId: r.attachment_id, fileKey: r.file_key, ownerKind: r.owner_kind, ownerId: r.owner_id, kind: r.kind, contentType: r.content_type,
+  size: r.size, width: r.width, height: r.height, sha256: r.sha256, blobKey: r.blob_key, thumbKey: r.thumb_key ?? null,
+  createdBy: r.created_by, createdAt: iso(r.created_at),
+});
+const mapScreen = r => r && ({
+  fileKey: r.file_key, nodeId: r.node_id, route: r.route, viewport: { width: r.viewport_width, height: r.viewport_height },
+  theme: r.theme ?? null, query: r.query ?? null, masks: r.masks ?? [], threshold: Number(r.threshold),
+  referenceId: r.reference_id ?? null, referenceVersion: r.reference_version ?? null,
+  createdBy: r.created_by, updatedBy: r.updated_by, createdAt: iso(r.created_at), updatedAt: iso(r.updated_at),
+});
+const num = v => (v === null || v === undefined ? null : Number(v));
+const mapCheck = r => r && ({
+  checkId: r.check_id, fileKey: r.file_key, nodeId: r.node_id, status: r.status, designVersion: r.design_version,
+  requestedBy: r.requested_by, requestedAt: iso(r.requested_at), submittedBy: r.submitted_by ?? null, submittedAt: iso(r.submitted_at),
+  commitRef: r.commit_ref ?? null, source: r.source ?? null, score: num(r.score), threshold: num(r.threshold), regions: r.regions ?? [],
+  builtId: r.built_id ?? null, heatmapId: r.heatmap_id ?? null, referenceId: r.reference_id ?? null, error: r.error ?? null,
 });
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const mapEvent = r => r && ({
@@ -1040,10 +1059,10 @@ class PostgresStore {
   }
 
   // --- v3 notes ---------------------------------------------------------------
-  async insertNote({ fileKey, nodeId, body, author, worker = null, at }) {
+  async insertNote({ fileKey, nodeId, body, author, worker = null, source, at }) {
     const { rows: [row] } = await this.query(
-      `insert into node_note (file_key, node_id, body, author, worker, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $6) returning *`,
-      [fileKey, nodeId, body, author, worker, at]);
+      `insert into node_note (file_key, node_id, body, author, worker, source, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $7) returning *`,
+      [fileKey, nodeId, body, author, worker, source || 'user', at]);
     return mapNote(row);
   }
 
@@ -1064,9 +1083,10 @@ class PostgresStore {
   async noteCounts(fileKey, nodeIds) {
     if (!nodeIds.length) return [];
     const { rows } = await this.query(
-      `select node_id, count(*) filter (where status = 'open')::int as open, count(*) filter (where status = 'resolved')::int as resolved
+      `select node_id, count(*) filter (where status = 'open')::int as open, count(*) filter (where status = 'resolved')::int as resolved,
+       count(*) filter (where status = 'open' and source = 'render_check')::int as open_render
        from node_note where file_key = $1 and node_id = any($2::text[]) and status <> 'dismissed' group by node_id`, [fileKey, nodeIds]);
-    return rows.map(r => ({ nodeId: r.node_id, open: r.open, resolved: r.resolved }));
+    return rows.map(r => ({ nodeId: r.node_id, open: r.open, resolved: r.resolved, openRender: r.open_render }));
   }
 
   async editNote(fileKey, noteId, { body, at }) {
@@ -1091,6 +1111,118 @@ class PostgresStore {
     const { rows: [row] } = await this.query(
       `delete from node_note where file_key = $1 and note_id = $2::uuid and status = 'open' returning *`, [fileKey, noteId]);
     return mapNote(row) || null;
+  }
+
+  // --- v3 attachments, screens, render checks ---------------------------------
+  async insertAttachment(a) {
+    const { rows: [row] } = await this.query(
+      `insert into attachment (attachment_id, file_key, owner_kind, owner_id, kind, content_type, size, width, height, sha256, blob_key, thumb_key, created_by, created_at)
+       values (coalesce($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning *`,
+      [a.attachmentId || null, a.fileKey, a.ownerKind, a.ownerId, a.kind, a.contentType, a.size, a.width, a.height, a.sha256, a.blobKey, a.thumbKey ?? null, a.createdBy, a.createdAt]);
+    return mapAttachment(row);
+  }
+
+  async getAttachment(fileKey, attachmentId) {
+    if (!UUID_RE.test(attachmentId)) return null;
+    const { rows: [row] } = await this.query('select * from attachment where file_key = $1 and attachment_id = $2::uuid', [fileKey, attachmentId]);
+    return mapAttachment(row) || null;
+  }
+
+  async listAttachments(fileKey, ownerKind, ownerIds) {
+    if (!ownerIds.length) return [];
+    const { rows } = await this.query(
+      `select * from attachment where file_key = $1 and owner_kind = $2 and owner_id = any($3::text[]) order by created_at, attachment_id`,
+      [fileKey, ownerKind, ownerIds]);
+    return rows.map(mapAttachment);
+  }
+
+  async deleteAttachments(fileKey, attachmentIds) {
+    const ids = attachmentIds.filter(id => UUID_RE.test(id));
+    if (!ids.length) return [];
+    const { rows } = await this.query('delete from attachment where file_key = $1 and attachment_id = any($2::uuid[]) returning *', [fileKey, ids]);
+    return rows.map(mapAttachment);
+  }
+
+  async upsertScreen(screen) {
+    const { rows: [row] } = await this.query(
+      `insert into screen (file_key, node_id, route, viewport_width, viewport_height, theme, query, masks, threshold, created_by, updated_by, created_at, updated_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $10, $11, $11)
+       on conflict (file_key, node_id) do update set route = excluded.route, viewport_width = excluded.viewport_width,
+         viewport_height = excluded.viewport_height, theme = excluded.theme, query = excluded.query, masks = excluded.masks,
+         threshold = excluded.threshold, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+       returning *`,
+      [screen.fileKey, screen.nodeId, screen.route, screen.viewport.width, screen.viewport.height, screen.theme ?? null, screen.query ?? null,
+        JSON.stringify(screen.masks || []), screen.threshold, screen.by, screen.at]);
+    return mapScreen(row);
+  }
+
+  async getScreen(fileKey, nodeId) {
+    const { rows: [row] } = await this.query('select * from screen where file_key = $1 and node_id = $2', [fileKey, nodeId]);
+    return mapScreen(row) || null;
+  }
+
+  async listScreens(fileKey) {
+    const { rows } = await this.query('select * from screen where file_key = $1 order by node_id collate "C"', [fileKey]);
+    return rows.map(mapScreen);
+  }
+
+  async deleteScreen(fileKey, nodeId) {
+    const { rows: [row] } = await this.query('delete from screen where file_key = $1 and node_id = $2 returning *', [fileKey, nodeId]);
+    return mapScreen(row) || null;
+  }
+
+  async setScreenReference(fileKey, nodeId, { referenceId, referenceVersion, at }) {
+    const { rows: [row] } = await this.query(
+      'update screen set reference_id = $3::uuid, reference_version = $4, updated_at = $5 where file_key = $1 and node_id = $2 returning *',
+      [fileKey, nodeId, referenceId, referenceVersion, at]);
+    return mapScreen(row) || null;
+  }
+
+  async insertCheck({ fileKey, nodeId, designVersion, requestedBy, at }) {
+    const { rows: [row] } = await this.query(
+      `insert into render_check (file_key, node_id, status, design_version, requested_by, requested_at) values ($1, $2, 'requested', $3, $4, $5) returning *`,
+      [fileKey, nodeId, designVersion, requestedBy, at]);
+    return mapCheck(row);
+  }
+
+  async getCheck(fileKey, checkId) {
+    if (!UUID_RE.test(checkId)) return null;
+    const { rows: [row] } = await this.query('select * from render_check where file_key = $1 and check_id = $2::uuid', [fileKey, checkId]);
+    return mapCheck(row) || null;
+  }
+
+  async listChecks(fileKey, { status = null, nodeId = null, limit = 100 } = {}) {
+    const { rows } = await this.query(
+      `select * from render_check where file_key = $1 and ($2::text is null or status = $2) and ($3::text is null or node_id = $3)
+       order by requested_at desc, check_id desc limit $4`, [fileKey, status, nodeId, limit]);
+    return rows.map(mapCheck);
+  }
+
+  async latestChecks(fileKey, nodeIds) {
+    if (!nodeIds.length) return [];
+    const { rows } = await this.query(
+      `select distinct on (node_id) * from render_check where file_key = $1 and node_id = any($2::text[])
+       order by node_id, requested_at desc, check_id desc`, [fileKey, nodeIds]);
+    return rows.map(mapCheck);
+  }
+
+  async finishCheck(fileKey, checkId, r) {
+    if (!UUID_RE.test(checkId)) return null;
+    const { rows: [row] } = await this.query(
+      `update render_check set status = $3, design_version = $4, submitted_by = $5, submitted_at = $6, commit_ref = $7, source = $8,
+         score = $9, threshold = $10, regions = $11::jsonb, built_id = $12::uuid, heatmap_id = $13::uuid, reference_id = $14::uuid, error = $15
+       where file_key = $1 and check_id = $2::uuid and status = 'requested' returning *`,
+      [fileKey, checkId, r.status, r.designVersion, r.submittedBy, r.submittedAt, r.commitRef ?? null, r.source ?? null, r.score ?? null,
+        r.threshold ?? null, JSON.stringify(r.regions || []), r.builtId ?? null, r.heatmapId ?? null, r.referenceId ?? null, r.error ?? null]);
+    return mapCheck(row) || null;
+  }
+
+  async deleteChecks(fileKey, nodeId, { keep = 0 } = {}) {
+    const { rows } = await this.query(
+      `delete from render_check where check_id in (
+         select check_id from render_check where file_key = $1 and node_id = $2 order by requested_at desc, check_id desc offset $3)
+       returning *`, [fileKey, nodeId, keep]);
+    return rows.map(mapCheck);
   }
 
   async resolveNotes(fileKey, nodeIds, { by, at, commitRef = null }) {

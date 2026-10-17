@@ -178,7 +178,7 @@ function notFoundHandler(request, reply) {
   return sendProblem(reply, problem('route_not_found', `No route ${request.method} ${path}.`, { hint }));
 }
 
-async function v3Routes(v3, { config, store, now, bus, nodes, libraryLinks }) {
+async function v3Routes(v3, { config, store, now, bus, nodes, libraryLinks, blobs }) {
   v3.addHook('onRequest', async (request, reply) => { reply.header('x-rds-server', SERVER_VERSION); });
   v3.addHook('onRoute', documentViewerAccess);
   v3.addHook('onRoute', documentRateLimit);
@@ -210,7 +210,7 @@ async function v3Routes(v3, { config, store, now, bus, nodes, libraryLinks }) {
 
 /** Registered from app.js: `app.register(require('./v3'), { config })`. */
 async function v3(app, { config }) {
-  await app.register(v3Routes, { prefix: '/v3', config, store: app.store, bus: app.eventBus, nodes: app.nodeService, libraryLinks: app.libraryLinks, now: () => app.nodeService.now() });
+  await app.register(v3Routes, { prefix: '/v3', config, store: app.store, bus: app.eventBus, nodes: app.nodeService, libraryLinks: app.libraryLinks, blobs: app.blobs, now: () => app.nodeService.now() });
 }
 
 v3.notFoundHandler = notFoundHandler;

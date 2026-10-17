@@ -117,6 +117,10 @@ class MemoryStore {
     this.libraryComponents = new Map(); // component key -> library_component row
     this.notes = new Map(); // noteId -> node_note row
     this._noteSeq = 0; // creation order of notes (newest first on reads)
+    this.attachments = new Map(); // attachmentId -> attachment row
+    this.screens = new Map(); // `${fileKey}\u0000${nodeId}` -> screen row
+    this.checks = new Map(); // checkId -> render_check row
+    this._checkSeq = 0; // creation order of render checks
     this._eventSeq = 0; // like bigserial: never rolled back
     this._lock = Promise.resolve();
   }
@@ -134,7 +138,7 @@ class MemoryStore {
   }
 
   _dump() {
-    return ['nodes', 'files', 'syncEvents', 'claims', 'events', 'libraryComponents', 'notes'].map(k => [k, new Map(structuredClone(Array.from(this[k].entries())))]);
+    return ['nodes', 'files', 'syncEvents', 'claims', 'events', 'libraryComponents', 'notes', 'attachments', 'screens', 'checks'].map(k => [k, new Map(structuredClone(Array.from(this[k].entries())))]);
   }
 
   _restore(backup) { for (const [k, m] of backup) this[k] = m; }
@@ -621,10 +625,10 @@ class MemoryStore {
 
   _noteOut(note) { const { seq, ...rest } = note; return clone(rest); }
 
-  async insertNote({ fileKey, nodeId, body, author, worker = null, at }) {
+  async insertNote({ fileKey, nodeId, body, author, worker = null, source, at }) {
     this._noteSeq += 1;
     const note = {
-      noteId: randomUUID(), fileKey, nodeId, body, author, worker, status: 'open',
+      noteId: randomUUID(), fileKey, nodeId, body, author, worker, source: source || 'user', status: 'open',
       createdAt: at, updatedAt: at, resolvedAt: null, resolvedBy: null, commitRef: null, seq: this._noteSeq,
     };
     this.notes.set(note.noteId, note);
@@ -649,8 +653,9 @@ class MemoryStore {
     const counts = new Map();
     for (const n of this.notes.values()) {
       if (n.fileKey !== fileKey || !ids.has(n.nodeId) || n.status === 'dismissed') continue;
-      const c = counts.get(n.nodeId) || { nodeId: n.nodeId, open: 0, resolved: 0 };
+      const c = counts.get(n.nodeId) || { nodeId: n.nodeId, open: 0, resolved: 0, openRender: 0 };
       c[n.status] += 1;
+      if (n.status === 'open' && n.source === 'render_check') c.openRender += 1;
       counts.set(n.nodeId, c);
     }
     return Array.from(counts.values());
@@ -680,6 +685,123 @@ class MemoryStore {
     if (!note) return null;
     this.notes.delete(noteId);
     return this._noteOut(note);
+  }
+
+  // --- v3 attachments, screens, render checks (same contract as PostgresStore)
+  async insertAttachment(a) {
+    const row = { ...clone(a), attachmentId: a.attachmentId || randomUUID(), thumbKey: a.thumbKey ?? null };
+    this.attachments.set(row.attachmentId, row);
+    return clone(row);
+  }
+
+  async getAttachment(fileKey, attachmentId) {
+    const a = this.attachments.get(attachmentId);
+    return a && a.fileKey === fileKey ? clone(a) : null;
+  }
+
+  async listAttachments(fileKey, ownerKind, ownerIds) {
+    const ids = new Set(ownerIds);
+    return Array.from(this.attachments.values())
+      .filter(a => a.fileKey === fileKey && a.ownerKind === ownerKind && ids.has(a.ownerId))
+      .sort((a, b) => cmp(a.createdAt, b.createdAt) || cmp(a.attachmentId, b.attachmentId)).map(clone);
+  }
+
+  async deleteAttachments(fileKey, attachmentIds) {
+    const out = [];
+    for (const id of attachmentIds) {
+      const a = this.attachments.get(id);
+      if (!a || a.fileKey !== fileKey) continue;
+      this.attachments.delete(id);
+      out.push(clone(a));
+    }
+    return out;
+  }
+
+  async upsertScreen(screen) {
+    const key = `${screen.fileKey}\u0000${screen.nodeId}`;
+    const prior = this.screens.get(key);
+    const row = {
+      fileKey: screen.fileKey, nodeId: screen.nodeId, route: screen.route, viewport: clone(screen.viewport), theme: screen.theme ?? null,
+      query: screen.query ?? null, masks: clone(screen.masks || []), threshold: screen.threshold,
+      referenceId: prior ? prior.referenceId : null, referenceVersion: prior ? prior.referenceVersion : null,
+      createdBy: prior ? prior.createdBy : screen.by, updatedBy: screen.by, createdAt: prior ? prior.createdAt : screen.at, updatedAt: screen.at,
+    };
+    this.screens.set(key, row);
+    return clone(row);
+  }
+
+  async getScreen(fileKey, nodeId) {
+    const s = this.screens.get(`${fileKey}\u0000${nodeId}`);
+    return s ? clone(s) : null;
+  }
+
+  async listScreens(fileKey) {
+    return Array.from(this.screens.values()).filter(s => s.fileKey === fileKey).sort((a, b) => cmp(a.nodeId, b.nodeId)).map(clone);
+  }
+
+  async deleteScreen(fileKey, nodeId) {
+    const key = `${fileKey}\u0000${nodeId}`;
+    const s = this.screens.get(key);
+    if (!s) return null;
+    this.screens.delete(key);
+    return clone(s);
+  }
+
+  async setScreenReference(fileKey, nodeId, { referenceId, referenceVersion, at }) {
+    const s = this.screens.get(`${fileKey}\u0000${nodeId}`);
+    if (!s) return null;
+    Object.assign(s, { referenceId, referenceVersion, updatedAt: at });
+    return clone(s);
+  }
+
+  _checkOut(c) { const { seq, ...rest } = c; return clone(rest); }
+
+  _checksOf(fileKey, nodeId = null) {
+    return Array.from(this.checks.values()).filter(c => c.fileKey === fileKey && (nodeId === null || c.nodeId === nodeId))
+      .sort((a, b) => cmp(b.requestedAt, a.requestedAt) || b.seq - a.seq);
+  }
+
+  async insertCheck({ fileKey, nodeId, designVersion, requestedBy, at }) {
+    this._checkSeq += 1;
+    const c = {
+      checkId: randomUUID(), fileKey, nodeId, status: 'requested', designVersion, requestedBy, requestedAt: at,
+      submittedBy: null, submittedAt: null, commitRef: null, source: null, score: null, threshold: null, regions: [],
+      builtId: null, heatmapId: null, referenceId: null, error: null, seq: this._checkSeq,
+    };
+    this.checks.set(c.checkId, c);
+    return this._checkOut(c);
+  }
+
+  async getCheck(fileKey, checkId) {
+    const c = this.checks.get(checkId);
+    return c && c.fileKey === fileKey ? this._checkOut(c) : null;
+  }
+
+  async listChecks(fileKey, { status = null, nodeId = null, limit = 100 } = {}) {
+    return this._checksOf(fileKey, nodeId).filter(c => !status || c.status === status).slice(0, limit).map(c => this._checkOut(c));
+  }
+
+  async latestChecks(fileKey, nodeIds) {
+    const ids = new Set(nodeIds);
+    const out = new Map();
+    for (const c of this._checksOf(fileKey)) if (ids.has(c.nodeId) && !out.has(c.nodeId)) out.set(c.nodeId, this._checkOut(c));
+    return Array.from(out.values());
+  }
+
+  async finishCheck(fileKey, checkId, result) {
+    const c = this.checks.get(checkId);
+    if (!c || c.fileKey !== fileKey || c.status !== 'requested') return null;
+    Object.assign(c, clone(result));
+    return this._checkOut(c);
+  }
+
+  async deleteChecks(fileKey, nodeId, { keep = 0 } = {}) {
+    const out = [];
+    for (const c of this._checksOf(fileKey, nodeId).slice(keep)) {
+      this.checks.delete(c.checkId);
+      out.push(this._checkOut(c));
+    }
+    return out;
   }
 
   async resolveNotes(fileKey, nodeIds, { by, at, commitRef = null }) {

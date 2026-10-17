@@ -163,7 +163,7 @@ test('v3 plugin routes: a full sync session gives the same responses and stored 
 
   // The fixtures exercise what they claim to.
   const r = ref.responses;
-  assert.deepEqual(r.hashesBefore, { settings: { trackLibraryComponents: true } });
+  assert.deepEqual(r.hashesBefore, { settings: { trackLibraryComponents: true, storeImages: true } });
   assert.deepEqual(r.existsBefore, { present: [], stale: [] });
   assert.equal(r.baseline.baselined, BUILT.length);
   assert.equal(r.baseline.dirty, 0);
@@ -227,8 +227,8 @@ test('v3 plugin routes: ?url= addressing and 1-2 node ids', async t => {
   assertProblem(await inject(app, 'GET', `/v3/files/-/hashes?url=${url}&under=2-1`), 400, 'url_mismatch');
   assertProblem(await inject(app, 'GET', `/v3/files/-/hashes?url=${encodeURIComponent(link())}`), 400, 'invalid_parameter');
   assertProblem(await inject(app, 'GET', `/v3/files/${FK}/hashes`), 400, 'invalid_parameter');
-  assert.deepEqual(ok(await inject(app, 'GET', `/v3/files/${FK}/hashes?under=7-7`)), { settings: { trackLibraryComponents: true } });
-  assert.deepEqual(ok(await inject(app, 'GET', `/v3/files/unknownFile/hashes?under=1-1`)), { settings: { trackLibraryComponents: true } });
+  assert.deepEqual(ok(await inject(app, 'GET', `/v3/files/${FK}/hashes?under=7-7`)), { settings: { trackLibraryComponents: true, storeImages: true } });
+  assert.deepEqual(ok(await inject(app, 'GET', `/v3/files/unknownFile/hashes?under=1-1`)), { settings: { trackLibraryComponents: true, storeImages: true } });
 
   // exists and sync take the file from the link too.
   assert.deepEqual(ok(await inject(app, 'POST', `/v3/files/-/exists?url=${url}`, { nodeIds: ['1-1', '2:1', '9-9'] })), { present: ['1:1', '2:1'], stale: [] });
