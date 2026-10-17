@@ -8,6 +8,7 @@ import { Drawer } from '../../components/Drawer';
 import { agentInitials } from '../../components/domain/AgentSprite';
 import { ChangeBadge } from '../../components/domain/ChangeBadge';
 import { filesFromClipboard, NoteScreenshots } from '../../components/domain/NoteScreenshots';
+import { NoteSection } from '../../components/domain/NoteSection';
 import { RenderCheckBadge } from '../../components/domain/RenderCheck';
 import { ImageThumbnail } from '../../components/Lightbox';
 import {
@@ -364,7 +365,7 @@ function NoteForm({ fileKey, nodeId, storeImages, onDone }: { fileKey: string; n
       {add.isError && <Text color="error-primary">{add.error.message}</Text>}
       <div className="flex justify-end">
         <Button hierarchy="secondary" size="sm" type="submit" loading={add.isPending || encoding}>
-          Add Change Note
+          Add change note
         </Button>
       </div>
     </form>
@@ -375,10 +376,10 @@ function NoteImages({ attachments }: { attachments: NonNullable<NodeNote['attach
   const images = attachments.filter(a => a.url);
   if (!images.length) return null;
   return (
-    <ul aria-label="Screenshots" className="flex flex-wrap justify-end gap-lg">
+    <ul aria-label="Screenshots" className="flex flex-wrap justify-end gap-md">
       {images.map((a, i) => (
         <li key={a.attachmentId ?? i}>
-          <ImageThumbnail src={a.thumbUrl ?? a.url!} fullSrc={a.url} alt={`Screenshot ${i + 1}`} caption={a.size ? formatBytes(a.size) : undefined} />
+          <ImageThumbnail src={a.thumbUrl ?? a.url!} fullSrc={a.url} alt={`Screenshot ${i + 1}`} className="h-11.25 w-18 rounded-sm" />
         </li>
       ))}
     </ul>
@@ -388,7 +389,17 @@ function NoteImages({ attachments }: { attachments: NonNullable<NodeNote['attach
 /** Who wrote a note, without the `portal:` prefix a portal session's notes carry. */
 const noteAuthor = (author: string | undefined) => (author ?? 'unknown').replace(/^portal:/, '');
 
-function NoteItem({ fileKey, note, mine, canDismiss, now }: { fileKey: string; note: NodeNote; mine: boolean; canDismiss: boolean; now: number }) {
+interface NoteItemProps {
+  fileKey: string;
+  note: NodeNote;
+  /** `Open notes (N)` on the first note, `Note N` after it. */
+  title: string;
+  mine: boolean;
+  canDismiss: boolean;
+  now: number;
+}
+
+function NoteItem({ fileKey, note, title, mine, canDismiss, now }: NoteItemProps) {
   const edit = useEditNote(fileKey);
   const remove = useDeleteNote(fileKey);
   const dismiss = useDismissNote(fileKey);
@@ -404,98 +415,107 @@ function NoteItem({ fileKey, note, mine, canDismiss, now }: { fileKey: string; n
     if (error) return;
     edit.mutate({ noteId, body: body.trim() }, { onSuccess: () => (setMode('view'), void showToast('Note updated')) });
   };
-  return (
-    <li aria-label={`Note by ${author}`} className="flex flex-col gap-lg rounded-lg border border-secondary bg-primary p-xl">
-      <div className="flex items-center gap-lg">
-        <Avatar size="md" initials={agentInitials(author)} alt={author} />
-        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-md">
-          <Text weight="medium">{author}</Text>
-          <Text as="span" size="xs" color="tertiary">
-            <time dateTime={note.createdAt}>{timeAgo(note.createdAt, now)}</time>
-          </Text>
-        </div>
-        {note.source === 'render_check' && (
-          <Badge size="sm" color="error">
-            Render mismatch
-          </Badge>
-        )}
-      </div>
-      {mode === 'edit' ? (
-        <form
-          noValidate
-          className="flex flex-col gap-lg"
-          onSubmit={event => {
-            event.preventDefault();
-            save();
-          }}
+  const actions = mode === 'view' && (mine || canDismiss) && (
+    <>
+      {mine && (
+        <Button hierarchy="secondary" size="md" onPress={() => setMode('edit')}>
+          Edit
+        </Button>
+      )}
+      {mine && (
+        <Button
+          hierarchy="secondary"
+          size="md"
+          isDisabled={remove.isPending}
+          onPress={() => remove.mutate(noteId, { onSuccess: () => void showToast('Note deleted') })}
         >
-          <Textarea
-            aria-label="Edit note"
-            autoFocus
-            rows={4}
-            value={body}
-            onChange={setBody}
-            isInvalid={submitted && !!error}
-            hint={submitted && error ? error : `${body.trim().length}/${NOTE_MAX}`}
-          />
-          <div className="flex justify-end gap-lg">
-            <Button hierarchy="secondary" size="sm" onPress={() => (setMode('view'), setBody(note.body ?? ''), setSubmitted(false))}>
-              Cancel
-            </Button>
-            <Button hierarchy="primary" size="sm" type="submit" loading={edit.isPending}>
-              Save note
-            </Button>
-          </div>
-        </form>
-      ) : (
-        <Text as="p" color="secondary" className="whitespace-pre-wrap break-words">
-          {note.body}
-        </Text>
+          Delete
+        </Button>
       )}
-      {note.attachments?.length ? <NoteImages attachments={note.attachments} /> : null}
-      {mode === 'dismiss' && (
-        <div role="alertdialog" aria-label="Dismiss this note?" className="flex flex-col gap-lg rounded-lg border border-secondary bg-secondary p-xl">
-          <Text color="secondary">Dismissing it says the built node matches the design after all; the node goes back to its design changes only.</Text>
-          <div className="flex justify-end gap-lg">
-            <Button hierarchy="secondary" size="sm" onPress={() => setMode('view')}>
-              Cancel
-            </Button>
-            <Button
-              hierarchy="primary"
-              size="sm"
-              loading={dismiss.isPending}
-              onPress={() => dismiss.mutate(noteId, { onSuccess: () => void showToast('Note dismissed') })}
-            >
-              Dismiss note
-            </Button>
-          </div>
-        </div>
+      {canDismiss && (
+        <Button hierarchy="secondary" size="md" onPress={() => setMode('dismiss')}>
+          Dismiss
+        </Button>
       )}
-      {mode === 'view' && (mine || canDismiss) && (
-        <div className="flex justify-end gap-xl">
-          {mine && (
-            <Button hierarchy="link-gray" size="sm" onPress={() => setMode('edit')}>
-              Edit
-            </Button>
-          )}
-          {mine && (
-            <Button
-              hierarchy="link-gray"
-              size="sm"
-              isDisabled={remove.isPending}
-              onPress={() => remove.mutate(noteId, { onSuccess: () => void showToast('Note deleted') })}
-            >
-              Delete
-            </Button>
-          )}
-          {canDismiss && (
-            <Button hierarchy="link-color" size="sm" onPress={() => setMode('dismiss')}>
-              Dismiss
-            </Button>
-          )}
-        </div>
-      )}
-      {failure && <Text color="error-primary">{failure.message}</Text>}
+    </>
+  );
+  return (
+    <li aria-label={`Note by ${author}`}>
+      <NoteSection
+        title={title}
+        badge={
+          note.source === 'render_check' ? (
+            <Badge size="md" color="error">
+              Render mismatch
+            </Badge>
+          ) : (
+            <Badge size="md" color="orange">
+              Requested
+            </Badge>
+          )
+        }
+        actions={actions || undefined}
+        meta={
+          <>
+            {author} · <time dateTime={note.createdAt}>{timeAgo(note.createdAt, now)}</time>
+          </>
+        }
+        screenshots={note.attachments?.length ? <NoteImages attachments={note.attachments} /> : undefined}
+        footer={
+          <>
+            {mode === 'dismiss' && (
+              <div role="alertdialog" aria-label="Dismiss this note?" className="flex flex-col gap-lg rounded-lg border border-secondary bg-secondary p-xl">
+                <Text color="secondary">Dismissing it says the built node matches the design after all; the node goes back to its design changes only.</Text>
+                <div className="flex justify-end gap-lg">
+                  <Button hierarchy="secondary" size="sm" onPress={() => setMode('view')}>
+                    Cancel
+                  </Button>
+                  <Button
+                    hierarchy="primary"
+                    size="sm"
+                    loading={dismiss.isPending}
+                    onPress={() => dismiss.mutate(noteId, { onSuccess: () => void showToast('Note dismissed') })}
+                  >
+                    Dismiss note
+                  </Button>
+                </div>
+              </div>
+            )}
+            {failure && <Text color="error-primary">{failure.message}</Text>}
+          </>
+        }
+      >
+        {mode === 'edit' ? (
+          <form
+            noValidate
+            className="flex flex-col gap-lg"
+            onSubmit={event => {
+              event.preventDefault();
+              save();
+            }}
+          >
+            <Textarea
+              aria-label="Edit note"
+              autoFocus
+              rows={4}
+              value={body}
+              onChange={setBody}
+              isInvalid={submitted && !!error}
+              hint={submitted && error ? error : `${body.trim().length}/${NOTE_MAX}`}
+            />
+            <div className="flex justify-end gap-lg">
+              <Button hierarchy="secondary" size="sm" onPress={() => (setMode('view'), setBody(note.body ?? ''), setSubmitted(false))}>
+                Cancel
+              </Button>
+              <Button hierarchy="primary" size="sm" type="submit" loading={edit.isPending}>
+                Save note
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <p className="whitespace-pre-wrap break-words">{note.body}</p>
+        )}
+      </NoteSection>
     </li>
   );
 }
@@ -504,14 +524,21 @@ function NoteItem({ fileKey, note, mine, canDismiss, now }: { fileKey: string; n
 function NoteList({ fileKey, notes, role, now }: { fileKey: string; notes: readonly NodeNote[]; role: SessionRole; now: number }) {
   const me = useSessionAuthor();
   return (
-    <section aria-label="Open notes" className="flex flex-col gap-lg">
-      <Text as="h3" size="lg" weight="semibold">
-        Open notes
-      </Text>
-      <ul className="flex flex-col gap-lg">
-        {notes.map(note => {
+    <section aria-label="Open notes">
+      <ul className="flex flex-col gap-3xl">
+        {notes.map((note, i) => {
           const mine = !!me && note.author === me;
-          return <NoteItem key={note.noteId} fileKey={fileKey} note={note} mine={mine} canDismiss={mine || role === 'agent'} now={now} />;
+          return (
+            <NoteItem
+              key={note.noteId}
+              fileKey={fileKey}
+              note={note}
+              title={i === 0 ? `Open notes (${notes.length})` : `Note ${i + 1}`}
+              mine={mine}
+              canDismiss={mine || role === 'agent'}
+              now={now}
+            />
+          );
         })}
       </ul>
     </section>
