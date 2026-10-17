@@ -118,7 +118,7 @@ test('unavailable instance values leave explicit unknown variants and component 
 
 /* ---- Mock API server: implements the v3 plugin routes in memory, with v3 problem errors. ---- */
 const CAPTURE_VERSION=2; // server constant: rows stamped below this are reported stale by …/exists
-const HASHES='/v3/files/FILE/hashes',EXISTS='/v3/files/FILE/exists',SYNC='/v3/files/FILE/sync';
+const HASHES='/v3/files/FILE/hashes',EXISTS='/v3/files/FILE/exists',SYNC='/v3/files/FILE/sync',NEEDED='/v3/files/FILE/screens/references-needed';
 const PROBLEMS={
  unauthorized:[401,'Missing bearer token','Send Authorization: Bearer <plugin token>.'],
  invalid_token:[401,'Invalid bearer token','Use a plugin token from RDS_PLUGIN_TOKENS (or the local tokens file).'],
@@ -126,11 +126,14 @@ const PROBLEMS={
  invalid_parameter:[400,'Invalid parameter','Pass ?under=<scope root node id>.'],
  invalid_body:[400,'Invalid request body','Check the body against GET /v3/openapi.json.'],
  route_not_found:[404,'Route not found','See GET /v3/openapi.json for the routes.'],
+ images_disabled:[409,'Images disabled','Send the request without images, or have an agent set storeImages to true with update_file_settings.'],
 };
 function problemBody(code,detail,hint){const [status,title,defaultHint]=PROBLEMS[code];return {type:'https://example.test/errors#'+code,title,status,code,detail,hint:hint===undefined?defaultHint:hint};}
 /* `settings`: the file settings `…/hashes` returns (default `{trackLibraryComponents:true}`; null = an older server without them).
-   `tokensMap: false` = an older server whose `?under=tokens` returns the root hash under "tokens" instead of the token map. */
-function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap}={}) {
+   `tokensMap: false` = an older server whose `?under=tokens` returns the root hash under "tokens" instead of the token map.
+   `screens`: the `{ nodeId, designVersion }` list …/screens/references-needed returns (omitted = an older server without
+   the screen routes: 404); `refuseImages: true` answers every reference upload with images_disabled. */
+function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap,screens,refuseImages}={}) {
  const calls=[];const nodes=new Map();// key fileKey|nodeId -> row
  const json=(status,body)=>({ok:status<300,status,json:async()=>body});
  const problem=(code,detail,hint)=>{const body=problemBody(code,detail,hint);return json(body.status,body);};
@@ -140,6 +143,16 @@ function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap}=
   const u=new URL(url);const body=init.body?JSON.parse(init.body):null;
   calls.push({path:u.pathname,method:init.method,query:Object.fromEntries(u.searchParams),body,auth:init.headers.Authorization,client:init.headers['X-RDS-Client'],bytes:init.body?init.body.length:0});
   if(fail&&fail(u.pathname,calls.length))throw new TypeError('Failed to fetch');
+  const sm=screens&&/^\/v3\/files\/([^/]+)\/screens\/(?:(references-needed)|([^/]+)\/reference)$/.exec(u.pathname);
+  if(sm){
+   if(init.headers.Authorization!=='Bearer '+token)return problem('invalid_token','The bearer token is not recognized.');
+   if(sm[2]&&init.method==='GET')return json(200,{screens:screens.map(s=>({...s}))});
+   if(sm[3]&&init.method==='PUT'){
+    if(!body||typeof body.designVersion!=='string'||typeof body.image!=='string'||Object.keys(body).length!==2)return problem('invalid_body','Body must be { designVersion, image }.');
+    if(refuseImages)return problem('images_disabled','File FILE does not store images (settings.storeImages is false).');
+    return json(200,{fileKey:decodeURIComponent(sm[1]),nodeId:decodeURIComponent(sm[3]),designVersion:body.designVersion,current:true});}
+   return problem('route_not_found',`No route ${init.method} ${u.pathname}.`);
+  }
   const m=/^\/v3\/files\/([^/]+)\/(hashes|exists|sync)$/.exec(u.pathname);
   if(!m)return problem('route_not_found',`No route ${init.method} ${u.pathname}.`);
   if(!init.headers.Authorization)return problem('unauthorized','Missing bearer token.');
@@ -279,7 +292,7 @@ test('every request goes to a v3 plugin route with X-RDS-Client: plugin/<package
  const f=fixture();const lib=library(f);lib.instance('1:5',f.root,lib.define('8:1','Button'));
  const server=mockServer();const r=runtime({...f,api:lib.api},server,SETTINGS);await r.send({type:'upload',fileUrl:FILE});
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
- same(server.calls.map(c=>[c.method,c.path]),[['GET',HASHES],['POST',EXISTS],['POST',SYNC],['GET',HASHES]]);// the last GET is ?under=tokens (no variables, no token upload)
+ same(server.calls.map(c=>[c.method,c.path]),[['GET',HASHES],['POST',EXISTS],['POST',SYNC],['GET',HASHES],['GET',NEEDED]]);// ?under=tokens (no variables, no token upload), then the screens
  assert.ok(server.calls.every(c=>c.client==='plugin/'+PLUGIN_VERSION),JSON.stringify(server.calls.map(c=>c.client)));
  const src=mockServer();await P.sync(src.fetch,CFG,await P.capture(f.api,f.root,'FILE'));
  assert.ok(src.calls.length&&src.calls.every(c=>c.client==='plugin/'+PLUGIN_VERSION));
@@ -471,7 +484,7 @@ test('instance whose main lives on another page: the main is lazily loaded and i
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
  const done=r.messages.find(m=>m.type==='synced');
  same(done.mains,{resolved:2,scanned:2,present:0,stale:0,unresolved:0,scannedNodes:5,librarySkipped:0});// Button(3 incl. nested instance)+Icon(2)
- same(server.calls.map(c=>[c.method,c.path]),[['GET',HASHES],['POST',EXISTS],['POST',EXISTS],['POST',SYNC],['GET',HASHES]]);
+ same(server.calls.map(c=>[c.method,c.path]),[['GET',HASHES],['POST',EXISTS],['POST',EXISTS],['POST',SYNC],['GET',HASHES],['GET',NEEDED]]);
  same(server.calls[1].body,{fileKey:'FILE',nodeIds:['8:1']});same(server.calls[2].body,{fileKey:'FILE',nodeIds:['9:1']});
  same([...server.nodes.keys()].sort(),['FILE|1:1','FILE|1:2','FILE|1:5','FILE|1:6','FILE|8:1','FILE|8:2','FILE|8:3','FILE|9:1','FILE|9:2']);
  for(const [id,main,parent] of [['1:5','8:1','1:1'],['1:6','8:1','1:1'],['8:3','9:1','8:1']]){const row=server.nodes.get('FILE|'+id);assert.equal(row.isInstance,true);assert.equal(row.mainComponentId,main);assert.equal(row.parentId,parent);}
@@ -482,7 +495,7 @@ test('instance whose main lives on another page: the main is lazily loaded and i
  // Second sync: both mains are present -> nothing re-scanned, nothing re-uploaded.
  lib.loads.length=0;server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
  const again=r.messages.find(m=>m.type==='synced');same(again.mains,{resolved:1,scanned:0,present:1,stale:0,unresolved:0,scannedNodes:0,librarySkipped:0});// Icon is only reachable through Button, which is present
- same(server.calls.map(c=>c.path),[HASHES,EXISTS,HASHES]);same(lib.loads,[]);
+ same(server.calls.map(c=>c.path),[HASHES,EXISTS,HASHES,NEEDED]);same(lib.loads,[]);
  // Editing the present main is NOT picked up here (its own scope sync does that); a deleted row is re-scanned.
  server.nodes.get('FILE|8:1').deletedAt='now';server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
  same(r.messages.find(m=>m.type==='synced').mains,{resolved:2,scanned:1,present:1,stale:0,unresolved:0,scannedNodes:3,librarySkipped:0});same(lib.loads,['8:1']);// Button re-scanned, Icon found present
@@ -516,7 +529,7 @@ test('a main stored before instance support is re-scanned and backfills its inst
  const done=r.messages.find(m=>m.type==='synced');
  same(done.mains,{resolved:2,scanned:1,present:1,stale:1,unresolved:0,scannedNodes:3,librarySkipped:0});// stale Button re-scanned; Icon present and current
  same(lib.loads,['8:1']);// one load for the two Button placements (dedup)
- same(server.calls.map(c=>c.path),[HASHES,EXISTS,EXISTS,SYNC,HASHES]);
+ same(server.calls.map(c=>c.path),[HASHES,EXISTS,EXISTS,SYNC,HASHES,NEEDED]);
  same(server.calls[1].body.nodeIds,['8:1']);same(server.calls[2].body.nodeIds,['9:1']);// Icon is re-checked only because Button was re-scanned
  const placement=server.nodes.get('FILE|8:3');// the missing instance placement is backfilled
  assert.equal(placement.isInstance,true);assert.equal(placement.mainComponentId,'9:1');assert.equal(placement.parentId,'8:1');
@@ -524,7 +537,7 @@ test('a main stored before instance support is re-scanned and backfills its inst
  // Third sync: everything is current again, so nothing is re-scanned.
  lib.loads.length=0;server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
  same(r.messages.find(m=>m.type==='synced').mains,{resolved:1,scanned:0,present:1,stale:0,unresolved:0,scannedNodes:0,librarySkipped:0});
- same(server.calls.map(c=>c.path),[HASHES,EXISTS,HASHES]);same(lib.loads,[]);
+ same(server.calls.map(c=>c.path),[HASHES,EXISTS,HASHES,NEEDED]);same(lib.loads,[]);
 });
 test('a problem while re-uploading a stale main is shown as title and hint; the stale row is left as it was',async()=>{
  const f=fixture();const lib=library(f);lib.instance('1:5',f.root,lib.define('8:1','Button'));
@@ -893,7 +906,7 @@ test('tokens: a sync uploads the tokens scope as a second pass; a re-sync re-sen
  const f=fixture();const t=tokenScene(f);const server=mockServer();const r=runtime(f,server,SETTINGS);
  await r.send({type:'upload',fileUrl:FILE});
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
- same(server.calls.map(c=>[c.path,c.query.under||c.body.rootNodeId]),[[HASHES,'1:1'],[SYNC,'1:1'],[HASHES,'tokens'],[SYNC,'tokens']]);
+ same(server.calls.map(c=>[c.path,c.query.under||c.body.rootNodeId]),[[HASHES,'1:1'],[SYNC,'1:1'],[HASHES,'tokens'],[SYNC,'tokens'],[NEEDED,'1:1']]);
  const done=r.messages.find(m=>m.type==='synced');
  same(tokenCounts(done.tokens),{tracked:8,changed:0,added:8,unchanged:0,deleted:0});assert.equal(done.tokens.batches,1);
  same(tokenSyncs(server)[0].body.upserts.map(u=>u.nodeId),['tokens',COL('a'),COL('b'),COL('c'),...TOKEN_IDS]);
@@ -1010,4 +1023,110 @@ test('tokens: variables bound inside a scanned main component are collected',asy
  const server=mockServer();const r=runtime({...f,api:lib.api},server,SETTINGS);await r.send({type:'upload',fileUrl:FILE});
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
  assert.ok(server.nodes.get('FILE|'+T('7')),'brand/red is used only inside the main');
+});
+
+/* ---- Screen references: configured screens are exported at 1x and uploaded after the layer and token passes. ---- */
+const REF=id=>'/v3/files/FILE/screens/'+encodeURIComponent(id)+'/reference';
+const refPuts=server=>server.calls.filter(c=>c.method==='PUT');
+/* Adds exportable screens under the fixture root; `exports` records every exportAsync call in order. */
+function screenScene(f,specs) {
+ const exports=[];
+ for(const [id,extra={}] of specs){
+  const s=node(id,extra.type||'FRAME',{parent:f.root,children:[],width:extra.width||390,height:extra.height||844,...extra.props,
+   exportAsync:async settings=>{exports.push({id,settings});if(extra.fail)throw new Error(extra.fail);return extra.bytes||new Uint8Array([137,80,78,71,id.length]);}});
+  f.root.children.push(s);f.registry.set(id,s);
+ }
+ return exports;
+}
+const b64=bytes=>Buffer.from(bytes).toString('base64');
+test('screens: an empty references-needed list exports and uploads nothing',async()=>{
+ const f=fixture();const exports=screenScene(f,[['1:5']]);const server=mockServer({screens:[]});const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ const done=r.messages.find(m=>m.type==='synced');
+ same(done.references,{needed:0,updated:0,skipped:0,warnings:[]});
+ assert.equal(exports.length,0);same(refPuts(server),[]);
+ assert.equal(server.calls.filter(c=>c.path===NEEDED).length,1);same(server.calls.find(c=>c.path===NEEDED).query,{under:'1:1'});
+ assert.ok(!r.messages.some(m=>m.type==='progress'&&m.phase==='Exporting screens'));
+});
+test('screens: two configured screens are exported as 1x PNGs and uploaded one at a time with their designVersion',async()=>{
+ const f=fixture();const exports=screenScene(f,[['1:5'],['1:6',{type:'COMPONENT'}],['1:7']]);
+ const server=mockServer({screens:[{nodeId:'1:5',designVersion:'v-five'},{nodeId:'1:6',designVersion:'v-six'}]});const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ same(exports.map(e=>e.id),['1:5','1:6']);
+ assert.ok(exports.every(e=>C.stable(e.settings)===C.stable({format:'PNG',constraint:{type:'SCALE',value:1}})));
+ const puts=refPuts(server);same(puts.map(c=>c.path),[REF('1:5'),REF('1:6')]);
+ same(puts.map(c=>c.body),[{designVersion:'v-five',image:b64([137,80,78,71,3])},{designVersion:'v-six',image:b64([137,80,78,71,3])}]);
+ assert.ok(puts.every(c=>c.auth==='Bearer secret'&&c.client==='plugin/'+PLUGIN_VERSION));
+ // The reference pass runs after the layer and token passes.
+ const order=server.calls.map(c=>c.path);assert.ok(order.lastIndexOf(SYNC)<order.indexOf(NEEDED));
+ same(r.messages.filter(m=>m.type==='progress'&&m.phase==='Exporting screens').map(m=>[m.count,m.total]),[[0,2],[1,2],[2,2]]);
+ const done=r.messages.find(m=>m.type==='synced');same(done.references,{needed:2,updated:2,skipped:0,warnings:[]});
+});
+test('screens: figma.base64Encode is used when the runtime provides it',async()=>{
+ const f=fixture();screenScene(f,[['1:5']]);f.api.base64Encode=bytes=>'encoded:'+bytes.length;
+ const server=mockServer({screens:[{nodeId:'1:5',designVersion:'v1'}]});const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ same(refPuts(server).map(c=>c.body.image),['encoded:5']);
+});
+test('screens: missing, wrong-type, oversize and failed exports are skipped with non-blocking warnings; the rest upload',async()=>{
+ const f=fixture();
+ const exports=screenScene(f,[['1:5'],['1:6',{width:8193,height:600}],['1:7',{props:{absoluteRenderBounds:{x:0,y:0,width:400,height:9000}}}],
+  ['1:8',{bytes:new Uint8Array(P.EXPORT_MAX_BYTES+1)}],['1:9',{type:'GROUP'}],['1:10',{fail:'Export failed'}]]);
+ const list=['1:404','1:6','1:7','1:8','1:9','1:10','1:5'].map(nodeId=>({nodeId,designVersion:'v:'+nodeId}));
+ const server=mockServer({screens:list});const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ same(exports.map(e=>e.id),['1:8','1:10','1:5']);// oversize sides are refused before exporting
+ same(refPuts(server).map(c=>[c.path,c.body.designVersion]),[[REF('1:5'),'v:1:5']]);
+ const done=r.messages.find(m=>m.type==='synced');assert.equal(done.references.updated,1);assert.equal(done.references.skipped,6);
+ const warnings=done.warnings.filter(w=>w.startsWith('[screen] '));assert.equal(warnings.length,6);
+ assert.match(warnings[0],/1:404: screen no longer exists/);
+ assert.match(warnings[1],/\(1:6\) is 8193 × 600 px, over 8192 px per side/);
+ assert.match(warnings[2],/\(1:7\) is 400 × 9000 px/);
+ assert.match(warnings[3],/\(1:8\) exports to 5\.0 MB, over 5 MB/);
+ assert.match(warnings[4],/1:9: screen is a GROUP, not a frame, component or instance/);
+ assert.match(warnings[5],/\(1:10\) could not be exported: Export failed/);
+ same(r.messages.filter(m=>m.type==='progress'&&m.phase==='Exporting screens').at(-1),{type:'progress',phase:'Exporting screens',count:7,total:7});
+});
+test('screens: an older server without the screen routes (404) is a silent no-op',async()=>{
+ const f=fixture();const exports=screenScene(f,[['1:5']]);const server=mockServer();const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ const done=r.messages.find(m=>m.type==='synced');assert.equal(done.references,null);
+ assert.equal(exports.length,0);same(refPuts(server),[]);assert.ok(!done.warnings.some(w=>w.startsWith('[screen] ')));
+});
+test('screens: other errors listing the screens fail the sync with the problem text',async()=>{
+ const f=fixture();screenScene(f,[['1:5']]);const server=mockServer({screens:[]});
+ const fetch=async(url,init)=>new URL(url).pathname===NEEDED?{ok:false,status:500,json:async()=>({title:'Internal error',status:500,code:'internal'})}:server.fetch(url,init);
+ const r=runtime(f,{...server,fetch},SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.match(r.messages.find(m=>m.type==='error').message,/Sync failed \(500\): Internal error\./);
+});
+test('screens: Cancel between exports stops before the next export',async()=>{
+ const f=fixture();const exports=screenScene(f,[['1:5'],['1:6'],['1:7']]);
+ const server=mockServer({screens:['1:5','1:6','1:7'].map(nodeId=>({nodeId,designVersion:'v'}))});const r=runtime(f,server,SETTINGS);
+ const post=r.api.ui.postMessage;r.api.ui.postMessage=m=>{post(m);if(m.type==='progress'&&m.phase==='Exporting screens'&&m.count===1)r.api.ui.onmessage({type:'cancel'});};
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.match(r.messages.find(m=>m.type==='error').message,/cancelled/);
+ same(exports.map(e=>e.id),['1:5']);same(refPuts(server).map(c=>c.path),[REF('1:5')]);
+ assert.equal(r.messages.filter(m=>m.type==='busy').at(-1).value,false);
+});
+test('screens: a file that stores no images stops the pass with one warning',async()=>{
+ const f=fixture();const exports=screenScene(f,[['1:5'],['1:6']]);
+ const server=mockServer({screens:['1:5','1:6'].map(nodeId=>({nodeId,designVersion:'v'})),refuseImages:true});const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ same(exports.map(e=>e.id),['1:5']);assert.equal(refPuts(server).length,1);
+ const done=r.messages.find(m=>m.type==='synced');assert.equal(done.references.updated,0);assert.equal(done.references.skipped,2);
+ same(done.warnings.filter(w=>w.startsWith('[screen] ')),['[screen] This file does not store images (file setting), so no screen references were uploaded.']);
+});
+test('screens: P.sync skips the reference pass without the Figma api or with references: false',async()=>{
+ const f=fixture();screenScene(f,[['1:5']]);const server=mockServer({screens:[{nodeId:'1:5',designVersion:'v'}]});
+ const snapshot=await P.capture(f.api,f.root,'FILE');
+ let out=await P.sync(server.fetch,CFG,snapshot);assert.equal(out.references,null);
+ out=await P.sync(server.fetch,CFG,snapshot,{api:f.api,tokens:false,references:false});assert.equal(out.references,null);
+ assert.ok(!server.calls.some(c=>c.path===NEEDED));
+ out=await P.sync(server.fetch,CFG,snapshot,{api:f.api,tokens:false});assert.equal(out.references.updated,1);
 });
