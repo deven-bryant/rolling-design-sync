@@ -398,3 +398,78 @@ The MCP server returns 25 results per listing call unless the call passes
 `limit` (`format=outline`: the whole outline, or `limit` lines); a result that ends with `More results: call again with cursor="…"` has
 more — repeat the call with that cursor and every other input unchanged. The CLI
 returns the API's default page (100) and follows every page with `--all`.
+
+### Render checks
+
+A render check compares the built screen with its Figma frame, pixel by pixel,
+on the API. RDS never starts one: someone requests it (the portal, or
+`request_render_check` / `rds-agent checks request`) and an agent or a CI job
+runs it where the app runs, with `rds-agent check`.
+
+**Setup, once per screen.** Pick the frame (usually a direct child of a scope
+section, e.g. `View=Files, Color Mode=Light`) and tell RDS where it renders:
+
+```bash
+node scripts/rds-agent.js screens set 2-1 --file-key AbC123 --route /files --width 1440 --height 900
+node scripts/rds-agent.js screens set 2-5 --file-key AbC123 --route /files --query theme=dark --theme dark
+```
+
+The viewport defaults to the frame's size; use one screen per viewport and
+theme. At its next sync the Figma plugin uploads the frame's reference image.
+Masks (rectangles in frame px that the comparison skips) and the threshold
+(default 1 % of pixels) are part of the same settings: `set_screen` /
+`PUT /v3/files/{fileKey}/screens/{nodeId}` with
+`"masks": [{ "x": 1180, "y": 16, "width": 240, "height": 32 }]`.
+
+**Run the requested checks.** In the app's repo, with the app running:
+
+```bash
+npm i -D playwright && npx playwright install chromium   # once
+node /path/to/rolling-design-sync/scripts/rds-agent.js check \
+  --file-key AbC123 --base-url http://localhost:3000 --requested
+```
+
+For each requested check it opens `base-url + route (+ query)` at the screen's
+viewport with reduced motion and a frozen clock, waits for network idle and web
+fonts, takes a viewport-sized PNG and submits it with the commit
+(`git rev-parse HEAD`). `--screen 2-1` requests a check of one screen and runs
+it. `--storage-state auth.json` signs the browser in (a Playwright storage
+state saved from a login). Exit code: `0` all passed, `1` a render mismatch,
+`2` an error. A mismatch adds a `render_check` note with the heatmap to the
+screen — fix it like any note (step 8 of [the clear loop](#the-clear-loop)),
+then request and run the check again.
+
+**Make the page deterministic.** The screenshot must match a static design:
+
+- **Fixture data.** Render the screen with the same data the design shows —
+  a seeded database, a mocked API or a fixture route — not live data.
+- **Masks** for what can't be fixed: avatars, ads, maps, clocks from the
+  server. Keep them small; masked pixels are never compared.
+- **Fonts.** Font rendering differs between machines: run checks in the same
+  image every time — Playwright's published Docker image
+  (`mcr.microsoft.com/playwright:v<version>-noble`, the version of your
+  `playwright` package) — and self-host the design's web fonts.
+- Interactive states (hover, open menus) are out of scope: check the screen as
+  it first renders.
+
+**In CI** (GitHub Actions), after the app is built:
+
+```yaml
+render-checks:
+  runs-on: ubuntu-latest
+  container: mcr.microsoft.com/playwright:v1.64.1-noble   # = your playwright version
+  env:
+    RDS_API_BASE_URL: https://rds.example.com
+    RDS_AGENT_TOKEN: ${{ secrets.RDS_AGENT_TOKEN }}
+    RDS_WORKER: ci
+  steps:
+    - uses: actions/checkout@v5
+    - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+    - run: npm ci && npm run build
+    - run: npm run start & npx --yes wait-on http://localhost:3000
+    - run: npx --yes @rolling-design-sync/agent-cli check --file-key AbC123 --base-url http://localhost:3000 --requested
+```
+
+The job fails on a mismatch or an error; the results, heatmaps and notes are in
+the portal. `rds-agent check --help` lists every flag
+([scripts/README.md](../scripts/README.md#render-checks-rds-agent-check)).

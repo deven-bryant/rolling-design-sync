@@ -6,7 +6,8 @@ Intended for non-interactive use from a worker session: list what changed in
 Figma since it was last built, lease it, and clear it once it's committed.
 
 From a checkout of the repository, run it as `node scripts/rds-agent.js` —
-nothing to install — or use the npm package (`npx @rolling-design-sync/agent-cli`,
+nothing to install (only `check` needs
+[Playwright](#render-checks-rds-agent-check)) — or use the npm package (`npx @rolling-design-sync/agent-cli`,
 binary `rds-agent`). New to Rolling
 Design Sync? Start with the [quickstart](https://github.com/deven-bryant/rolling-design-sync/blob/main/docs/quickstart.md).
 
@@ -112,9 +113,65 @@ checklist. They return every match from the cursor on, so `--all` is not needed.
 `--limit` it is one page of that many lines, and `--all` follows the API's
 `X-RDS-Next-Cursor` header and joins the pages.
 
+## Render checks: `rds-agent check`
+
+Hand-written beside the generated commands: screenshots screens of the built
+app and submits them as render check results (the API compares them with the
+screens' Figma references). The only command that needs more than Node:
+[Playwright](https://playwright.dev), an optional peer dependency loaded only by
+`check`, from the current project or the CLI's own folder:
+
+```bash
+npm i -D playwright && npx playwright install chromium
+```
+
+```bash
+rds-agent check --file-key AbC123 --base-url http://localhost:3000 --requested
+rds-agent check --file-key AbC123 --base-url http://localhost:3000 --screen 2-1
+```
+
+1. `--requested` runs every requested check of the file
+   (`checks ls --status requested`); `--screen <nodeId>` requests a check of
+   that screen first (`checks request`), then runs it.
+2. Each check carries its screen's settings: `route`, `viewport`, `theme`,
+   `query`.
+3. Playwright opens `base-url + route (+ query)` in a fresh context at the
+   viewport size (device scale 1), `reducedMotion: 'reduce'`, `colorScheme`
+   from a `dark` / `light` theme and the clock frozen at
+   2025-01-01T12:00:00Z (`page.clock`); it waits for network idle and
+   `document.fonts.ready`, then takes a viewport-sized PNG (not full page).
+4. It submits the PNG (`checks submit`) with the commit ref and source; a page
+   that fails to load is submitted as the check's `error`.
+5. It prints each result — status, score vs limit, differing regions — and a
+   total:
+
+```text
+2:1  passed  score 0.2% <= limit 1%  0c3d…
+2:5  mismatch  score 4.5% > limit 1%  9a1e…
+  region 10,20 300x40 (1234 px)
+2 checks: 1 passed, 1 mismatch, 0 errors
+```
+
+| Flag | Description |
+|------|-------------|
+| `--file-key` | **Required.** The Figma file key. |
+| `--base-url` | **Required.** Where the built app runs. |
+| `--screen <nodeId>` / `--requested` | **One required.** Which checks to run. |
+| `--storage-state <file>` | Playwright storage state (cookies, local storage) for a signed-in app. |
+| `--browser` | `chromium` (default), `firefox` or `webkit`. |
+| `--timeout <ms>` | Per page: navigation, network idle and fonts. Default 30000. |
+| `--commit-ref` | Default: `git rev-parse HEAD` when run in a git repo. |
+| `--source` | Default: `$RDS_WORKER`, else `rds-agent check`. |
+
+Exit code `0` when every check passed (or none was requested), `1` on any
+render mismatch, `2` on any error (usage, API, missing Playwright, a page that
+did not render) — usable as a CI step. Setup, fixture data, masks and a GitHub
+Actions example: [docs/agents.md, "Render checks"](https://github.com/deven-bryant/rolling-design-sync/blob/main/docs/agents.md#render-checks).
+
 ## Errors
 
-Exit code is `0` on success (and for `--help`) and `1` on usage or API errors.
+Exit code is `0` on success (and for `--help`) and `1` on usage or API errors
+(`check`: see above).
 v3 errors are problem documents; the CLI prints them on stderr as:
 
 ```text
