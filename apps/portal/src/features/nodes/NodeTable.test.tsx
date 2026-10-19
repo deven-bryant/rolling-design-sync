@@ -339,6 +339,26 @@ describe('NodeTable notes', () => {
     expect(within(row('1:3')).getByText('Team View')).toBeTruthy();
   });
 
+  it('nests each selected scope’s children under it and names their scope', async () => {
+    const other = node('2:1', { name: 'Screens', type: 'SECTION' });
+    const nodes = [scope, node('1:5', { name: 'KV Badge', parentId: '1:1' }), other, node('2:5', { name: 'Portal', parentId: '2:1' })];
+    renderTable(
+      { scopeId: '1:1,2:1' },
+      treeRoutes(call => {
+        if (call.path === `/v3/files/${FILE}/scopes`)
+          return { fileKey: FILE, scopes: [{ nodeId: '1:1', name: 'Team View', counts: { dirty: 1 } }, { nodeId: '2:1', name: 'Screens', counts: { dirty: 1 } }] };
+        if (call.path === pagePath && call.query.get('under') === '1:1,2:1') return { fileKey: FILE, nodes, nextCursor: null, total: 4 };
+        return undefined;
+      }),
+    );
+    await screen.findByText('KV Badge');
+    expect(rowIds()).toEqual(['1:1', '1:5', '2:1', '2:5']);
+    expect(indent('1:5')).toBe('calc(var(--spacing-2xl) * 1)');
+    expect(indent('2:5')).toBe('calc(var(--spacing-2xl) * 1)');
+    expect(within(row('1:5')).getByText('Team View')).toBeTruthy();
+    expect(within(row('2:5')).getByText('Screens')).toBeTruthy();
+  });
+
   it('shows a file icon in the Notes column for nodes with open notes', async () => {
     const base = treeRoutes();
     const routes: Route = call => {
