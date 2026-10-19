@@ -355,7 +355,8 @@ follows the OS `prefers-color-scheme`, live.
   components): the screen's status badge (Not set up · Building · Ready ·
   Requested · Passed · Render mismatch · Error · Stale), KV badges (Checked ·
   Commit · Source · Limit), *Side by side* (designed and implemented images,
-  differing regions outlined) and *Heatmap* tabs, the score and regions.
+  differing regions outlined) and *Heatmap* tabs, and *Diff Status* (Pixel
+  diff, Regions, then each differing region).
   Images come from `GET …/attachments/:id` (thumbnails first, full image in a
   lightbox). **Request check** (any session) → `POST
   …/screens/:nodeId/checks`; **Check settings** (agents) edits route,
