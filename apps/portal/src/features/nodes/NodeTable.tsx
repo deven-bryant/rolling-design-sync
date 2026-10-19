@@ -344,9 +344,9 @@ interface TreeRowProps {
   scope?: string;
 }
 
-/** The scope a row belongs to: the nearest scope root on its path, else its parent row's. */
+/** The scope a row belongs to: the nearest scope root on its path (compact rows: itself or its parent), else its parent row's. */
 function scopeOf(node: NodeItem, scopeNames: ReadonlyMap<string, string>, inherited?: string): string | undefined {
-  const path = node.path ?? [node.nodeId ?? ''];
+  const path = node.path ?? [node.parentId ?? '', node.nodeId ?? ''];
   for (let i = path.length - 1; i >= 0; i--) {
     const name = scopeNames.get(path[i] ?? '');
     if (name) return name;
@@ -470,8 +470,12 @@ function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
   const under = params.under as string | undefined;
   const tree = params.depth === 1;
   const nodes = query.data?.nodes ?? [];
-  const root = tree && page === 1 ? nodes.find(n => n.nodeId === under) : undefined;
-  const rest = tree ? nodes.filter(n => n.nodeId !== under) : nodes;
+  const unders = splitUnder(under);
+  const roots = tree && page === 1 ? nodes.filter(n => unders.includes(n.nodeId ?? '')) : [];
+  const rootIds = new Set(roots.map(r => r.nodeId));
+  const rest = tree ? nodes.filter(n => !unders.includes(n.nodeId ?? '')) : nodes;
+  const childrenOf = (id?: string) => (roots.length > 1 ? rest.filter(n => n.parentId === id) : rest);
+  const orphans = roots.length > 1 ? rest.filter(n => !rootIds.has(n.parentId ?? undefined)) : [];
   const depth = tree && page > 1 ? 1 : 0;
   const nextCursor = query.data?.nextCursor ?? null;
   const total = query.data?.total;
@@ -482,7 +486,11 @@ function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
   if (query.isPending) body = <StatusRow>Loading nodes…</StatusRow>;
   else if (query.isError) body = <StatusRow>Couldn’t load nodes: {errorText(query.error)}</StatusRow>;
   else if (!nodes.length) body = <StatusRow>No nodes match the filters.</StatusRow>;
-  else if (root) body = <TreeRow node={root} depth={0} preloaded={rest} defaultExpanded />;
+  else if (roots.length)
+    body = [
+      ...roots.map(r => <TreeRow key={r.nodeId} node={r} depth={0} preloaded={childrenOf(r.nodeId)} defaultExpanded />),
+      ...orphans.map(n => <TreeRow key={n.nodeId} node={n} depth={0} />),
+    ];
   else body = rest.map(n => <TreeRow key={n.nodeId} node={n} depth={depth} />);
 
   const onPageChange = async (next: number) => {
