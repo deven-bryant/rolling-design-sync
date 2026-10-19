@@ -83,8 +83,8 @@ describe('render check section', () => {
     const dialog = within(await screen.findByRole('dialog'));
     const section = within(await dialog.findByRole('group', { name: /Render check/ }));
     expect(await section.findByText('4b11b44')).toBeTruthy();
-    expect(section.getAllByRole('definition').map(d => d.textContent)).toEqual(['2 hours ago', '4b11b44', 'ci-playwright', '1%']);
-    expect(section.getByText('3.4% of pixels differ · 1 region')).toBeTruthy();
+    expect(section.getAllByRole('definition').map(d => d.textContent)).toEqual(['2 hours ago', '4b11b44', 'ci-playwright', '1%', '3.4%', '1']);
+    expect(section.getByRole('heading', { name: 'Diff Status' })).toBeTruthy();
     expect(section.getByText('100 × 50 px at 20, 10')).toBeTruthy();
     const implemented = section.getByRole('button', { name: 'View Implemented' });
     expect(implemented.querySelector('img')?.getAttribute('src')).toBe(`/v3/files/${FILE}/attachments/built?size=thumb`);

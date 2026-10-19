@@ -1,7 +1,7 @@
 import { Button } from '../../Button';
 import { sampleImage } from '../../Lightbox/sample';
 import { inBothThemes, type GalleryEntry } from '../../primitives';
-import { RenderCheck, RenderCheckHeader, type RenderCheckProps, type RenderCheckStatus } from '.';
+import { DiffStatus, RenderCheck, RenderCheckHeader, type RenderCheckProps, type RenderCheckStatus } from '.';
 
 const meta = [
   { label: 'Checked', value: '2h ago' },
@@ -23,7 +23,7 @@ const mismatch = (view: RenderCheckProps['view']): RenderCheckProps => ({
     { x: 40, y: 0, width: 260, height: 24 },
     { x: 40, y: 170, width: 260, height: 18 },
   ],
-  summary: '3.4% of pixels differ · 2 regions',
+  diff: { score: '3.4%', regions: 2 },
   details: ['260 × 24 px at 40, 0', '260 × 18 px at 40, 170'],
   actions: (
     <>
@@ -50,5 +50,6 @@ export default {
     { figma: 'Property 1=Heatmap', render: () => <RenderCheck {...mismatch('heatmap')} /> },
     ...messages.map(([status, message]) => ({ figma: `Status=${status}`, render: () => <RenderCheck status={status} message={message} /> })),
     { figma: 'Render Check Header · Variant2', render: () => <RenderCheckHeader meta={meta} /> },
+    { figma: 'Diff Status', render: () => <DiffStatus score="3.4%" regions={2} details={['260 × 24 px at 40, 0', '260 × 18 px at 40, 170']} /> },
   ]),
 } satisfies GalleryEntry;

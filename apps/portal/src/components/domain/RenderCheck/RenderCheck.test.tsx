@@ -20,14 +20,16 @@ describe('RenderCheck', () => {
         implemented={img('/built')}
         heatmap={img('/heat')}
         regions={[{ x: 20, y: 10, width: 100, height: 50 }]}
-        summary="3.4% of pixels differ · 1 region"
+        diff={{ score: '3.4%', regions: 1 }}
         details={['100 × 50 px at 20, 10']}
         actions={<button type="button">Request check</button>}
       />,
     );
     const section = screen.getByRole('group', { name: /Render check/ });
     expect(within(section).getByText('Render mismatch')).toBeTruthy();
-    expect(screen.getAllByRole('term').map(t => t.textContent)).toEqual(['Checked', 'Commit']);
+    expect(screen.getAllByRole('term').map(t => t.textContent)).toEqual(['Checked', 'Commit', 'Pixel diff', 'Regions']);
+    const diff = within(screen.getByRole('heading', { name: 'Diff Status' }).parentElement as HTMLElement);
+    expect(diff.getAllByRole('definition').map(d => d.textContent)).toEqual(['3.4%', '1']);
     expect(screen.getByRole('tab', { name: 'Side by side' }).getAttribute('aria-selected')).toBe('true');
     expect(screen.getByRole('button', { name: 'View Designed' })).toBeTruthy();
     const region = container.querySelector('[data-region]') as HTMLElement;

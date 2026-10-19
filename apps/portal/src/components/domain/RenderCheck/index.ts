@@ -1,9 +1,11 @@
 export {
+  DiffStatus,
   RenderCheck,
   RenderCheckBadge,
   RenderCheckHeader,
   renderCheckColors,
   renderCheckLabels,
+  type DiffStatusProps,
   type RenderCheckBadgeProps,
   type RenderCheckHeaderProps,
   type RenderCheckImage,
