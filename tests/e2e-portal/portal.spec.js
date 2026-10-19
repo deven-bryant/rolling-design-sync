@@ -363,7 +363,8 @@ test('an agent requests a render check; the submitted mismatch shows live with i
   await submitCheck(fileKey, await png(40));
   await expect(check).toContainText('Render mismatch');
   await expect(check).toContainText('e2e1234');
-  await expect(check).toContainText('1 region');
+  await expect(check.getByRole('heading', { name: 'Diff Status' })).toBeVisible();
+  await expect(check).toContainText('Regions1');
   await expect(node.getByRole('group', { name: 'Status' })).toContainText('render');
   await expect.poll(() => loaded(check.getByRole('button', { name: 'View Implemented' }).locator('img'))).toBe(true);
   await check.getByRole('tab', { name: 'Heatmap' }).click();
