@@ -183,9 +183,7 @@ export function RenderCheckPanel({ fileKey, node, canAct, now }: { fileKey: stri
       heatmap={image(check?.heatmap)}
       regions={regions}
       message={scored && status !== 'stale' ? undefined : message}
-      summary={
-        scored ? `${formatScore(check?.score)} of pixels differ · ${regions.length} ${regions.length === 1 ? 'region' : 'regions'}` : undefined
-      }
+      diff={scored ? { score: formatScore(check?.score), regions: regions.length } : undefined}
       details={regions.map(r => `${r.width} × ${r.height} px at ${r.x}, ${r.y}`)}
       actions={
         <>

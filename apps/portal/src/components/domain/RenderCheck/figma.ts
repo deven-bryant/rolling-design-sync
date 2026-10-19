@@ -22,8 +22,9 @@ export const figmaRenderCheck = {
     'Horizontal tabs': 'Tabs type="underline" size="md" fullWidth: Side by side · Heatmap',
     Images: 'two Shots (flex-1, gap-xxs, px-xl): Designed · Implemented, ImageThumbnail rounded-md border-secondary',
     'Diff region': 'regions outlined on the implemented image: border-error, bg-error-solid/15, rounded-xxs',
-    'Render Check Footer': 'summary (text-sm semibold primary) · details bullets (text-sm tertiary, gap-xs)',
-    Actions: 'Check settings (Button secondary) · Request check (Button primary), right-aligned, gap-lg',
+    'Render Check Footer': 'flex-col gap-xl: Diff Status, then Actions',
+    'Diff Status': 'DiffStatus: "Diff Status" (text-md semibold secondary), Pixel diff / Regions labels (text-sm tertiary) beside semibold values (gap-x-md), region bullets; gap-xxs',
+    Actions: 'Check settings (Button secondary) · Request check (Button primary), right-aligned, gap-lg, px-3xl',
   },
-  instances: { 'KV Badge': '198:164176', 'Vertical Divider': '198:164213' },
+  instances: { 'KV Badge': '198:164176', 'Vertical Divider': '198:164213', 'Diff Status': '204:15343' },
 } as const;

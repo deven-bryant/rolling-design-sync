@@ -114,6 +114,44 @@ function Shot({ image, alt, caption, overlay }: { image: RenderCheckImage; alt: 
   );
 }
 
+export interface DiffStatusProps extends HTMLAttributes<HTMLDivElement> {
+  /** `Pixel diff`: e.g. `3.4%`. */
+  score: ReactNode;
+  /** `Regions`: how many differ. */
+  regions: ReactNode;
+  /** Bullets under the values (what differs). */
+  details?: readonly ReactNode[];
+  headingLevel?: 3 | 4;
+  ref?: Ref<HTMLDivElement>;
+}
+
+/**
+ * Figma `Diff Status`: `Diff Status` (text-md semibold text-secondary), then `Pixel diff` / `Regions` labels (text-sm
+ * tertiary) beside their values (semibold), then the differing regions as bullets; all `gap-xxs`.
+ */
+export function DiffStatus({ score, regions, details = [], headingLevel = 4, className, ...rest }: DiffStatusProps) {
+  return (
+    <div {...rest} className={cx('flex flex-col gap-xxs', className)}>
+      <Text as={`h${headingLevel}`} size="md" weight="semibold" color="secondary">
+        Diff Status
+      </Text>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-md text-sm text-tertiary">
+        <dt>Pixel diff</dt>
+        <dd className="font-semibold">{score}</dd>
+        <dt>Regions</dt>
+        <dd className="font-semibold">{regions}</dd>
+      </dl>
+      {details.length > 0 && (
+        <ul aria-label="Differing regions" className="flex list-inside list-disc flex-col text-sm text-tertiary">
+          {details.map((detail, i) => (
+            <li key={i}>{detail}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export interface RenderCheckProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
   status: RenderCheckStatus;
   meta?: RenderCheckHeaderProps['meta'];
@@ -127,9 +165,9 @@ export interface RenderCheckProps extends Omit<HTMLAttributes<HTMLDivElement>, '
   implemented?: RenderCheckImage;
   heatmap?: RenderCheckImage;
   regions?: readonly RenderCheckRegion[];
-  /** `Render Check Footer`: e.g. `3.4% of pixels differ · 2 regions`. */
-  summary?: ReactNode;
-  /** Bullets under the summary (what differs). */
+  /** `Render Check Footer` › `Diff Status`: the score and region count of a scored result. */
+  diff?: { score: ReactNode; regions: ReactNode };
+  /** Bullets under the Diff Status values (what differs). */
   details?: readonly ReactNode[];
   /** Shown instead of the images when there is no result (not set up, building, requested, error). */
   message?: ReactNode;
@@ -155,7 +193,7 @@ export function RenderCheck({
   implemented,
   heatmap,
   regions = [],
-  summary,
+  diff,
   details = [],
   message,
   actions,
@@ -196,26 +234,15 @@ export function RenderCheck({
           </Tabs.Panel>
         </Tabs>
       )}
-      {(message != null || summary != null || details.length > 0 || actions != null) && (
-        <div className="flex flex-col gap-lg">
+      {(message != null || diff != null || actions != null) && (
+        <div className="flex flex-col gap-xl">
           {message != null && (
             <Text as="p" color="tertiary">
               {message}
             </Text>
           )}
-          {summary != null && (
-            <Text as="p" weight="semibold">
-              {summary}
-            </Text>
-          )}
-          {details.length > 0 && (
-            <ul aria-label="Differing regions" className="flex list-inside list-disc flex-col gap-xs text-sm text-tertiary">
-              {details.map((detail, i) => (
-                <li key={i}>{detail}</li>
-              ))}
-            </ul>
-          )}
-          {actions != null && <div className="flex flex-wrap items-center justify-end gap-lg">{actions}</div>}
+          {diff != null && <DiffStatus score={diff.score} regions={diff.regions} details={details} />}
+          {actions != null && <div className="flex flex-wrap items-center justify-end gap-lg px-3xl">{actions}</div>}
         </div>
       )}
       {children}
