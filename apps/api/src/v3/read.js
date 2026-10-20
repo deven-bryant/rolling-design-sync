@@ -604,12 +604,12 @@ function registerReadRoutes(app, { store, now, libraryLinks = null }) {
     const { fileKey } = address.resolveFile(request.params.fileKey, request.query.url);
     await trackedFile(fileKey);
     const scopes = await store.listScopes(fileKey);
-    const kinds = new Map((await store.listScopeKinds(fileKey)).map(k => [k.nodeId, k.kind]));
+    const off = new Set((await store.listScopeChecks(fileKey)).filter(k => !k.checks).map(k => k.nodeId));
     return {
       fileKey,
       scopes: scopes.map(s => ({
         nodeId: s.nodeId, ...scopeIdentity(s), deleted: s.deleted, figmaUrl: core.isTokenNodeId(s.nodeId) ? null : core.link(fileKey, s.nodeId),
-        lastSyncAt: s.lastSyncAt, lastSyncCounts: s.lastSyncCounts, counts: withClean(s.counts), kind: kinds.get(s.nodeId) || 'none',
+        lastSyncAt: s.lastSyncAt, lastSyncCounts: s.lastSyncCounts, counts: withClean(s.counts), checks: !core.isTokenNodeId(s.nodeId) && !off.has(s.nodeId),
       })),
     };
   });

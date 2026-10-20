@@ -58,6 +58,7 @@ const PROBES = Object.freeze({
     column('screen', 'mask_node_ids'), column('screen', 'node_map_id'), column('render_check', 'attribution'),
     table('scope_setting'), table('target_family'), constraint('attachment', 'attachment_kind_check', '%node_map%'),
   ),
+  '20261021000000_api_v3_scope_checks.sql': all(column('scope_setting', 'checks'), column('screen', 'excluded')),
 });
 
 /** The `*.sql` filenames in `dir`, in apply order. */
