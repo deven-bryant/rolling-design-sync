@@ -113,7 +113,7 @@ export function findGalleryTarget(
   return target ? { target, theme } : null;
 }
 
-/** The URL path + query of an example, relative to the portal (`/_gallery?figma=…&variant=…`). */
+/** The URL path + query of an example, relative to the portal (`/gallery?figma=…&variant=…`). */
 export function galleryHref(target: Pick<GalleryTarget, 'set' | 'variant'>): string {
-  return `/_gallery?${new URLSearchParams({ figma: target.set, variant: target.variant }).toString()}`;
+  return `/gallery?${new URLSearchParams({ figma: target.set, variant: target.variant }).toString()}`;
 }

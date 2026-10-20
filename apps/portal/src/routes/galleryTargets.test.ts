@@ -88,7 +88,7 @@ describe('findGalleryTarget', () => {
 
   it('builds the URL of an example', () => {
     expect(galleryHref({ set: 'Buttons/Button', variant: 'Size=sm, State=Hover' })).toBe(
-      '/_gallery?figma=Buttons%2FButton&variant=Size%3Dsm%2C+State%3DHover',
+      '/gallery?figma=Buttons%2FButton&variant=Size%3Dsm%2C+State%3DHover',
     );
   });
 });
