@@ -427,7 +427,8 @@ changed target's reference with its node map; nothing to set up per frame.
   (default), `query` (`?<themeKey>=dark`) or `storage` (localStorage).
 - **Components** render through the app's gallery: the file setting
   `gallery.urlTemplate` (e.g. `/gallery?figma={set}&variant={variant}`) or
-  `gallery.storybookUrl` (stories tagged `figma:<component key>`).
+  `gallery.storybookUrl` (stories tagged `figma:<component key>`) — see
+  [the gallery contract](#the-gallery-contract) below.
 - **The ready list.** `list_check_targets { "status": "ready" }` /
   `rds-agent targets ls --status ready` lists the targets your pass finished
   (no dirty nodes under them, no result for their current design) in check
@@ -444,6 +445,85 @@ changed target's reference with its node map; nothing to set up per frame.
   heatmap. A later pass resolves the render notes under the target.
 - `list_target_checks` shows a target's history (latest first); each keeps
   `checkRetention` results (default 5) plus its last pass.
+
+#### The gallery contract
+
+Component targets render one variant at a time in the app. Set one of the two
+in the file settings (`update_file_settings`, or
+`rds-agent files settings --file-key AbC123 --gallery '{"urlTemplate":"/gallery?figma={set}&variant={variant}"}'`):
+
+- **URL convention** (any framework). `gallery.urlTemplate` is a path (or full
+  URL) with placeholders, each filled URL-encoded: `{key}` (the variant's
+  component key), `{nodeId}`, `{set}` (component set, or component name),
+  `{variant}` (Figma's variant string, `Size=sm, State=Hover`) and
+  `{prop.<Name>}` (one variant property). The page renders that one variant
+  with sample props and marks it with `data-rds-target`; the CLI screenshots
+  that element (else the viewport) at the variant's Figma size:
+
+  ```text
+  /gallery?figma={set}&variant={variant}
+    → /gallery?figma=Button&variant=Size%3Dsm%2C%20State%3DHover
+  /components/{set}/{prop.Size}-{prop.State}
+    → /components/Button/sm-Hover
+  ```
+
+  ```tsx
+  // /gallery: render the requested variant inside the marked element
+  <div data-rds-target style={{ display: 'inline-block' }}>
+    <Button size="sm" state="hover">Save</Button>
+  </div>
+  ```
+
+- **Storybook.** `gallery.storybookUrl` (or `--storybook <url>`; relative to
+  `--base-url` when it is a path). Tag each story with the variant it renders:
+
+  ```ts
+  export const SmallHover: Story = {
+    args: { size: 'sm' },
+    tags: ['figma:3f2a9c0e1b4d…'],      // the variant's component key
+    // or: tags: ['figma-node:12:34'],   // its node id
+  };
+  ```
+
+  Tags are in Storybook's `index.json`, so the CLI resolves key → story id
+  without a build step, opens `iframe.html?id=<story id>&viewMode=story` and
+  screenshots `#storybook-root` (or a `[data-rds-target]` inside it). The
+  component key is in `targets ls` (`render.key`) and in the portal.
+
+A component with no entry (no story with its tag, or a template placeholder
+it has no value for) is **not mapped**: shown, never an error, never blocks
+screens. `rds-agent check --file-key AbC123 --list-unmapped` prints them to add.
+
+**Themes.** The file setting `themeMode` says how a target's theme (from a
+mapped variant property, e.g. `Color Mode=Dark` → `dark`) reaches the app:
+
+| `themeMode` | What the CLI does |
+|---|---|
+| `color-scheme` (default) | Emulates `prefers-color-scheme: dark` / `light` — no app change. |
+| `query` | Adds `?<themeKey>=<theme>` (default key `theme`) to the URL. |
+| `storage` | Before the page loads, sets localStorage `<themeKey>` = `<theme>` and adds `<theme>` as a class on `<html>`. |
+
+**Nightly regressions.** `rds-agent check --all` checks every target (not only
+ready ones), for regressions in clean nodes after shared-code edits:
+
+```yaml
+on:
+  schedule: [{ cron: '0 3 * * *' }]
+jobs:
+  render-checks:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright:v1.64.1-noble   # = your playwright version
+    env:
+      RDS_API_BASE_URL: https://rds.example.com
+      RDS_AGENT_TOKEN: ${{ secrets.RDS_AGENT_TOKEN }}
+      RDS_WORKER: nightly
+    steps:
+      - uses: actions/checkout@v5
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - run: npm ci && npm run build
+      - run: npm run start & npx --yes wait-on http://localhost:3000
+      - run: npx --yes @rolling-design-sync/agent-cli check --file-key AbC123 --base-url http://localhost:3000 --all
+```
 
 **Manual setup, once per screen** (rev9 screens, still supported). Pick the frame (usually a direct child of a scope
 section, e.g. `View=Files, Color Mode=Light`) and tell RDS where it renders:
