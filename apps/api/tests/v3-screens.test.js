@@ -233,8 +233,8 @@ for (const kind of Object.keys(STORES)) {
       ok(await submit(app, check.checkId, { image: await png() }));
     }
     const all = ok(await call(app, 'GET', '/checks?nodeId=2:1')).checks;
-    assert.ok(all.length <= 11, String(all.length));
-    assert.equal(all.filter(c => c.status !== 'requested').length, 10, 'keeps the 10 newest results');
+    assert.ok(all.length <= 6, String(all.length));
+    assert.equal(all.filter(c => c.status !== 'requested').length, 5, 'keeps the checkRetention (default 5) newest results');
     assertProblem(await call(app, 'GET', `/checks/${masked.checkId}`), 404, 'check_not_found');
   });
 
