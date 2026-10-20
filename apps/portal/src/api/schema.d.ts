@@ -408,6 +408,35 @@ export interface paths {
                                     trackLibraryComponents?: boolean;
                                     /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
                                     storeImages?: boolean;
+                                    /** @description Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed). */
+                                    autoTargets?: boolean;
+                                    /** @description How variant properties reach the app, by property name, e.g. `{ "Color Mode": { "as": "theme", "values": { "Light": "light", "Dark": "dark" } } }`. `as: "theme"` renders the variant in that theme; `as: "query"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}. */
+                                    variantMappings?: {
+                                        [key: string]: {
+                                            /** @enum {string} */
+                                            as: "theme" | "query";
+                                            /** @description `as: "query"`: the query parameter (default: the property name). */
+                                            key?: string;
+                                            /** @description Figma value → app value. */
+                                            values?: {
+                                                [key: string]: string;
+                                            };
+                                        };
+                                    };
+                                    /**
+                                     * @description How a target's theme reaches the app: `color-scheme` (default; the renderer emulates `prefers-color-scheme`), `query` (`?<themeKey>=<theme>`) or `storage` (localStorage `<themeKey>` set before the page loads).
+                                     * @enum {string}
+                                     */
+                                    themeMode?: "color-scheme" | "query" | "storage";
+                                    /** @description The query parameter (`themeMode: query`) or localStorage key (`themeMode: storage`) carrying the theme. Default `theme`. */
+                                    themeKey?: string;
+                                    /** @description Where component targets render. `urlTemplate`: a path with `{key}`, `{nodeId}`, `{set}`, `{variant}`, `{prop.<Name>}` placeholders (e.g. `/gallery?figma={set}&variant={variant}`); `storybookUrl`: a Storybook whose stories are tagged `figma:<component key>`. Both default null. */
+                                    gallery?: {
+                                        urlTemplate?: null | string;
+                                        storybookUrl?: null | string;
+                                    };
+                                    /** @description Render-check results kept per target, newest first (default 5); the last passing result is always kept too. */
+                                    checkRetention?: number;
                                 };
                                 counts?: {
                                     total?: number;
@@ -560,6 +589,35 @@ export interface paths {
                                 trackLibraryComponents?: boolean;
                                 /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
                                 storeImages?: boolean;
+                                /** @description Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed). */
+                                autoTargets?: boolean;
+                                /** @description How variant properties reach the app, by property name, e.g. `{ "Color Mode": { "as": "theme", "values": { "Light": "light", "Dark": "dark" } } }`. `as: "theme"` renders the variant in that theme; `as: "query"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}. */
+                                variantMappings?: {
+                                    [key: string]: {
+                                        /** @enum {string} */
+                                        as: "theme" | "query";
+                                        /** @description `as: "query"`: the query parameter (default: the property name). */
+                                        key?: string;
+                                        /** @description Figma value → app value. */
+                                        values?: {
+                                            [key: string]: string;
+                                        };
+                                    };
+                                };
+                                /**
+                                 * @description How a target's theme reaches the app: `color-scheme` (default; the renderer emulates `prefers-color-scheme`), `query` (`?<themeKey>=<theme>`) or `storage` (localStorage `<themeKey>` set before the page loads).
+                                 * @enum {string}
+                                 */
+                                themeMode?: "color-scheme" | "query" | "storage";
+                                /** @description The query parameter (`themeMode: query`) or localStorage key (`themeMode: storage`) carrying the theme. Default `theme`. */
+                                themeKey?: string;
+                                /** @description Where component targets render. `urlTemplate`: a path with `{key}`, `{nodeId}`, `{set}`, `{variant}`, `{prop.<Name>}` placeholders (e.g. `/gallery?figma={set}&variant={variant}`); `storybookUrl`: a Storybook whose stories are tagged `figma:<component key>`. Both default null. */
+                                gallery?: {
+                                    urlTemplate?: null | string;
+                                    storybookUrl?: null | string;
+                                };
+                                /** @description Render-check results kept per target, newest first (default 5); the last passing result is always kept too. */
+                                checkRetention?: number;
                             };
                             counts?: {
                                 total?: number;
@@ -689,7 +747,7 @@ export interface paths {
         head?: never;
         /**
          * Change file settings
-         * @description Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. `storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
+         * @description Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. `storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled. Render checks: `autoTargets` (default true) detects check targets from scope kinds (set_scope_kind); `variantMappings`, `themeMode` / `themeKey` and `gallery` say how targets render; `checkRetention` (default 5) results are kept per target. `gallery` and `variantMappings` are replaced whole. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
          */
         patch: {
             parameters: {
@@ -707,12 +765,41 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        /** @description The settings to change (trackLibraryComponents, storeImages); others keep their value. */
+                        /** @description The settings to change (trackLibraryComponents, storeImages, autoTargets, variantMappings, themeMode, themeKey, gallery, checkRetention); others keep their value. */
                         settings: {
                             /** @description Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. */
                             trackLibraryComponents?: boolean;
                             /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
                             storeImages?: boolean;
+                            /** @description Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed). */
+                            autoTargets?: boolean;
+                            /** @description How variant properties reach the app, by property name, e.g. `{ "Color Mode": { "as": "theme", "values": { "Light": "light", "Dark": "dark" } } }`. `as: "theme"` renders the variant in that theme; `as: "query"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}. */
+                            variantMappings?: {
+                                [key: string]: {
+                                    /** @enum {string} */
+                                    as: "theme" | "query";
+                                    /** @description `as: "query"`: the query parameter (default: the property name). */
+                                    key?: string;
+                                    /** @description Figma value → app value. */
+                                    values?: {
+                                        [key: string]: string;
+                                    };
+                                };
+                            };
+                            /**
+                             * @description How a target's theme reaches the app: `color-scheme` (default; the renderer emulates `prefers-color-scheme`), `query` (`?<themeKey>=<theme>`) or `storage` (localStorage `<themeKey>` set before the page loads).
+                             * @enum {string}
+                             */
+                            themeMode?: "color-scheme" | "query" | "storage";
+                            /** @description The query parameter (`themeMode: query`) or localStorage key (`themeMode: storage`) carrying the theme. Default `theme`. */
+                            themeKey?: string;
+                            /** @description Where component targets render. `urlTemplate`: a path with `{key}`, `{nodeId}`, `{set}`, `{variant}`, `{prop.<Name>}` placeholders (e.g. `/gallery?figma={set}&variant={variant}`); `storybookUrl`: a Storybook whose stories are tagged `figma:<component key>`. Both default null. */
+                            gallery?: {
+                                urlTemplate?: null | string;
+                                storybookUrl?: null | string;
+                            };
+                            /** @description Render-check results kept per target, newest first (default 5); the last passing result is always kept too. */
+                            checkRetention?: number;
                         };
                         /** @description Your worker id; recorded as the event actor (default: the token label). */
                         worker?: string;
@@ -737,6 +824,35 @@ export interface paths {
                                 trackLibraryComponents?: boolean;
                                 /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
                                 storeImages?: boolean;
+                                /** @description Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed). */
+                                autoTargets?: boolean;
+                                /** @description How variant properties reach the app, by property name, e.g. `{ "Color Mode": { "as": "theme", "values": { "Light": "light", "Dark": "dark" } } }`. `as: "theme"` renders the variant in that theme; `as: "query"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}. */
+                                variantMappings?: {
+                                    [key: string]: {
+                                        /** @enum {string} */
+                                        as: "theme" | "query";
+                                        /** @description `as: "query"`: the query parameter (default: the property name). */
+                                        key?: string;
+                                        /** @description Figma value → app value. */
+                                        values?: {
+                                            [key: string]: string;
+                                        };
+                                    };
+                                };
+                                /**
+                                 * @description How a target's theme reaches the app: `color-scheme` (default; the renderer emulates `prefers-color-scheme`), `query` (`?<themeKey>=<theme>`) or `storage` (localStorage `<themeKey>` set before the page loads).
+                                 * @enum {string}
+                                 */
+                                themeMode?: "color-scheme" | "query" | "storage";
+                                /** @description The query parameter (`themeMode: query`) or localStorage key (`themeMode: storage`) carrying the theme. Default `theme`. */
+                                themeKey?: string;
+                                /** @description Where component targets render. `urlTemplate`: a path with `{key}`, `{nodeId}`, `{set}`, `{variant}`, `{prop.<Name>}` placeholders (e.g. `/gallery?figma={set}&variant={variant}`); `storybookUrl`: a Storybook whose stories are tagged `figma:<component key>`. Both default null. */
+                                gallery?: {
+                                    urlTemplate?: null | string;
+                                    storybookUrl?: null | string;
+                                };
+                                /** @description Render-check results kept per target, newest first (default 5); the last passing result is always kept too. */
+                                checkRetention?: number;
                             };
                             counts?: {
                                 total?: number;
@@ -912,6 +1028,11 @@ export interface paths {
                                     clean?: number;
                                     blocked?: number;
                                 };
+                                /**
+                                 * @description What the scope contains, for automatic check targets (declared in the Figma plugin or with set_scope_kind); `none` when never declared.
+                                 * @enum {string}
+                                 */
+                                kind?: "screens" | "components" | "none";
                             }[];
                         };
                     };
@@ -5775,6 +5896,20 @@ export interface paths {
                                     requestedAt?: string;
                                     submittedAt?: null | string;
                                 };
+                                /**
+                                 * @description `screen` (rendered at a route) or `component` (rendered through the gallery).
+                                 * @enum {string}
+                                 */
+                                level?: "screen" | "component";
+                                /**
+                                 * @description `manual`: set up with set_screen; `auto`: detected from its scope's kind.
+                                 * @enum {string}
+                                 */
+                                source?: "manual" | "auto";
+                                /** @description Screen variants that differ only in mapped variant properties share this key and their route. */
+                                familyKey?: null | string;
+                                /** @description Nodes masked out of the comparison (their node-map rectangles). */
+                                maskNodeIds?: string[];
                                 updatedBy?: string;
                                 updatedAt?: string;
                             }[];
@@ -5946,6 +6081,8 @@ export interface paths {
                             width: number;
                             height: number;
                         }[];
+                        /** @description Nodes the comparison ignores, by id (their rectangles come from the node map the plugin uploads with the reference). */
+                        maskNodeIds?: string[];
                         /** @description Max % of differing pixels that still passes (default 1). */
                         threshold?: number;
                     };
@@ -6016,6 +6153,20 @@ export interface paths {
                                     requestedAt?: string;
                                     submittedAt?: null | string;
                                 };
+                                /**
+                                 * @description `screen` (rendered at a route) or `component` (rendered through the gallery).
+                                 * @enum {string}
+                                 */
+                                level?: "screen" | "component";
+                                /**
+                                 * @description `manual`: set up with set_screen; `auto`: detected from its scope's kind.
+                                 * @enum {string}
+                                 */
+                                source?: "manual" | "auto";
+                                /** @description Screen variants that differ only in mapped variant properties share this key and their route. */
+                                familyKey?: null | string;
+                                /** @description Nodes masked out of the comparison (their node-map rectangles). */
+                                maskNodeIds?: string[];
                                 updatedBy?: string;
                                 updatedAt?: string;
                             };
@@ -6405,6 +6556,13 @@ export interface paths {
                                     createdBy?: string;
                                     createdAt?: string;
                                 };
+                                /** @description Mismatch only: the nodes the differing regions were traced to through the node map, each with its render-check note (`regions` index into `regions`). */
+                                attribution?: {
+                                    nodeId?: string;
+                                    name?: null | string;
+                                    noteId?: null | string;
+                                    regions?: number[];
+                                }[];
                             };
                         };
                     };
@@ -6536,7 +6694,7 @@ export interface paths {
         };
         /**
          * List render checks
-         * @description Render checks, newest first; `status=requested` lists the ones waiting for an agent to run them (with each screen's route, viewport, theme, query and masks). The 10 newest checks of each screen are kept.
+         * @description Render checks, newest first; `status=requested` lists the ones waiting for an agent to run them (with each target's route, viewport, theme, query and masks). Each target keeps its `checkRetention` newest results (file setting, default 5) plus its last pass.
          */
         get: {
             parameters: {
@@ -6651,6 +6809,13 @@ export interface paths {
                                     createdBy?: string;
                                     createdAt?: string;
                                 };
+                                /** @description Mismatch only: the nodes the differing regions were traced to through the node map, each with its render-check note (`regions` index into `regions`). */
+                                attribution?: {
+                                    nodeId?: string;
+                                    name?: null | string;
+                                    noteId?: null | string;
+                                    regions?: number[];
+                                }[];
                             }[];
                         };
                     };
@@ -6894,6 +7059,13 @@ export interface paths {
                                     createdBy?: string;
                                     createdAt?: string;
                                 };
+                                /** @description Mismatch only: the nodes the differing regions were traced to through the node map, each with its render-check note (`regions` index into `regions`). */
+                                attribution?: {
+                                    nodeId?: string;
+                                    name?: null | string;
+                                    noteId?: null | string;
+                                    regions?: number[];
+                                }[];
                             };
                         };
                     };
@@ -7155,6 +7327,13 @@ export interface paths {
                                     createdBy?: string;
                                     createdAt?: string;
                                 };
+                                /** @description Mismatch only: the nodes the differing regions were traced to through the node map, each with its render-check note (`regions` index into `regions`). */
+                                attribution?: {
+                                    nodeId?: string;
+                                    name?: null | string;
+                                    noteId?: null | string;
+                                    regions?: number[];
+                                }[];
                             };
                         };
                     };
@@ -7319,6 +7498,992 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List check targets
+         * @description Every render-check target — screens and components, set up with set_screen or detected from scope kinds (`autoTargets`) — in check order: components first, children before the composites that contain them, then screens. Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing component inside; `waiting`: a contained component's latest result is a mismatch) and `render`, everything a renderer needs (route + theme/query for screens; gallery settings + the variant's key, set, variant string and props for components; the Figma size as viewport). Run them with `rds-agent check --ready`.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Only screens or only components. */
+                    level?: "screen" | "component";
+                    /** @description `ready`: the targets to check now. */
+                    status?: "building" | "ready" | "waiting" | "requested" | "passed" | "mismatch" | "error";
+                    /** @description Only targets at or under this node id (e.g. a section). */
+                    under?: string;
+                };
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            targets?: {
+                                nodeId?: string;
+                                name?: null | string;
+                                type?: null | string;
+                                /**
+                                 * @description `screen` (rendered at a route) or `component` (rendered through the gallery).
+                                 * @enum {string}
+                                 */
+                                level?: "screen" | "component";
+                                /**
+                                 * @description `manual`: set up with set_screen; `auto`: detected from its scope's kind.
+                                 * @enum {string}
+                                 */
+                                source?: "manual" | "auto";
+                                /** @description Screen variants that differ only in mapped variant properties share this key and their route. */
+                                familyKey?: null | string;
+                                /** @description Screens: the app route (an auto screen takes its family's; null until set_target_route or `rds-agent check --url` sets it). Components: null. */
+                                route?: null | string;
+                                /** @description From a mapped variant property (`as: theme`) or set_screen. */
+                                theme?: null | string;
+                                /** @description Query string (no leading `?`) from mapped variant properties or set_screen. */
+                                query?: null | string;
+                                viewport?: {
+                                    width?: number;
+                                    height?: number;
+                                };
+                                /** @description Rectangles (screen px) ignored by the comparison (dynamic content). */
+                                masks?: {
+                                    x: number;
+                                    y: number;
+                                    width: number;
+                                    height: number;
+                                }[];
+                                /** @description Nodes masked out of the comparison (their node-map rectangles). */
+                                maskNodeIds?: string[];
+                                /** @description Max % of differing pixels that still passes. */
+                                threshold?: number;
+                                /** @description Hash of the content hashes of the screen and every node under it. */
+                                designVersion?: string;
+                                /** @description The design version of the stored reference image. */
+                                referenceVersion?: null | string;
+                                reference?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                /** @description The node map uploaded with the reference (JSON attachment). */
+                                nodeMap?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                /**
+                                 * @description building: nodes under it are dirty; ready: built and no result for its current design (check it); waiting: would be ready, but a component it contains last failed (`waitingOn`); requested; passed; mismatch; error.
+                                 * @enum {string}
+                                 */
+                                status?: "building" | "ready" | "waiting" | "requested" | "passed" | "mismatch" | "error";
+                                /** @description The last result is for an older design version. */
+                                stale?: boolean;
+                                score?: null | number;
+                                /** @description status waiting: the contained component target whose latest result is a mismatch. */
+                                waitingOn?: null | {
+                                    nodeId?: string;
+                                    name?: null | string;
+                                };
+                                /** @description Component targets the CLI found no gallery entry for (`gallery.mapped: false`); they never block other targets. */
+                                notMapped?: boolean;
+                                /** @description Component targets inside this one (nested, or placed as instances). */
+                                contains?: string[];
+                                /** @description The newest check of the screen. */
+                                lastCheck?: null | {
+                                    checkId?: string;
+                                    /** @enum {string} */
+                                    status?: "requested" | "passed" | "mismatch" | "error";
+                                    score?: null | number;
+                                    designVersion?: string;
+                                    requestedAt?: string;
+                                    submittedAt?: null | string;
+                                };
+                                /** @description What a renderer needs. Screens: `route`, `theme`, `query`, `themeMode`, `themeKey`, `viewport`. Components: `gallery` ({ urlTemplate, storybookUrl } from file settings), `key` (component key), `nodeId`, `set` (set or component name), `variant` (Figma variant string, e.g. `Size=sm, State=Hover`), `props`, `theme`, `query`, `themeMode`, `themeKey`, `viewport` (the Figma size), `cache` (the stored gallery resolution). */
+                                render?: {
+                                    [key: string]: unknown;
+                                };
+                                /** @description Components: the gallery resolution the CLI stored with update_check_target (e.g. `{ "mapped": true, "storyId": "…" }`). */
+                                gallery?: null | {
+                                    [key: string]: unknown;
+                                };
+                                updatedBy?: string;
+                                updatedAt?: string;
+                            }[];
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/targets/{nodeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change a check target
+         * @description Changes how a check target renders. `route` on a screen sets its route — for an auto screen, the route of its whole family (variants that differ only in mapped properties); `rds-agent check --url` calls this the first time it checks a screen without one. Components take no route (they render through the gallery). `gallery` stores the CLI's gallery resolution for a component (`mapped: false` = no gallery entry: shown as not mapped, never blocks). `maskNodeIds` masks nodes via the node map; `threshold` is the max % of differing pixels. Agent tokens and agent sessions only.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`. */
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description Screens: the app route, starting with `/`. */
+                        route?: string;
+                        /** @description Nodes the comparison ignores, by id (their rectangles come from the node map the plugin uploads with the reference). */
+                        maskNodeIds?: string[];
+                        /** @description Max % of differing pixels that still passes (default 1). */
+                        threshold?: number;
+                        /** @description Components: the gallery resolution (replaces the stored one). */
+                        gallery?: {
+                            /** @description false: no gallery entry or story for this variant. */
+                            mapped?: boolean;
+                            /** @description The Storybook story id it resolved to. */
+                            storyId?: string | null;
+                            /** @description The gallery URL it resolved to. */
+                            url?: string | null;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            target?: {
+                                nodeId?: string;
+                                name?: null | string;
+                                type?: null | string;
+                                /**
+                                 * @description `screen` (rendered at a route) or `component` (rendered through the gallery).
+                                 * @enum {string}
+                                 */
+                                level?: "screen" | "component";
+                                /**
+                                 * @description `manual`: set up with set_screen; `auto`: detected from its scope's kind.
+                                 * @enum {string}
+                                 */
+                                source?: "manual" | "auto";
+                                /** @description Screen variants that differ only in mapped variant properties share this key and their route. */
+                                familyKey?: null | string;
+                                /** @description Screens: the app route (an auto screen takes its family's; null until set_target_route or `rds-agent check --url` sets it). Components: null. */
+                                route?: null | string;
+                                /** @description From a mapped variant property (`as: theme`) or set_screen. */
+                                theme?: null | string;
+                                /** @description Query string (no leading `?`) from mapped variant properties or set_screen. */
+                                query?: null | string;
+                                viewport?: {
+                                    width?: number;
+                                    height?: number;
+                                };
+                                /** @description Rectangles (screen px) ignored by the comparison (dynamic content). */
+                                masks?: {
+                                    x: number;
+                                    y: number;
+                                    width: number;
+                                    height: number;
+                                }[];
+                                /** @description Nodes masked out of the comparison (their node-map rectangles). */
+                                maskNodeIds?: string[];
+                                /** @description Max % of differing pixels that still passes. */
+                                threshold?: number;
+                                /** @description Hash of the content hashes of the screen and every node under it. */
+                                designVersion?: string;
+                                /** @description The design version of the stored reference image. */
+                                referenceVersion?: null | string;
+                                reference?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                /** @description The node map uploaded with the reference (JSON attachment). */
+                                nodeMap?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                /**
+                                 * @description building: nodes under it are dirty; ready: built and no result for its current design (check it); waiting: would be ready, but a component it contains last failed (`waitingOn`); requested; passed; mismatch; error.
+                                 * @enum {string}
+                                 */
+                                status?: "building" | "ready" | "waiting" | "requested" | "passed" | "mismatch" | "error";
+                                /** @description The last result is for an older design version. */
+                                stale?: boolean;
+                                score?: null | number;
+                                /** @description status waiting: the contained component target whose latest result is a mismatch. */
+                                waitingOn?: null | {
+                                    nodeId?: string;
+                                    name?: null | string;
+                                };
+                                /** @description Component targets the CLI found no gallery entry for (`gallery.mapped: false`); they never block other targets. */
+                                notMapped?: boolean;
+                                /** @description Component targets inside this one (nested, or placed as instances). */
+                                contains?: string[];
+                                /** @description The newest check of the screen. */
+                                lastCheck?: null | {
+                                    checkId?: string;
+                                    /** @enum {string} */
+                                    status?: "requested" | "passed" | "mismatch" | "error";
+                                    score?: null | number;
+                                    designVersion?: string;
+                                    requestedAt?: string;
+                                    submittedAt?: null | string;
+                                };
+                                /** @description What a renderer needs. Screens: `route`, `theme`, `query`, `themeMode`, `themeKey`, `viewport`. Components: `gallery` ({ urlTemplate, storybookUrl } from file settings), `key` (component key), `nodeId`, `set` (set or component name), `variant` (Figma variant string, e.g. `Size=sm, State=Hover`), `props`, `theme`, `query`, `themeMode`, `themeKey`, `viewport` (the Figma size), `cache` (the stored gallery resolution). */
+                                render?: {
+                                    [key: string]: unknown;
+                                };
+                                /** @description Components: the gallery resolution the CLI stored with update_check_target (e.g. `{ "mapped": true, "storyId": "…" }`). */
+                                gallery?: null | {
+                                    [key: string]: unknown;
+                                };
+                                updatedBy?: string;
+                                updatedAt?: string;
+                            };
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/targets/{nodeId}/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check history of a target
+         * @description A check target's render checks, latest first, each with its status, score, commit, attribution and the reference / built / heatmap image urls. Each target keeps `checkRetention` results (file setting, default 5) plus its last pass.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Default 100. */
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`. */
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            nodeId?: string;
+                            checks?: {
+                                checkId?: string;
+                                nodeId?: string;
+                                /** @enum {string} */
+                                status?: "requested" | "passed" | "mismatch" | "error";
+                                designVersion?: string;
+                                requestedBy?: string;
+                                requestedAt?: string;
+                                submittedBy?: null | string;
+                                submittedAt?: null | string;
+                                commitRef?: null | string;
+                                source?: null | string;
+                                /** @description % of the compared pixels that differ. */
+                                score?: null | number;
+                                threshold?: null | number;
+                                /** @description Up to 10 differing areas, largest first. */
+                                regions?: {
+                                    x?: number;
+                                    y?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description Differing pixels in it. */
+                                    pixels?: number;
+                                }[];
+                                error?: null | string;
+                                route?: null | string;
+                                viewport?: null | {
+                                    width?: number;
+                                    height?: number;
+                                };
+                                theme?: null | string;
+                                query?: null | string;
+                                masks?: {
+                                    x: number;
+                                    y: number;
+                                    width: number;
+                                    height: number;
+                                }[];
+                                reference?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                built?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                heatmap?: null | {
+                                    attachmentId?: string;
+                                    /** @enum {string} */
+                                    kind?: "screenshot" | "reference" | "built" | "heatmap";
+                                    contentType?: string;
+                                    /** @description Bytes of the full image. */
+                                    size?: number;
+                                    width?: number;
+                                    height?: number;
+                                    /** @description API path of the full image. */
+                                    url?: string;
+                                    /** @description API path of the thumbnail (at most 480 px wide). */
+                                    thumbUrl?: null | string;
+                                    createdBy?: string;
+                                    createdAt?: string;
+                                };
+                                /** @description Mismatch only: the nodes the differing regions were traced to through the node map, each with its render-check note (`regions` index into `regions`). */
+                                attribution?: {
+                                    nodeId?: string;
+                                    name?: null | string;
+                                    noteId?: null | string;
+                                    regions?: number[];
+                                }[];
+                            }[];
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v3/files/{fileKey}/scopes/{nodeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Set a scope's kind
+         * @description Declares what a synced scope (a section) contains, for automatic check targets: `screens` (its top-level frames / components / instances and the variants of its top-level component sets are screen targets), `components` (every main component in it is a component target) or `none` (default: no targets). The Figma plugin sends it with the sync; this changes it from the API. Targets update at once (with `autoTargets` on). Agent tokens and agent sessions only.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. */
+                    fileKey: string;
+                    /** @description The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`. */
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /**
+                         * @description `screens`, `components` or `none`.
+                         * @enum {string}
+                         */
+                        kind: "screens" | "components" | "none";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            fileKey?: string;
+                            nodeId?: string;
+                            /** @enum {string} */
+                            kind?: "screens" | "components" | "none";
+                            /** @description Auto targets now detected in the scope. */
+                            targets?: number;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description RFC 9457 problem details, plus `code` and `hint`. */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uri */
+                            type: string;
+                            title: string;
+                            status: number;
+                            code: string;
+                            detail: string;
+                            hint?: string;
+                            validParameters?: string[];
+                            /** @description `rate_limited` only: seconds until the window resets, as in `Retry-After`. */
+                            retryAfter?: number;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/v3/files/{fileKey}/summary": {
@@ -8342,6 +9507,35 @@ export interface paths {
                                 trackLibraryComponents?: boolean;
                                 /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
                                 storeImages?: boolean;
+                                /** @description Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed). */
+                                autoTargets?: boolean;
+                                /** @description How variant properties reach the app, by property name, e.g. `{ "Color Mode": { "as": "theme", "values": { "Light": "light", "Dark": "dark" } } }`. `as: "theme"` renders the variant in that theme; `as: "query"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}. */
+                                variantMappings?: {
+                                    [key: string]: {
+                                        /** @enum {string} */
+                                        as: "theme" | "query";
+                                        /** @description `as: "query"`: the query parameter (default: the property name). */
+                                        key?: string;
+                                        /** @description Figma value → app value. */
+                                        values?: {
+                                            [key: string]: string;
+                                        };
+                                    };
+                                };
+                                /**
+                                 * @description How a target's theme reaches the app: `color-scheme` (default; the renderer emulates `prefers-color-scheme`), `query` (`?<themeKey>=<theme>`) or `storage` (localStorage `<themeKey>` set before the page loads).
+                                 * @enum {string}
+                                 */
+                                themeMode?: "color-scheme" | "query" | "storage";
+                                /** @description The query parameter (`themeMode: query`) or localStorage key (`themeMode: storage`) carrying the theme. Default `theme`. */
+                                themeKey?: string;
+                                /** @description Where component targets render. `urlTemplate`: a path with `{key}`, `{nodeId}`, `{set}`, `{variant}`, `{prop.<Name>}` placeholders (e.g. `/gallery?figma={set}&variant={variant}`); `storybookUrl`: a Storybook whose stories are tagged `figma:<component key>`. Both default null. */
+                                gallery?: {
+                                    urlTemplate?: null | string;
+                                    storybookUrl?: null | string;
+                                };
+                                /** @description Render-check results kept per target, newest first (default 5); the last passing result is always kept too. */
+                                checkRetention?: number;
                             };
                             /** @description `under=tokens` only: every stored live variable (`token:<variableKey>`) with its Figma `variableId` (null when not captured), `remote` (a library variable) and `collectionId` (its collection node). */
                             tokens?: {
@@ -8511,6 +9705,11 @@ export interface paths {
                         fileName?: string | null;
                         /** @description The synced scope root (1:2 or 1-2). */
                         rootNodeId?: string | null;
+                        /**
+                         * @description What the scope contains, as declared in Figma (needs `rootNodeId`): `screens`, `components` or `none`. Stored for the scope and used for automatic check targets; omitted = unchanged (older plugins send nothing; undeclared scopes are `none`).
+                         * @enum {string}
+                         */
+                        scopeKind?: "screens" | "components" | "none";
                         /**
                          * @description First-scan baseline: insert never-seen nodes as implemented.
                          * @default false
@@ -8864,8 +10063,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Screens needing a reference (plugin)
-         * @description Configured screens under `under` whose reference image is missing or for an older design version: export each at 1x and upload it. Plugin tokens only.
+         * Targets needing a reference (plugin)
+         * @description Check targets under `under` — set-up screens and, with `autoTargets`, the screen and component targets detected from scope kinds — whose reference image is missing or for an older design version: export each at 1x and upload it with its node map. Plugin tokens only.
          */
         get: {
             parameters: {
@@ -8892,6 +10091,8 @@ export interface paths {
                             screens?: {
                                 nodeId?: string;
                                 designVersion?: string;
+                                /** @enum {string} */
+                                level?: "screen" | "component";
                             }[];
                         };
                     };
@@ -9026,7 +10227,7 @@ export interface paths {
         get?: never;
         /**
          * Upload a screen reference (plugin)
-         * @description The 1x PNG export of a screen for `designVersion` (from references-needed). Plugin tokens only.
+         * @description The 1x PNG export of a check target for `designVersion` (from references-needed), optionally with its `nodeMap`: every visible node in the target with its box relative to the target's top-left and its depth below it; inside instances `mainNodeId` is the main component's node. The API traces render mismatches to nodes and masks `maskNodeIds` with it. At most 20000 entries and 2 MiB of JSON. Plugin tokens only.
          */
         put: {
             parameters: {
@@ -9049,6 +10250,15 @@ export interface paths {
                          * @description The PNG, base64.
                          */
                         image: string;
+                        nodeMap?: {
+                            nodeId: string;
+                            mainNodeId?: string;
+                            x: number;
+                            y: number;
+                            width: number;
+                            height: number;
+                            depth: number;
+                        }[];
                     };
                 };
             };
