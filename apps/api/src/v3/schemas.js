@@ -124,6 +124,36 @@ const fileSettings = {
       type: 'boolean',
       description: 'Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept).',
     },
+    autoTargets: {
+      type: 'boolean',
+      description: 'Default true. Detect check targets from each scope\'s kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed).',
+    },
+    variantMappings: {
+      type: 'object',
+      description: 'How variant properties reach the app, by property name, e.g. `{ "Color Mode": { "as": "theme", "values": { "Light": "light", "Dark": "dark" } } }`. `as: "theme"` renders the variant in that theme; `as: "query"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}.',
+      additionalProperties: {
+        type: 'object', required: ['as'], additionalProperties: false,
+        properties: {
+          as: { type: 'string', enum: ['theme', 'query'] },
+          key: { type: 'string', minLength: 1, maxLength: 100, description: '`as: "query"`: the query parameter (default: the property name).' },
+          values: { type: 'object', additionalProperties: { type: 'string', maxLength: 200 }, description: 'Figma value → app value.' },
+        },
+      },
+    },
+    themeMode: {
+      type: 'string', enum: ['color-scheme', 'query', 'storage'],
+      description: 'How a target\'s theme reaches the app: `color-scheme` (default; the renderer emulates `prefers-color-scheme`), `query` (`?<themeKey>=<theme>`) or `storage` (localStorage `<themeKey>` set before the page loads).',
+    },
+    themeKey: { type: 'string', minLength: 1, maxLength: 100, description: 'The query parameter (`themeMode: query`) or localStorage key (`themeMode: storage`) carrying the theme. Default `theme`.' },
+    gallery: {
+      type: 'object', additionalProperties: false,
+      description: 'Where component targets render. `urlTemplate`: a path with `{key}`, `{nodeId}`, `{set}`, `{variant}`, `{prop.<Name>}` placeholders (e.g. `/gallery?figma={set}&variant={variant}`); `storybookUrl`: a Storybook whose stories are tagged `figma:<component key>`. Both default null.',
+      properties: {
+        urlTemplate: { type: ['string', 'null'], maxLength: 2000 },
+        storybookUrl: { type: ['string', 'null'], maxLength: 2000 },
+      },
+    },
+    checkRetention: { type: 'integer', minimum: 1, maximum: 100, description: 'Render-check results kept per target, newest first (default 5); the last passing result is always kept too.' },
   },
 };
 
@@ -240,6 +270,7 @@ const scope = {
     lastSyncAt: { type: 'string' },
     lastSyncCounts: { type: 'object', additionalProperties: true },
     counts,
+    kind: { type: 'string', enum: ['screens', 'components', 'none'], description: 'What the scope contains, for automatic check targets (declared in the Figma plugin or with set_scope_kind); `none` when never declared.' },
   },
 };
 

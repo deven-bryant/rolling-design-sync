@@ -37,7 +37,7 @@
     {
       "command": "files settings",
       "summary": "Change file settings",
-      "description": "Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: \"library\"` reference items. `storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.",
+      "description": "Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: \"library\"` reference items. `storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled. Render checks: `autoTargets` (default true) detects check targets from scope kinds (set_scope_kind); `variantMappings`, `themeMode` / `themeKey` and `gallery` say how targets render; `checkRetention` (default 5) results are kept per target. `gallery` and `variantMappings` are replaced whole. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.",
       "method": "PATCH",
       "path": "/v3/files/{fileKey}",
       "flags": [
@@ -71,6 +71,61 @@
           "object": "settings",
           "type": "boolean",
           "description": "Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept)."
+        },
+        {
+          "flag": "auto-targets",
+          "in": "body",
+          "name": "autoTargets",
+          "object": "settings",
+          "type": "boolean",
+          "description": "Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed)."
+        },
+        {
+          "flag": "variant-mappings",
+          "in": "body",
+          "name": "variantMappings",
+          "object": "settings",
+          "type": "object",
+          "description": "How variant properties reach the app, by property name, e.g. `{ \"Color Mode\": { \"as\": \"theme\", \"values\": { \"Light\": \"light\", \"Dark\": \"dark\" } } }`. `as: \"theme\"` renders the variant in that theme; `as: \"query\"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}."
+        },
+        {
+          "flag": "theme-mode",
+          "in": "body",
+          "name": "themeMode",
+          "object": "settings",
+          "type": "string",
+          "enum": [
+            "color-scheme",
+            "query",
+            "storage"
+          ],
+          "description": "How a target's theme reaches the app: `color-scheme` (default; the renderer emulates `prefers-color-scheme`), `query` (`?<themeKey>=<theme>`) or `storage` (localStorage `<themeKey>` set before the page loads)."
+        },
+        {
+          "flag": "theme-key",
+          "in": "body",
+          "name": "themeKey",
+          "object": "settings",
+          "type": "string",
+          "description": "The query parameter (`themeMode: query`) or localStorage key (`themeMode: storage`) carrying the theme. Default `theme`."
+        },
+        {
+          "flag": "gallery",
+          "in": "body",
+          "name": "gallery",
+          "object": "settings",
+          "type": "object",
+          "description": "Where component targets render. `urlTemplate`: a path with `{key}`, `{nodeId}`, `{set}`, `{variant}`, `{prop.<Name>}` placeholders (e.g. `/gallery?figma={set}&variant={variant}`); `storybookUrl`: a Storybook whose stories are tagged `figma:<component key>`. Both default null."
+        },
+        {
+          "flag": "check-retention",
+          "in": "body",
+          "name": "checkRetention",
+          "object": "settings",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Render-check results kept per target, newest first (default 5); the last passing result is always kept too."
         },
         {
           "flag": "worker",
@@ -1180,6 +1235,14 @@
           "description": "Query string added to the route (no leading `?`)."
         },
         {
+          "flag": "mask-node-ids",
+          "in": "body",
+          "name": "maskNodeIds",
+          "type": "array",
+          "items": "string",
+          "description": "Nodes the comparison ignores, by id (their rectangles come from the node map the plugin uploads with the reference)."
+        },
+        {
           "flag": "threshold",
           "in": "body",
           "name": "threshold",
@@ -1240,7 +1303,7 @@
     {
       "command": "checks ls",
       "summary": "List render checks",
-      "description": "Render checks, newest first; `status=requested` lists the ones waiting for an agent to run them (with each screen's route, viewport, theme, query and masks). The 10 newest checks of each screen are kept.",
+      "description": "Render checks, newest first; `status=requested` lists the ones waiting for an agent to run them (with each target's route, viewport, theme, query and masks). Each target keeps its `checkRetention` newest results (file setting, default 5) plus its last pass.",
       "method": "GET",
       "path": "/v3/files/{fileKey}/checks",
       "flags": [
@@ -1347,6 +1410,198 @@
           "name": "source",
           "type": "string",
           "description": "What rendered it (e.g. `rds-agent check`, a CI job)."
+        }
+      ],
+      "body": true
+    },
+    {
+      "command": "targets ls",
+      "summary": "List check targets",
+      "description": "Every render-check target — screens and components, set up with set_screen or detected from scope kinds (`autoTargets`) — in check order: components first, children before the composites that contain them, then screens. Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing component inside; `waiting`: a contained component's latest result is a mismatch) and `render`, everything a renderer needs (route + theme/query for screens; gallery settings + the variant's key, set, variant string and props for components; the Figma size as viewport). Run them with `rds-agent check --ready`.",
+      "method": "GET",
+      "path": "/v3/files/{fileKey}/targets",
+      "flags": [
+        {
+          "flag": "file-key",
+          "in": "path",
+          "name": "fileKey",
+          "type": "string",
+          "required": true,
+          "description": "The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead."
+        },
+        {
+          "flag": "level",
+          "in": "query",
+          "name": "level",
+          "type": "string",
+          "enum": [
+            "screen",
+            "component"
+          ],
+          "description": "Only screens or only components."
+        },
+        {
+          "flag": "status",
+          "in": "query",
+          "name": "status",
+          "type": "string",
+          "enum": [
+            "building",
+            "ready",
+            "waiting",
+            "requested",
+            "passed",
+            "mismatch",
+            "error"
+          ],
+          "description": "`ready`: the targets to check now."
+        },
+        {
+          "flag": "under",
+          "in": "query",
+          "name": "under",
+          "type": "string",
+          "description": "Only targets at or under this node id (e.g. a section)."
+        }
+      ]
+    },
+    {
+      "command": "targets set",
+      "summary": "Change a check target",
+      "description": "Changes how a check target renders. `route` on a screen sets its route — for an auto screen, the route of its whole family (variants that differ only in mapped properties); `rds-agent check --url` calls this the first time it checks a screen without one. Components take no route (they render through the gallery). `gallery` stores the CLI's gallery resolution for a component (`mapped: false` = no gallery entry: shown as not mapped, never blocks). `maskNodeIds` masks nodes via the node map; `threshold` is the max % of differing pixels. Agent tokens and agent sessions only.",
+      "method": "PATCH",
+      "path": "/v3/files/{fileKey}/targets/{nodeId}",
+      "positionals": [
+        {
+          "name": "nodeId",
+          "description": "The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`."
+        }
+      ],
+      "flags": [
+        {
+          "flag": "file-key",
+          "in": "path",
+          "name": "fileKey",
+          "type": "string",
+          "required": true,
+          "description": "The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead."
+        },
+        {
+          "flag": "route",
+          "in": "body",
+          "name": "route",
+          "type": "string",
+          "description": "Screens: the app route, starting with `/`."
+        },
+        {
+          "flag": "mask-node-ids",
+          "in": "body",
+          "name": "maskNodeIds",
+          "type": "array",
+          "items": "string",
+          "description": "Nodes the comparison ignores, by id (their rectangles come from the node map the plugin uploads with the reference)."
+        },
+        {
+          "flag": "threshold",
+          "in": "body",
+          "name": "threshold",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Max % of differing pixels that still passes (default 1)."
+        },
+        {
+          "flag": "mapped",
+          "in": "body",
+          "name": "mapped",
+          "object": "gallery",
+          "type": "boolean",
+          "description": "false: no gallery entry or story for this variant."
+        },
+        {
+          "flag": "story-id",
+          "in": "body",
+          "name": "storyId",
+          "object": "gallery",
+          "type": "string",
+          "description": "The Storybook story id it resolved to."
+        },
+        {
+          "flag": "url",
+          "in": "body",
+          "name": "url",
+          "object": "gallery",
+          "type": "string",
+          "description": "The gallery URL it resolved to."
+        }
+      ],
+      "body": true
+    },
+    {
+      "command": "targets checks",
+      "summary": "Check history of a target",
+      "description": "A check target's render checks, latest first, each with its status, score, commit, attribution and the reference / built / heatmap image urls. Each target keeps `checkRetention` results (file setting, default 5) plus its last pass.",
+      "method": "GET",
+      "path": "/v3/files/{fileKey}/targets/{nodeId}/checks",
+      "positionals": [
+        {
+          "name": "nodeId",
+          "description": "The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`."
+        }
+      ],
+      "flags": [
+        {
+          "flag": "file-key",
+          "in": "path",
+          "name": "fileKey",
+          "type": "string",
+          "required": true,
+          "description": "The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead."
+        },
+        {
+          "flag": "limit",
+          "in": "query",
+          "name": "limit",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "description": "Default 100."
+        }
+      ]
+    },
+    {
+      "command": "scopes kind",
+      "summary": "Set a scope's kind",
+      "description": "Declares what a synced scope (a section) contains, for automatic check targets: `screens` (its top-level frames / components / instances and the variants of its top-level component sets are screen targets), `components` (every main component in it is a component target) or `none` (default: no targets). The Figma plugin sends it with the sync; this changes it from the API. Targets update at once (with `autoTargets` on). Agent tokens and agent sessions only.",
+      "method": "PATCH",
+      "path": "/v3/files/{fileKey}/scopes/{nodeId}",
+      "positionals": [
+        {
+          "name": "nodeId",
+          "description": "The node id, 1:2 or 1-2 (a link's node-id). Pass '-' to take it from `url`."
+        }
+      ],
+      "flags": [
+        {
+          "flag": "file-key",
+          "in": "path",
+          "name": "fileKey",
+          "type": "string",
+          "required": true,
+          "description": "The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead."
+        },
+        {
+          "flag": "kind",
+          "in": "body",
+          "name": "kind",
+          "type": "string",
+          "enum": [
+            "screens",
+            "components",
+            "none"
+          ],
+          "required": true,
+          "description": "`screens`, `components` or `none`."
         }
       ],
       "body": true

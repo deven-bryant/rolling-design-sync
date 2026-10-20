@@ -169,7 +169,10 @@ test('a failing migration rolls back, names the file and keeps the database as i
   await applyPrefix(db, FILES.length - 1);
   const pool = poolOf(db);
   const last = FILES[FILES.length - 1];
-  await db.exec('create table public.render_check (check_id uuid primary key)'); // probe still fails (other tables), the file's index creation fails
+  // The probe still fails (no new columns or tables) and re-adding the attachment kind check fails on the bogus row.
+  await db.exec(`alter table public.attachment drop constraint attachment_kind_check;
+    insert into public.attachment (file_key, owner_kind, owner_id, kind, content_type, size, width, height, sha256, blob_key, created_by)
+    values ('f', 'note', 'n', 'bogus', 'image/png', 1, 1, 1, 'x', 'k', 't')`);
   await assert.rejects(checkSchema(pool, AUTO, { log: recorder() }), new RegExp(`Migration ${last} failed`));
   assert.ok(pool.statements.includes('rollback'));
   assert.deepEqual(await missingMigrations(pool), [last]);

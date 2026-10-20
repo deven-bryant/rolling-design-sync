@@ -438,11 +438,55 @@ design: `POST …/nodes/{nodeId}/notes { body, worker? }` (body 1–4000 chars).
   `mismatch`: a `render_check` note (author `render-check`, the three images
   attached) dirties the screen root as `requested` with category `render`.
   A pass resolves those notes. A design change makes the last result
-  `stale`. Each screen keeps its 10 newest checks. Events
+  `stale`. Each target keeps its `checkRetention` newest results (default 5) plus its last pass. Events
   `render_check.requested|passed|mismatch` carry ids and the score only.
 - **Reads.** Nodes and work items carry `screen: { status, stale, score }` on
   screen roots (`building` while nodes under it are dirty, then `ready`,
   `requested`, `passed`, `mismatch`, `error`).
+
+### Check targets
+
+- **Targets.** A `screen` row is a check target: `level` screen | component,
+  `source` manual (set_screen) | auto, `family_key`, `theme`, `query`,
+  `gallery` (the CLI's resolution cache, `mapped: false` = not mapped),
+  `mask_node_ids` and `node_map_id`. Rev9 screens are `manual` / `screen`.
+- **Scope kinds.** `scope_setting (file_key, node_id, kind screens |
+  components | none)`; the plugin sends `scopeKind` with a sync batch that has
+  `rootNodeId` (omitted = unchanged; undeclared = none);
+  `PATCH …/scopes/{nodeId}` changes it. `…/scopes` lists each scope's `kind`.
+- **Detection.** With `autoTargets` (file setting, default true): a `screens`
+  scope → its top-level FRAME / COMPONENT / INSTANCE nodes and each variant of
+  a top-level COMPONENT_SET; a `components` scope → every main COMPONENT
+  (library nodes excluded). Auto rows follow syncs, scope-kind and settings
+  changes; a node that stops qualifying loses its auto target with its checks
+  and images. `autoTargets: false` leaves only manual screens.
+- **Families.** Variants of one set whose properties differ only in mapped
+  ones (`variantMappings`: `as` theme | query, `key`, `values`) share a
+  `family_key`; `target_family (file_key, family_key, route)` holds the route,
+  set with `PATCH …/targets/{nodeId}` (route capture). A lone frame is its own
+  family. Theme / query come from the mapped properties; `themeMode`
+  (`color-scheme` | `query` | `storage`) and `themeKey` say how the renderer
+  applies the theme.
+- **Node maps.** `PUT …/screens/{nodeId}/reference` takes `nodeMap: [{ nodeId,
+  mainNodeId?, x, y, width, height, depth }]` (≤ 20000 entries, ≤ 2 MiB of
+  JSON), stored as a `node_map` JSON attachment with the reference.
+- **Ready list.** `GET …/targets` computes each target's status (rev9's plus
+  `waiting`: it would be ready but a contained component target — nested, or
+  placed as an instance, transitively — last failed; not-mapped components
+  never block) and returns them in check order: components by containment
+  depth (children first), then screens; document order within a level.
+- **Attribution.** On a mismatch with a node map, each differing region goes
+  to the deepest touched entries with their own record (an instance sublayer
+  → `mainNodeId`; an entry is dropped when a deeper touched entry covers its
+  whole overlap); more than 2 → their nearest common parent (the target when
+  that is outside it). Those nodes get `render_check` notes, the target a
+  summary note with the images; `render_check.attribution` records them. A
+  mismatch dismisses the target's earlier render notes; a pass resolves the
+  open render notes under the target and those its earlier checks attributed.
+  `maskNodeIds` become mask rectangles from the node map.
+- **History.** `GET …/targets/{nodeId}/checks`, latest first. Each target
+  keeps `checkRetention` (default 5) results plus its last pass; pruned
+  results' images are deleted.
 
 ## Supporting data
 

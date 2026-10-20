@@ -4,6 +4,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const DEFAULT_FILE_SETTINGS = Object.freeze({ trackLibraryComponents: true, storeImages: true, autoTargets: true, variantMappings: {}, themeMode: 'color-scheme', themeKey: 'theme', gallery: { urlTemplate: null, storybookUrl: null }, checkRetention: 5 });
 const http = require('node:http');
 const net = require('node:net');
 const path = require('node:path');
@@ -256,7 +257,7 @@ test('every tool round-trips: inputs → HTTP request → JSON result', async t 
 
   const settings = await expectCall('update_file_settings', { settings: { trackLibraryComponents: true } },
     { method: 'PATCH', path: file, body: { settings: { trackLibraryComponents: true } } });
-  assert.deepEqual(settings.settings, { trackLibraryComponents: true, storeImages: true });
+  assert.deepEqual(settings.settings, { ...DEFAULT_FILE_SETTINGS, trackLibraryComponents: true });
 
   const cleared = await expectCall('clear_nodes', { commitRef: 'abc123', items: [{ nodeId: CHILD, contentHash: node.contentHash }] },
     { method: 'POST', path: `${file}/clear`, body: { commitRef: 'abc123', items: [{ nodeId: CHILD, contentHash: node.contentHash }] } });
@@ -268,7 +269,8 @@ test('every tool round-trips: inputs → HTTP request → JSON result', async t 
 
   const { tools } = await client.listTools();
   // The screen / render-check tools and get_attachment have their own test below.
-  const own = new Set(['set_screen', 'delete_screen', 'list_screens', 'request_render_check', 'list_render_checks', 'get_render_check', 'submit_render_check', 'get_attachment']);
+  const own = new Set(['set_screen', 'delete_screen', 'list_screens', 'request_render_check', 'list_render_checks', 'get_render_check', 'submit_render_check', 'get_attachment',
+    'list_check_targets', 'update_check_target', 'list_target_checks', 'set_scope_kind']);
   assert.deepEqual([...done].sort(), tools.map(tool => tool.name).filter(n => !own.has(n)).sort(), 'every tool is exercised');
 });
 

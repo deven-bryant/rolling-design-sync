@@ -250,7 +250,7 @@ HTML are refused.
 check was deleted).
 
 - **Usual cause:** an attachment id from another file, or one whose note was
-  deleted or whose render check was pruned (each screen keeps its 10 newest).
+  deleted or whose render check was pruned (each target keeps its `checkRetention` newest results, default 5, plus its last pass).
 - **Fix:** use the `url` / `thumbUrl` from a current note, screen or check.
 
 <a id="screen-not-found"></a>
@@ -269,7 +269,7 @@ check was deleted).
 **404.** No render check with this id exists on this file.
 
 - **Usual cause:** a mistyped `checkId`, one from another file, or an old check
-  pruned after newer ones (each screen keeps its 10 newest).
+  pruned after newer ones (each target keeps its `checkRetention` newest results, default 5, plus its last pass).
 - **Fix:** take ids from `list_render_checks` (`status=requested` for the ones
   waiting to run).
 

@@ -40,6 +40,8 @@ const mapScreen = r => r && ({
   fileKey: r.file_key, nodeId: r.node_id, route: r.route, viewport: { width: r.viewport_width, height: r.viewport_height },
   theme: r.theme ?? null, query: r.query ?? null, masks: r.masks ?? [], threshold: Number(r.threshold),
   referenceId: r.reference_id ?? null, referenceVersion: r.reference_version ?? null,
+  level: r.level ?? 'screen', source: r.source ?? 'manual', familyKey: r.family_key ?? null, gallery: r.gallery ?? null,
+  maskNodeIds: r.mask_node_ids ?? [], nodeMapId: r.node_map_id ?? null,
   createdBy: r.created_by, updatedBy: r.updated_by, createdAt: iso(r.created_at), updatedAt: iso(r.updated_at),
 });
 const num = v => (v === null || v === undefined ? null : Number(v));
@@ -48,7 +50,10 @@ const mapCheck = r => r && ({
   requestedBy: r.requested_by, requestedAt: iso(r.requested_at), submittedBy: r.submitted_by ?? null, submittedAt: iso(r.submitted_at),
   commitRef: r.commit_ref ?? null, source: r.source ?? null, score: num(r.score), threshold: num(r.threshold), regions: r.regions ?? [],
   builtId: r.built_id ?? null, heatmapId: r.heatmap_id ?? null, referenceId: r.reference_id ?? null, error: r.error ?? null,
+  attribution: r.attribution ?? [],
 });
+const mapScopeKind = r => r && ({ fileKey: r.file_key, nodeId: r.node_id, kind: r.kind, updatedBy: r.updated_by, updatedAt: iso(r.updated_at) });
+const mapFamily = r => r && ({ fileKey: r.file_key, familyKey: r.family_key, route: r.route, updatedBy: r.updated_by, updatedAt: iso(r.updated_at) });
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const mapEvent = r => r && ({
   id: Number(r.id), fileKey: r.file_key, type: r.type, actor: r.actor ?? null, data: r.data ?? {}, createdAt: iso(r.created_at),
@@ -1145,14 +1150,18 @@ class PostgresStore {
 
   async upsertScreen(screen) {
     const { rows: [row] } = await this.query(
-      `insert into screen (file_key, node_id, route, viewport_width, viewport_height, theme, query, masks, threshold, created_by, updated_by, created_at, updated_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $10, $11, $11)
+      `insert into screen (file_key, node_id, route, viewport_width, viewport_height, theme, query, masks, threshold, created_by, updated_by, created_at, updated_at,
+         level, source, family_key, gallery, mask_node_ids)
+       values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $10, $11, $11, $12, $13, $14, $15::jsonb, $16::jsonb)
        on conflict (file_key, node_id) do update set route = excluded.route, viewport_width = excluded.viewport_width,
          viewport_height = excluded.viewport_height, theme = excluded.theme, query = excluded.query, masks = excluded.masks,
-         threshold = excluded.threshold, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+         threshold = excluded.threshold, updated_by = excluded.updated_by, updated_at = excluded.updated_at,
+         level = excluded.level, source = excluded.source, family_key = excluded.family_key, gallery = excluded.gallery,
+         mask_node_ids = excluded.mask_node_ids
        returning *`,
-      [screen.fileKey, screen.nodeId, screen.route, screen.viewport.width, screen.viewport.height, screen.theme ?? null, screen.query ?? null,
-        JSON.stringify(screen.masks || []), screen.threshold, screen.by, screen.at]);
+      [screen.fileKey, screen.nodeId, screen.route ?? null, screen.viewport.width, screen.viewport.height, screen.theme ?? null, screen.query ?? null,
+        JSON.stringify(screen.masks || []), screen.threshold, screen.by, screen.at, screen.level || 'screen', screen.source || 'manual',
+        screen.familyKey ?? null, screen.gallery == null ? null : JSON.stringify(screen.gallery), JSON.stringify(screen.maskNodeIds || [])]);
     return mapScreen(row);
   }
 
@@ -1171,11 +1180,37 @@ class PostgresStore {
     return mapScreen(row) || null;
   }
 
-  async setScreenReference(fileKey, nodeId, { referenceId, referenceVersion, at }) {
+  async setScreenReference(fileKey, nodeId, { referenceId, referenceVersion, nodeMapId = null, at }) {
     const { rows: [row] } = await this.query(
-      'update screen set reference_id = $3::uuid, reference_version = $4, updated_at = $5 where file_key = $1 and node_id = $2 returning *',
-      [fileKey, nodeId, referenceId, referenceVersion, at]);
+      'update screen set reference_id = $3::uuid, reference_version = $4, node_map_id = $6::uuid, updated_at = $5 where file_key = $1 and node_id = $2 returning *',
+      [fileKey, nodeId, referenceId, referenceVersion, at, nodeMapId]);
     return mapScreen(row) || null;
+  }
+
+  async setScopeKind(fileKey, nodeId, { kind, by, at }) {
+    const { rows: [row] } = await this.query(
+      `insert into scope_setting (file_key, node_id, kind, updated_by, updated_at) values ($1, $2, $3, $4, $5)
+       on conflict (file_key, node_id) do update set kind = excluded.kind, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+       returning *`, [fileKey, nodeId, kind, by, at]);
+    return mapScopeKind(row);
+  }
+
+  async listScopeKinds(fileKey) {
+    const { rows } = await this.query('select * from scope_setting where file_key = $1 order by node_id collate "C"', [fileKey]);
+    return rows.map(mapScopeKind);
+  }
+
+  async setFamilyRoute(fileKey, familyKey, { route, by, at }) {
+    const { rows: [row] } = await this.query(
+      `insert into target_family (file_key, family_key, route, updated_by, updated_at) values ($1, $2, $3, $4, $5)
+       on conflict (file_key, family_key) do update set route = excluded.route, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+       returning *`, [fileKey, familyKey, route, by, at]);
+    return mapFamily(row);
+  }
+
+  async listFamilies(fileKey) {
+    const { rows } = await this.query('select * from target_family where file_key = $1 order by family_key collate "C"', [fileKey]);
+    return rows.map(mapFamily);
   }
 
   async insertCheck({ fileKey, nodeId, designVersion, requestedBy, at }) {
@@ -1210,18 +1245,21 @@ class PostgresStore {
     if (!UUID_RE.test(checkId)) return null;
     const { rows: [row] } = await this.query(
       `update render_check set status = $3, design_version = $4, submitted_by = $5, submitted_at = $6, commit_ref = $7, source = $8,
-         score = $9, threshold = $10, regions = $11::jsonb, built_id = $12::uuid, heatmap_id = $13::uuid, reference_id = $14::uuid, error = $15
+         score = $9, threshold = $10, regions = $11::jsonb, built_id = $12::uuid, heatmap_id = $13::uuid, reference_id = $14::uuid, error = $15,
+         attribution = $16::jsonb
        where file_key = $1 and check_id = $2::uuid and status = 'requested' returning *`,
       [fileKey, checkId, r.status, r.designVersion, r.submittedBy, r.submittedAt, r.commitRef ?? null, r.source ?? null, r.score ?? null,
-        r.threshold ?? null, JSON.stringify(r.regions || []), r.builtId ?? null, r.heatmapId ?? null, r.referenceId ?? null, r.error ?? null]);
+        r.threshold ?? null, JSON.stringify(r.regions || []), r.builtId ?? null, r.heatmapId ?? null, r.referenceId ?? null, r.error ?? null,
+        JSON.stringify(r.attribution || [])]);
     return mapCheck(row) || null;
   }
 
-  async deleteChecks(fileKey, nodeId, { keep = 0 } = {}) {
+  async deleteChecks(fileKey, nodeId, { keep = 0, except = [] } = {}) {
     const { rows } = await this.query(
       `delete from render_check where check_id in (
          select check_id from render_check where file_key = $1 and node_id = $2 order by requested_at desc, check_id desc offset $3)
-       returning *`, [fileKey, nodeId, keep]);
+         and not (check_id = any($4::uuid[]))
+       returning *`, [fileKey, nodeId, keep, except.filter(id => UUID_RE.test(id))]);
     return rows.map(mapCheck);
   }
 

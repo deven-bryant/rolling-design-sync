@@ -737,6 +737,8 @@ test('/v3/openapi.json is an OpenAPI 3 document listing every v3 route', async t
     '/v3/files/{fileKey}/screens/references-needed': ['get'], '/v3/files/{fileKey}/screens/{nodeId}/reference': ['put'],
     '/v3/files/{fileKey}/screens/{nodeId}/checks': ['post'], '/v3/files/{fileKey}/checks': ['get'],
     '/v3/files/{fileKey}/checks/{checkId}': ['get'], '/v3/files/{fileKey}/checks/{checkId}/result': ['post'],
+    '/v3/files/{fileKey}/targets': ['get'], '/v3/files/{fileKey}/targets/{nodeId}': ['patch'], '/v3/files/{fileKey}/targets/{nodeId}/checks': ['get'],
+    '/v3/files/{fileKey}/scopes/{nodeId}': ['patch'],
     '/v3/files/{fileKey}/summary': ['get'], '/v3/files/{fileKey}/work': ['get'], '/v3/insights/trends': ['get'],
     '/v3/files/{fileKey}/hashes': ['get'], '/v3/files/{fileKey}/sync': ['post'], '/v3/files/{fileKey}/exists': ['post'],
     '/v3/session': ['get', 'delete', 'post'],
@@ -827,6 +829,10 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     'get /v3/files/{fileKey}/checks': ['list_render_checks', 'checks ls'],
     'get /v3/files/{fileKey}/checks/{checkId}': ['get_render_check', 'checks show'],
     'post /v3/files/{fileKey}/checks/{checkId}/result': ['submit_render_check', 'checks submit'],
+    'get /v3/files/{fileKey}/targets': ['list_check_targets', 'targets ls'],
+    'patch /v3/files/{fileKey}/targets/{nodeId}': ['update_check_target', 'targets set'],
+    'get /v3/files/{fileKey}/targets/{nodeId}/checks': ['list_target_checks', 'targets checks'],
+    'patch /v3/files/{fileKey}/scopes/{nodeId}': ['set_scope_kind', 'scopes kind'],
   };
   const ops = Object.entries(doc.paths).flatMap(([route, item]) => Object.entries(item).map(([method, op]) => [`${method} ${route}`, op]));
   const annotated = {};
@@ -847,8 +853,8 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     assert.equal(op['x-rds-mcp'], undefined, key);
     assert.equal(op['x-rds-cli'], undefined, key);
   }
-  assert.equal(new Set(Object.values(expected).map(([tool]) => tool)).size, 29);
-  assert.equal(new Set(Object.values(expected).map(([, command]) => command)).size, 29);
+  assert.equal(new Set(Object.values(expected).map(([tool]) => tool)).size, 33);
+  assert.equal(new Set(Object.values(expected).map(([, command]) => command)).size, 33);
 
   const described = s => typeof s === 'string' && s.trim().length > 0;
   for (const [key, op] of ops.filter(([k]) => expected[k])) {
