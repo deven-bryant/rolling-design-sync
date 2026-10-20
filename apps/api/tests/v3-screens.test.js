@@ -57,7 +57,7 @@ async function openApp(kind) {
     store, blobs,
     config: loadConfig({ RDS_PLUGIN_TOKENS: PLUGIN_TOKEN, RDS_AGENT_TOKENS: AGENT_TOKEN, RDS_VIEWER_TOKENS: VIEWER_TOKEN }),
   });
-  await sync(app, { fileKey: FK, fileName: 'Design File', rootNodeId: '1:1', upserts: TREE(), markImplemented: true });
+  await sync(app, { fileKey: FK, fileName: 'Design File', rootNodeId: '1:1', checks: false, upserts: TREE(), markImplemented: true });
   return { app, blobs, close: async () => { await app.close(); await cleanup(); } };
 }
 
@@ -149,13 +149,13 @@ for (const kind of Object.keys(STORES)) {
     const node = ok(await call(app, 'GET', '/nodes/2:1'));
     assert.equal(node.state, 'dirty');
     assert.ok(node.changeCategories === undefined || true);
-    assert.deepEqual(node.screen, { status: 'mismatch', stale: false, score: bad.score });
+    assert.deepEqual(node.screen, { status: 'mismatch', stale: false, score: bad.score, excluded: false });
     const [note] = node.notes;
     assert.equal(note.source, 'render_check');
     assert.equal(note.author, 'render-check');
     assert.deepEqual(note.attachments.map(a => a.kind).sort(), ['built', 'heatmap', 'reference']);
     const frames = ok(await call(app, 'GET', '/work?group=frame&under=1:1&state=all')).items;
-    assert.deepEqual(frames.find(i => i.key === '2:1').screen, { status: 'mismatch', stale: false, score: bad.score }, 'work items carry the screen state');
+    assert.deepEqual(frames.find(i => i.key === '2:1').screen, { status: 'mismatch', stale: false, score: bad.score, excluded: false }, 'work items carry the screen state');
     assert.ok(frames.filter(i => i.key !== '2:1').every(i => i.screen === undefined));
     const listed = ok(await call(app, 'GET', '/nodes?state=dirty&category=render')).nodes.map(n => n.nodeId);
     assert.deepEqual(listed, ['2:1']);
@@ -187,7 +187,7 @@ for (const kind of Object.keys(STORES)) {
     const after = ok(await call(app, 'GET', '/nodes/2:1'));
     assert.equal(after.state, 'clean');
     assert.ok(!after.notes || after.notes.length === 0);
-    assert.deepEqual(after.screen, { status: 'passed', stale: false, score: 0 });
+    assert.deepEqual(after.screen, { status: 'passed', stale: false, score: 0, excluded: false });
 
     // Design change: stale, needs a new reference.
     await sync(app, { fileKey: FK, rootNodeId: '1:1', upserts: TREE(24) });

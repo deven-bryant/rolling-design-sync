@@ -1,10 +1,11 @@
 'use strict';
 
 /*
- * v3 check targets (docs/api-v3-design.md, "Check targets"): scope kinds,
- * automatic detection, families and variant mappings, node maps, the ready
- * list and its order, route capture, attribution, node masks, history and
- * retention — against the memory store and PGlite (same SQL as Postgres).
+ * v3 check targets (docs/api-v3-design.md, "Check targets"): the scope
+ * checks switch (and legacy kinds), automatic detection (the union of
+ * top-level frames / variants and main components), families and variant
+ * mappings, node maps, the ready list and its containment order, exclude,
+ * containing=, route capture, attribution, node masks, history and retention — against the memory store and PGlite (same SQL as Postgres).
  */
 
 const test = require('node:test');
@@ -37,7 +38,7 @@ function up(nodeId, nodeType, name, attrs, ancestors = [], extra = {}) {
 const inst = (nodeId, name, main, attrs, ancestors) => up(nodeId, 'INSTANCE', name, attrs, ancestors, { isInstance: true, mainComponentId: main });
 
 /*
- * 1:1 SECTION Screens (kind screens)
+ * 1:1 SECTION Screens
  * ├─ 2:1 COMPONENT_SET Portal
  * │  ├─ 2:2 COMPONENT View=Files, Color Mode=Light   240×200
  * │  │  ├─ 3:1 FRAME Header → 4:1 TEXT Title
@@ -47,7 +48,7 @@ const inst = (nodeId, name, main, attrs, ancestors) => up(nodeId, 'INSTANCE', na
  * │  └─ 2:4 COMPONENT View=Nodes, Color Mode=Light
  * ├─ 2:5 FRAME Landing
  * └─ 2:6 TEXT Caption (not a target)
- * 5:1 SECTION Components (kind components)
+ * 5:1 SECTION Components
  * ├─ 6:1 COMPONENT_SET Button
  * │  ├─ 6:2 COMPONENT Size=sm → 6:5 TEXT Label, 7:1 INSTANCE Icon (main 6:4)
  * │  └─ 6:3 COMPONENT Size=lg
@@ -108,15 +109,15 @@ const STORES = {
   },
 };
 
-async function openApp(kind, { kinds = true } = {}) {
+async function openApp(kind) {
   const { store, cleanup } = await STORES[kind]();
   const blobs = new MemoryBlobs();
   const app = buildApp({
     store, blobs,
     config: loadConfig({ RDS_PLUGIN_TOKENS: PLUGIN_TOKEN, RDS_AGENT_TOKENS: AGENT_TOKEN, RDS_VIEWER_TOKENS: VIEWER_TOKEN }),
   });
-  await sync(app, { fileName: 'Design File', rootNodeId: '1:1', upserts: SCREENS, markImplemented: true, ...(kinds ? { scopeKind: 'screens' } : {}) });
-  await sync(app, { rootNodeId: '5:1', upserts: COMPONENTS, markImplemented: true, ...(kinds ? { scopeKind: 'components' } : {}) });
+  await sync(app, { fileName: 'Design File', rootNodeId: '1:1', upserts: SCREENS, markImplemented: true });
+  await sync(app, { rootNodeId: '5:1', upserts: COMPONENTS, markImplemented: true });
   return { app, blobs, close: async () => { await app.close(); await cleanup(); } };
 }
 
@@ -164,43 +165,50 @@ async function check(app, nodeId, image) {
 const openNotes = async (app, nodeId) => ok(await call(app, 'GET', `/nodes/${nodeId}/notes`)).notes.filter(n => n.status === 'open');
 
 for (const kind of Object.keys(STORES)) {
-  test(`[${kind}] scope kinds: from the sync and the API; detection per kind; autoTargets=false`, async t => {
-    const { app, close } = await openApp(kind, { kinds: false });
+  test(`[${kind}] scope checks: on by default, the union of targets, sync and API, legacy kinds, autoTargets=false`, async t => {
+    const { app, close } = await openApp(kind);
     t.after(close);
-    assert.deepEqual(await list(app), [], 'undeclared scopes have no targets');
-    assert.deepEqual(ok(await call(app, 'GET', '/scopes')).scopes.map(s => s.kind), ['none', 'none']);
+    const ids = async (query = '') => (await list(app, query)).map(x => x.nodeId).sort();
+    assert.deepEqual(await ids(), ['2:2', '2:3', '2:4', '2:5', '6:2', '6:3', '6:4'], 'scopes never set are checked: top-level frames, variants, main components');
+    assert.ok((await list(app)).every(x => x.source === 'auto' && x.excluded === false));
+    assert.deepEqual((await byId(app, '2:5')).viewport, { width: 1440, height: 900 }, 'viewport = the Figma size');
+    assert.deepEqual(ok(await call(app, 'GET', '/scopes')).scopes.map(s => s.checks), [true, true]);
 
-    const bad = await app.inject({ method: 'POST', url: `/v3/files/${FK}/sync`, headers: plugin, payload: { scopeKind: 'screens', upserts: [] } });
+    // A main component nested in a frame is a target too, checked before the frame that contains it.
+    await sync(app, { rootNodeId: '1:1', upserts: [up('2:7', 'COMPONENT', 'Badge', { width: 30, height: 20 }, [...S, '2:5'])] });
+    const all = await list(app);
+    assert.ok(all.some(x => x.nodeId === '2:7' && x.level === 'component'), 'deprecated level: component below the top level');
+    assert.deepEqual((await byId(app, '2:5')).contains, ['2:7']);
+    assert.ok(all.findIndex(x => x.nodeId === '2:7') < all.findIndex(x => x.nodeId === '2:5'), 'contained targets first');
+
+    const bad = await app.inject({ method: 'POST', url: `/v3/files/${FK}/sync`, headers: plugin, payload: { checks: false, upserts: [] } });
     assertProblem(bad, 400, 'invalid_body');
-    await sync(app, { rootNodeId: '1:1', upserts: [], scopeKind: 'screens' });
-    let targets = await list(app);
-    assert.deepEqual(targets.map(x => x.nodeId).sort(), ['2:2', '2:3', '2:4', '2:5'], 'top-level frames and the set\'s variants');
-    assert.ok(targets.every(x => x.level === 'screen' && x.source === 'auto'));
-    assert.deepEqual(targets.find(x => x.nodeId === '2:5').viewport, { width: 1440, height: 900 }, 'viewport = the Figma size');
-
-    assertProblem(await call(app, 'PATCH', '/scopes/5:1', { headers: viewer, payload: { kind: 'components' } }), 403, 'wrong_token_class');
-    const set = ok(await call(app, 'PATCH', '/scopes/5:1', { payload: { kind: 'components' } }));
-    assert.deepEqual(set, { fileKey: FK, nodeId: '5:1', kind: 'components', targets: 3 });
-    targets = await list(app, '?level=component');
-    assert.deepEqual(targets.map(x => x.nodeId).sort(), ['6:2', '6:3', '6:4'], 'every main component');
-    const kinds = Object.fromEntries(ok(await call(app, 'GET', '/scopes')).scopes.map(s => [s.nodeId, s.kind]));
-    assert.deepEqual(kinds, { '1:1': 'screens', '5:1': 'components' });
-
-    // A later sync without scopeKind keeps the kind; a manual screen survives everything.
+    await sync(app, { rootNodeId: '1:1', upserts: [], checks: false });
+    assert.deepEqual(await ids(), ['6:2', '6:3', '6:4'], 'checks: false removes the scope\'s targets');
     await sync(app, { rootNodeId: '1:1', upserts: [] });
-    assert.equal((await list(app, '?level=screen')).length, 4);
+    assert.deepEqual(await ids(), ['6:2', '6:3', '6:4'], 'a sync without the field keeps the stored value');
+    await sync(app, { rootNodeId: '5:1', upserts: [], scopeKind: 'none' });
+    assert.deepEqual(await ids(), [], 'legacy kind none = off');
+    await sync(app, { rootNodeId: '5:1', upserts: [], scopeKind: 'components' });
+    assert.deepEqual(await ids(), ['6:2', '6:3', '6:4'], 'legacy screens / components = on');
+
+    assertProblem(await call(app, 'PATCH', '/scopes/1:1', { headers: viewer, payload: { checks: true } }), 403, 'wrong_token_class');
+    const set = ok(await call(app, 'PATCH', '/scopes/1:1', { payload: { checks: true } }));
+    assert.deepEqual(set, { fileKey: FK, nodeId: '1:1', checks: true, targets: 5 });
+    assert.deepEqual(ok(await call(app, 'PATCH', '/scopes/5:1', { payload: { kind: 'none' } })), { fileKey: FK, nodeId: '5:1', checks: false, targets: 0 });
+    assertProblem(await call(app, 'PATCH', '/scopes/1:1', { payload: {} }), 400, 'invalid_body');
+    assertProblem(await call(app, 'PATCH', '/scopes/1:1', { payload: { kind: 'pages' } }), 400, 'invalid_parameter');
+    const checks = Object.fromEntries(ok(await call(app, 'GET', '/scopes')).scopes.map(s => [s.nodeId, s.checks]));
+    assert.deepEqual(checks, { '1:1': true, '5:1': false });
+
+    // A manual screen survives everything.
     ok(await call(app, 'PUT', '/screens/2:5', { payload: { route: '/landing' } }));
     assert.equal((await byId(app, '2:5')).source, 'manual');
-
     await patchSettings(app, { autoTargets: false });
     assert.deepEqual((await list(app)).map(x => [x.nodeId, x.source]), [['2:5', 'manual']], 'autoTargets=false: only manual screens');
     assert.deepEqual(await needed(app), [{ nodeId: '2:5', designVersion: (await byId(app, '2:5')).designVersion, level: 'screen' }]);
     await patchSettings(app, { autoTargets: true });
-    assert.equal((await list(app)).length, 7);
-
-    ok(await call(app, 'PATCH', '/scopes/1:1', { payload: { kind: 'none' } }));
-    assert.deepEqual((await list(app, '?level=screen')).map(x => x.nodeId), ['2:5'], 'kind none removes the scope\'s auto targets');
-    assertProblem(await call(app, 'PATCH', '/scopes/1:1', { payload: { kind: 'pages' } }), 400, 'invalid_parameter');
+    assert.equal((await list(app)).length, 5);
   });
 
   test(`[${kind}] families and variant mappings; route capture; render info`, async t => {
@@ -229,10 +237,13 @@ for (const kind of Object.keys(STORES)) {
 
     assertProblem(await call(app, 'PATCH', '/targets/2:2', { headers: viewer, payload: { route: '/files' } }), 403, 'wrong_token_class');
     assertProblem(await call(app, 'PATCH', '/targets/2:2', { payload: { route: 'files' } }), 400, 'invalid_parameter');
-    assertProblem(await call(app, 'PATCH', '/targets/6:2', { payload: { route: '/x' } }), 400, 'invalid_parameter');
     const captured = ok(await call(app, 'PATCH', '/targets/2:2', { payload: { route: '/files' } })).target;
     assert.equal(captured.route, '/files');
-    assert.deepEqual(captured.render, { route: '/files', theme: 'light', query: 'view=Files', themeMode: 'query', themeKey: 't', viewport: { width: W, height: H } });
+    assert.deepEqual(captured.render, {
+      gallery: { urlTemplate: '/gallery?figma={set}&variant={variant}', storybookUrl: null }, key: null, nodeId: '2:2', set: 'Portal',
+      variant: 'View=Files, Color Mode=Light', props: { View: 'Files', 'Color Mode': 'Light' }, cache: null,
+      route: '/files', theme: 'light', query: 'view=Files', themeMode: 'query', themeKey: 't', viewport: { width: W, height: H },
+    }, 'every target: gallery info first, then the route');
     assert.equal((await byId(app, '2:3')).route, '/files', 'the family shares the route');
     const checkReq = ok(await call(app, 'POST', '/screens/2:3/checks')).check;
     assert.equal(checkReq.route, '/files', 'requested checks carry the family route');
@@ -240,8 +251,10 @@ for (const kind of Object.keys(STORES)) {
     const sm = await byId(app, '6:2');
     assert.deepEqual(sm.render, {
       gallery: { urlTemplate: '/gallery?figma={set}&variant={variant}', storybookUrl: null }, key: 'k-sm', nodeId: '6:2', set: 'Button',
-      variant: 'Size=sm', props: { Size: 'sm' }, theme: null, query: null, themeMode: 'query', themeKey: 't', viewport: { width: 80, height: 40 }, cache: null,
+      variant: 'Size=sm', props: { Size: 'sm' }, route: null, theme: null, query: null, themeMode: 'query', themeKey: 't', viewport: { width: 80, height: 40 }, cache: null,
     });
+    const lg = ok(await call(app, 'PATCH', '/targets/6:3', { payload: { route: '/gallery/button-lg' } })).target;
+    assert.equal(lg.render.route, '/gallery/button-lg', 'components take a route too (used when the gallery has no entry)');
     const icon = await byId(app, '6:4');
     assert.deepEqual([icon.render.key, icon.render.set, icon.render.variant], ['k-icon', 'Icon', '']);
     const cached = ok(await call(app, 'PATCH', '/targets/6:4', { payload: { gallery: { mapped: true, storyId: 'icon--default' } } })).target;
@@ -255,7 +268,7 @@ for (const kind of Object.keys(STORES)) {
     t.after(close);
     const want = await needed(app);
     assert.deepEqual(want.map(s => s.nodeId).sort(), ['2:2', '2:3', '2:4', '2:5', '6:2', '6:3', '6:4']);
-    assert.deepEqual(want.find(s => s.nodeId === '6:4').level, 'component');
+    assert.equal(want.find(s => s.nodeId === '6:4').level, 'screen', 'deprecated level: a top-level component');
 
     const v = want.find(s => s.nodeId === '2:2').designVersion;
     const tooMany = Array.from({ length: NODE_MAP_MAX_ENTRIES + 1 }, (_, i) => ({ nodeId: `9:${i}`, x: 0, y: 0, width: 1, height: 1, depth: 1 }));
@@ -276,14 +289,14 @@ for (const kind of Object.keys(STORES)) {
     assert.equal((await byId(app, '6:4')).nodeMap, null, 'the node map is optional');
   });
 
-  test(`[${kind}] ready list: check order, waiting on a failing component, not mapped never blocks`, async t => {
+  test(`[${kind}] ready list: containment order, waiting on a failing target, not mapped never blocks`, async t => {
     const { app, close } = await openApp(kind);
     t.after(close);
     const ready = await list(app, '?status=ready');
     const ids = ready.map(x => x.nodeId);
     assert.equal(ready.length, 7);
-    assert.deepEqual(ready.slice(0, 3).map(x => x.level), ['component', 'component', 'component'], 'components first');
-    assert.ok(ids.indexOf('6:4') < ids.indexOf('6:2'), 'children before composites');
+    assert.ok(ids.indexOf('6:4') < ids.indexOf('6:2'), 'a target placing instances of another comes after it');
+    assert.ok(ids.indexOf('6:2') < ids.indexOf('2:2'));
     assert.deepEqual((await byId(app, '6:2')).contains, ['6:4']);
     assert.deepEqual((await byId(app, '2:2')).contains, ['6:2']);
 
@@ -296,18 +309,67 @@ for (const kind of Object.keys(STORES)) {
     assert.equal((await byId(app, '2:2')).status, 'waiting', 'screens wait through nested components');
     assert.deepEqual((await byId(app, '2:2')).waitingOn, { nodeId: '6:4', name: 'Icon' });
     assert.ok(!(await list(app, '?status=ready')).some(x => ['6:2', '2:2'].includes(x.nodeId)));
-    assert.deepEqual((await list(app, '?status=waiting&level=component')).map(x => x.nodeId), ['6:2']);
+    assert.deepEqual((await list(app, '?status=waiting&under=5:1')).map(x => x.nodeId), ['6:2']);
 
     ok(await call(app, 'PATCH', '/targets/6:4', { payload: { gallery: { mapped: false } } }));
     const icon = await byId(app, '6:4');
     assert.equal(icon.notMapped, true);
-    assert.equal((await byId(app, '6:2')).status, 'ready', 'not-mapped components never block');
+    assert.equal((await byId(app, '6:2')).status, 'ready', 'not-mapped targets never block');
+    ok(await call(app, 'PATCH', '/targets/6:4', { payload: { route: '/icons' } }));
+    assert.equal((await byId(app, '6:4')).notMapped, false, 'a route maps it');
+    assert.equal((await byId(app, '6:2')).status, 'waiting');
     assert.deepEqual((await list(app, '?under=5:1')).map(x => x.nodeId).sort(), ['6:2', '6:3', '6:4']);
 
     // Building: a dirty node under a target.
     await sync(app, { rootNodeId: '5:1', upserts: [up('6:3', 'COMPONENT', 'Size=lg', { width: 130, height: 48, variantProperties: { Size: 'lg' } }, [...C, '6:1'])] });
     assert.equal((await byId(app, '6:3')).status, 'building');
     assert.deepEqual((await byId(app, '6:3')).viewport, { width: 130, height: 48 }, 'auto targets follow the Figma size');
+  });
+
+  test(`[${kind}] exclude: skipped by the ready list, never blocks, keeps history, survives re-detection`, async t => {
+    const { app, close } = await openApp(kind);
+    t.after(close);
+    await reference(app, '6:4', { width: 40, height: 40 });
+    const bad = await check(app, '6:4', await png({ width: 40, height: 40, boxes: [{ x: 0, y: 0, width: 20, height: 20 }] }));
+    assert.equal((await byId(app, '6:2')).status, 'waiting');
+
+    assertProblem(await call(app, 'PATCH', '/targets/6:4', { headers: viewer, payload: { excluded: true } }), 403, 'wrong_token_class');
+    const ex = ok(await call(app, 'PATCH', '/targets/6:4', { payload: { excluded: true } })).target;
+    assert.equal(ex.excluded, true);
+    assert.equal((await byId(app, '6:2')).status, 'ready', 'an excluded target never blocks');
+    assert.ok(!(await list(app, '?status=ready')).some(x => x.nodeId === '6:4'));
+    assert.ok(!(await list(app, '?status=mismatch')).some(x => x.nodeId === '6:4'), 'excluded targets match no status filter');
+    assert.ok((await list(app)).some(x => x.nodeId === '6:4' && x.excluded), 'still listed');
+    assert.deepEqual(ok(await call(app, 'GET', '/targets/6:4/checks')).checks.map(c => c.checkId), [bad.checkId], 'history kept');
+    assert.equal(ok(await call(app, 'GET', '/nodes/6:4')).screen.excluded, true, 'on the node summary');
+
+    await sync(app, { rootNodeId: '5:1', upserts: [up('6:4', 'COMPONENT', 'Icon', { width: 44, height: 40, componentReference: { id: '6:4', key: 'k-icon', name: 'Icon' } }, C)] });
+    const redetected = await byId(app, '6:4');
+    assert.deepEqual([redetected.viewport.width, redetected.excluded], [44, true], 're-detection keeps the flag');
+
+    ok(await call(app, 'PATCH', '/targets/6:4', { payload: { excluded: false } }));
+    assert.equal((await byId(app, '6:4')).excluded, false);
+  });
+
+  test(`[${kind}] containing=: the targets containing a node, with their open render notes`, async t => {
+    const { app, close } = await openApp(kind);
+    t.after(close);
+    const holders = async nodeId => (await list(app, `?containing=${nodeId}`)).map(x => x.nodeId);
+    assert.deepEqual(await holders('6:5'), ['6:2', '2:2'], 'its component, and the screen placing an instance of it');
+    assert.deepEqual(await holders('4:1'), ['2:2']);
+    assert.deepEqual(await holders('6:4'), ['6:4', '6:2', '2:2'], 'itself, then through instances (transitively)');
+    assert.deepEqual(await holders('2:6'), []);
+    assertProblem(await call(app, 'GET', '/targets?containing=99:99'), 404, 'node_not_found');
+
+    await reference(app, '6:4', { width: 40, height: 40 });
+    await check(app, '6:4', await png({ width: 40, height: 40, boxes: [{ x: 0, y: 0, width: 20, height: 20 }] }));
+    const [icon, sm] = await list(app, '?containing=6:4');
+    assert.equal(icon.renderNotes.open, 1);
+    assert.equal(icon.renderNotes.latest.nodeId, '6:4');
+    assert.match(icon.renderNotes.latest.body, /Render check/);
+    assert.deepEqual(sm.renderNotes, { open: 0, latest: null });
+    assert.equal(icon.lastCheck.status, 'mismatch');
+    assert.equal((await byId(app, '6:4')).renderNotes, undefined, 'only with containing');
   });
 
   test(`[${kind}] attribution: deepest node, instance → main node, > 2 nodes → common parent, summary; pass resolves; node masks`, async t => {

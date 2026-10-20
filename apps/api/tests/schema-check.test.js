@@ -166,16 +166,17 @@ test('the advisory lock lets one of two concurrent runners apply; the other find
 
 test('a failing migration rolls back, names the file and keeps the database as it was', async t => {
   const db = await openDb(t);
-  await applyPrefix(db, FILES.length - 1);
+  const at = FILES.indexOf('20261020000000_api_v3_check_targets.sql');
+  await applyPrefix(db, at);
   const pool = poolOf(db);
-  const last = FILES[FILES.length - 1];
+  const last = FILES[at];
   // The probe still fails (no new columns or tables) and re-adding the attachment kind check fails on the bogus row.
   await db.exec(`alter table public.attachment drop constraint attachment_kind_check;
     insert into public.attachment (file_key, owner_kind, owner_id, kind, content_type, size, width, height, sha256, blob_key, created_by)
     values ('f', 'note', 'n', 'bogus', 'image/png', 1, 1, 1, 'x', 'k', 't')`);
   await assert.rejects(checkSchema(pool, AUTO, { log: recorder() }), new RegExp(`Migration ${last} failed`));
   assert.ok(pool.statements.includes('rollback'));
-  assert.deepEqual(await missingMigrations(pool), [last]);
+  assert.deepEqual(await missingMigrations(pool), FILES.slice(at));
 });
 
 test('RDS_SCHEMA_CHECK=off warns and starts without running a statement', async t => {

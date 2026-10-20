@@ -93,7 +93,7 @@ async function batch(app, body) {
 
 /** The fixture above; returns the time `T` between the last setup write and the 3:4 re-edit. */
 async function seed(app, store) {
-  await batch(app, { fileKey: FK, fileName: 'Design File', rootNodeId: '1:1', upserts: TREE_V1(), markImplemented: true });
+  await batch(app, { fileKey: FK, fileName: 'Design File', rootNodeId: '1:1', checks: false, upserts: TREE_V1(), markImplemented: true });
   await batch(app, { fileKey: FK, rootNodeId: '1:1', upserts: TREE_V2(), deletedNodeIds: ['3:3'] });
   const future = new Date(Date.now() + 3600e3).toISOString();
   const past = new Date(Date.now() - 3600e3).toISOString();
@@ -832,7 +832,7 @@ test('/v3/openapi.json annotates exactly the agent operations, with model-facing
     'get /v3/files/{fileKey}/targets': ['list_check_targets', 'targets ls'],
     'patch /v3/files/{fileKey}/targets/{nodeId}': ['update_check_target', 'targets set'],
     'get /v3/files/{fileKey}/targets/{nodeId}/checks': ['list_target_checks', 'targets checks'],
-    'patch /v3/files/{fileKey}/scopes/{nodeId}': ['set_scope_kind', 'scopes kind'],
+    'patch /v3/files/{fileKey}/scopes/{nodeId}': ['set_scope_checks', 'scopes checks'],
   };
   const ops = Object.entries(doc.paths).flatMap(([route, item]) => Object.entries(item).map(([method, op]) => [`${method} ${route}`, op]));
   const annotated = {};
