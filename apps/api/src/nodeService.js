@@ -22,14 +22,35 @@ const isInstanceNode = u => u.isInstance === true || u.nodeType === 'INSTANCE';
 const COMPONENT_TYPES = ['COMPONENT', 'COMPONENT_SET'];
 const remoteRef = attrs => !!attrs && !!attrs.componentReference && attrs.componentReference.remote === true;
 
-/** Per-file settings and their defaults (docs/api-v3-design.md, "Library components"). */
-const DEFAULT_SETTINGS = Object.freeze({ trackLibraryComponents: true, storeImages: true });
+/**
+ * Per-file settings and their defaults (docs/api-v3-design.md, "Library
+ * components" and "Check targets").
+ */
+const DEFAULT_SETTINGS = Object.freeze({
+  trackLibraryComponents: true,
+  storeImages: true,
+  autoTargets: true,
+  variantMappings: Object.freeze({}),
+  themeMode: 'color-scheme',
+  themeKey: 'theme',
+  gallery: Object.freeze({ urlTemplate: null, storybookUrl: null }),
+  checkRetention: 5,
+});
+const THEME_MODES = Object.freeze(['color-scheme', 'query', 'storage']);
+const isPlainObject = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-/** A file's effective settings: the stored known ones over the defaults. */
+/** A file's effective settings: the stored known ones over the defaults (fresh objects). */
 function fileSettings(file) {
   const stored = (file && file.settings) || {};
-  const out = { ...DEFAULT_SETTINGS };
-  for (const k of Object.keys(DEFAULT_SETTINGS)) if (typeof stored[k] === typeof DEFAULT_SETTINGS[k]) out[k] = stored[k];
+  const out = { ...DEFAULT_SETTINGS, variantMappings: {}, gallery: { ...DEFAULT_SETTINGS.gallery } };
+  for (const k of ['trackLibraryComponents', 'storeImages', 'autoTargets']) if (typeof stored[k] === 'boolean') out[k] = stored[k];
+  if (THEME_MODES.includes(stored.themeMode)) out.themeMode = stored.themeMode;
+  if (typeof stored.themeKey === 'string' && stored.themeKey) out.themeKey = stored.themeKey;
+  if (Number.isInteger(stored.checkRetention) && stored.checkRetention >= 1) out.checkRetention = stored.checkRetention;
+  if (isPlainObject(stored.variantMappings)) out.variantMappings = JSON.parse(JSON.stringify(stored.variantMappings));
+  if (isPlainObject(stored.gallery)) {
+    for (const k of ['urlTemplate', 'storybookUrl']) if (typeof stored.gallery[k] === 'string' || stored.gallery[k] === null) out.gallery[k] = stored.gallery[k];
+  }
   return out;
 }
 
@@ -426,4 +447,4 @@ class NodeSyncService {
   }
 }
 
-module.exports = { NodeSyncService, changeColumns, noteState, openNoteCounts, refreshNoteState, sameChanges, fileSettings, DEFAULT_SETTINGS, EXISTS_MAX_IDS, CAPTURE_VERSION };
+module.exports = { NodeSyncService, changeColumns, noteState, openNoteCounts, refreshNoteState, sameChanges, fileSettings, DEFAULT_SETTINGS, THEME_MODES, EXISTS_MAX_IDS, CAPTURE_VERSION };

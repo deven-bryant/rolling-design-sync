@@ -197,7 +197,7 @@ async function v3Routes(v3, { config, store, now, bus, nodes, libraryLinks, blob
     authed.addHook('onRequest', v3Auth(config));
     authed.addHook('onRoute', documentSessionAccess);
     registerReadRoutes(authed, { store, now, libraryLinks });
-    registerFileRoutes(authed, { store, now, bus });
+    registerFileRoutes(authed, { store, now, bus, blobs });
     registerClaimRoutes(authed, { store, now });
     registerActionRoutes(authed, { store, now, config, bus, libraryLinks });
     registerEventRoutes(authed, { store, now, config, bus });
@@ -210,7 +210,7 @@ async function v3Routes(v3, { config, store, now, bus, nodes, libraryLinks, blob
     tokenRoutes(authed);
   });
   v3.register(async plugin => {
-    registerPluginRoutes(plugin, { config, nodes });
+    registerPluginRoutes(plugin, { config, nodes, blobs });
     registerScreenPluginRoutes(plugin, { store, blobs, now, config });
   });
 }

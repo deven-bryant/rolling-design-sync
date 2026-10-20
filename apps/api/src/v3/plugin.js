@@ -10,6 +10,8 @@ const { HttpError } = require('../errors');
 const { EXISTS_MAX_IDS } = require('../nodeService');
 const { problem } = require('./problem');
 const { rejectUnknownKeys } = require('./actions');
+const { deleteBlobs } = require('./attachments');
+const { SCOPE_KINDS, reconcileTargets } = require('../checkTargets');
 const address = require('./address');
 const schemas = require('./schemas');
 
@@ -89,6 +91,7 @@ const sync = {
       fileKey: { type: 'string', description: 'Optional; must equal the path\'s file key when sent.' },
       fileName: nullable('string', { description: 'The Figma file\'s name.' }),
       rootNodeId: nullable('string', { description: 'The synced scope root (1:2 or 1-2).' }),
+      scopeKind: { type: 'string', enum: SCOPE_KINDS, description: 'What the scope contains, as declared in Figma (needs `rootNodeId`): `screens`, `components` or `none`. Stored for the scope and used for automatic check targets; omitted = unchanged (older plugins send nothing; undeclared scopes are `none`).' },
       markImplemented: { type: 'boolean', default: false, description: 'First-scan baseline: insert never-seen nodes as implemented.' },
       upserts: { type: 'array', items: upsert, default: [] },
       deletedNodeIds: { ...nodeIds('Nodes that vanished from the scope; tombstoned.'), default: [] },
@@ -196,7 +199,7 @@ function fileOf(request) {
   return { fileKey, urlNodeId };
 }
 
-function registerPluginRoutes(app, { config, nodes }) {
+function registerPluginRoutes(app, { config, nodes, blobs = null }) {
   app.addHook('onRequest', pluginAuth(config));
 
   app.get('/files/:fileKey/hashes', { schema: hashes }, async (/** @type {import('./types').V3Request<'/v3/files/{fileKey}/hashes', 'get'>} */ request) => {
@@ -215,13 +218,29 @@ function registerPluginRoutes(app, { config, nodes }) {
     const { fileKey } = fileOf(request);
     const body = request.body || {};
     const rootNodeId = typeof body.rootNodeId === 'string' ? address.normalizeNodeId(body.rootNodeId) : body.rootNodeId;
-    return service(() => nodes.batchUpsert({
-      ...body,
+    const { scopeKind, ...batch } = /** @type {any} */ (body);
+    if (scopeKind !== undefined && !rootNodeId) {
+      throw problem('invalid_body', 'scopeKind needs rootNodeId: it is stored for the synced scope.', { hint: 'Send rootNodeId with scopeKind, or drop scopeKind.' });
+    }
+    const result = await service(() => nodes.batchUpsert({
+      ...batch,
       fileKey,
       rootNodeId,
       upserts: (body.upserts || []).map(normalizeUpsert),
       deletedNodeIds: normalizeIds(body.deletedNodeIds || []),
     }));
+    if (rootNodeId) {
+      const at = nodes.now().toISOString();
+      const kinds = await nodes.store.listScopeKinds(fileKey);
+      if (scopeKind !== undefined && !kinds.some(k => k.nodeId === rootNodeId && k.kind === scopeKind)) {
+        await nodes.store.setScopeKind(fileKey, rootNodeId, { kind: scopeKind, by: 'plugin', at });
+      }
+      if (scopeKind !== undefined || kinds.length) {
+        const removed = await reconcileTargets(nodes.store, fileKey, { at });
+        if (blobs) await deleteBlobs(blobs, removed, request.log);
+      }
+    }
+    return result;
   });
 
   app.post('/files/:fileKey/exists', { schema: exists }, async (/** @type {import('./types').V3Request<'/v3/files/{fileKey}/exists', 'post'>} */ request) => {
