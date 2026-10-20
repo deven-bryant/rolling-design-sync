@@ -5,6 +5,8 @@
 *{box-sizing:border-box}body{margin:0;padding:20px}h1{font-size:21px;letter-spacing:-.5px;margin:0 0 6px}h2{font-size:14px;margin:0 0 8px}p{line-height:1.5;margin:6px 0 12px}.muted{color:var(--figma-color-text-secondary,#666)}
 label{display:block;margin:12px 0 5px;font-weight:600}input[type=text],input[type=url],input[type=password]{width:100%;border:1px solid var(--figma-color-border,#ccc);border-radius:6px;background:var(--figma-color-bg,#fff);color:inherit;padding:8px;font:inherit}
 button{border:1px solid var(--figma-color-border,#ccc);border-radius:6px;padding:8px 11px;background:var(--figma-color-bg-secondary,#f4f4f4);color:inherit;font:inherit;cursor:pointer}button.primary{background:#1f6e84;border-color:#1f6e84;color:white}button.primary:hover:not(:disabled){background:#145d6e;border-color:#145d6e}button:disabled{opacity:.45;cursor:default}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.panel{padding:14px;margin:16px 0;border:1px solid var(--figma-color-border,#ddd);border-radius:10px}.scope{font-weight:650;margin:8px 0}#message{padding:10px;border:1px solid transparent;border-radius:6px;background:var(--figma-color-bg-secondary,#f5f6f8);white-space:pre-wrap;line-height:1.5}#message:empty{padding:0;border:0}#message.error{color:var(--figma-color-text-danger,#b42318);background:var(--figma-color-bg-danger-tertiary,#fff0ed);border-color:var(--figma-color-border-danger,#f9c4bb)}#message.success{color:var(--figma-color-text-success,#067647);background:var(--figma-color-bg-success-tertiary,#ecfdf3);border-color:var(--figma-color-border-success,#abefc6)}#busy{font-weight:600;color:var(--figma-color-text-brand,#1f6e84);min-height:18px;margin:8px 0}#bar{position:relative;height:6px;margin:0 0 10px;border-radius:3px;overflow:hidden;background:var(--figma-color-bg-tertiary,#e6e6e6)}#bar[hidden]{display:none}#bar-fill{position:absolute;inset:0 auto 0 0;width:0;border-radius:3px;background:var(--figma-color-bg-brand,#1f6e84);transition:width .2s}.status{display:flex;align-items:center;gap:8px;margin:8px 0}.status #busy{margin:0}#spinner{flex:none;width:12px;height:12px;border:2px solid var(--figma-color-bg-tertiary,#e6e6e6);border-top-color:var(--figma-color-bg-brand,#1f6e84);border-radius:50%;animation:spin .8s linear infinite}#spinner[hidden]{display:none}@keyframes spin{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){#bar-fill{transition:none}#spinner{animation:none;border-color:var(--figma-color-bg-brand,#1f6e84);opacity:.6}}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:240px;overflow:auto;padding:8px;background:var(--figma-color-bg-secondary,#f5f5f5)}a{color:var(--figma-color-text-brand,#1f6e84)}summary{cursor:pointer;margin:10px 0}#result-area[hidden]{display:none}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px;margin:10px 0}.stat{padding:10px;border:1px solid var(--figma-color-border,#ddd);border-radius:8px}.stat b{display:block;font-size:18px;letter-spacing:-.3px}.tag{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--figma-color-text-secondary,#666)}.check{display:flex;align-items:center;gap:7px;font-weight:400;margin:8px 0 0}#prompt{padding:12px;margin:10px 0 0;border:1px solid var(--figma-color-border-brand,#1f6e84);border-radius:8px;background:var(--figma-color-bg-brand-tertiary,#e8f3f6);color:var(--figma-color-text,#202124)}#prompt[hidden]{display:none}#prompt-title{font-weight:650;margin:0 0 4px}#prompt-text{margin:0}#prompt button:focus-visible{outline:2px solid var(--figma-color-border-selected,#0d99ff);outline-offset:1px}
+fieldset{border:0;margin:12px 0 0;padding:0}legend{font-weight:600;padding:0;margin:0 0 5px}.choices{display:flex;gap:14px;flex-wrap:wrap}.choices label{display:flex;align-items:center;gap:6px;font-weight:400;margin:0}input[type=radio]:focus-visible{outline:2px solid var(--figma-color-border-selected,#0d99ff);outline-offset:1px}
+#kind-prompt{padding:12px;margin:10px 0 0;border:1px solid var(--figma-color-border-brand,#1f6e84);border-radius:8px;background:var(--figma-color-bg-brand-tertiary,#e8f3f6);color:var(--figma-color-text,#202124)}#kind-prompt[hidden]{display:none}#kind-prompt-title{font-weight:650;margin:0 0 4px}#kind-prompt button:focus-visible{outline:2px solid var(--figma-color-border-selected,#0d99ff);outline-offset:1px}
 </style></head><body>
 <h1>Rolling Design Sync <small id="version" class="muted"></small></h1>
 <p class="muted">Scan a section or frame and sync it. The plugin hashes every node locally, compares against the hashes stored on the server, and uploads only changed or new nodes plus deletions. Instances are skipped, but every instance's main component is resolved and scanned into the server if missing (loading only the pages it lives on).</p>
@@ -19,6 +21,8 @@ button{border:1px solid var(--figma-color-border,#ccc);border-radius:6px;padding
 <button id="select">Use selection</button>
 <label for="url">Figma file URL</label><input type="url" id="url" placeholder="https://www.figma.com/design/…" autocomplete="off">
 <p class="muted">Paste the URL of this file. Its file key identifies the tracked scope on the server; the plugin cannot verify the URL belongs to the current file, so check it carefully.</p>
+<fieldset id="kind-field"><legend>Contains</legend><div class="choices"><label><input type="radio" name="scope-kind" id="kind-screens" value="screens">Screens</label><label><input type="radio" name="scope-kind" id="kind-components" value="components">Components</label><label><input type="radio" name="scope-kind" id="kind-none" value="none">Neither</label></div></fieldset>
+<p id="kind-note" class="muted">Screens: each top-level frame or variant is checked against its page in the app. Components: each main component is checked in the app's gallery. Saved on the section and sent with each sync.</p>
 <label class="check"><input type="checkbox" id="mark-implemented">Code already matches this design — mark newly scanned nodes as implemented</label>
 <p class="muted">Only affects nodes never synced before; existing changes stay in the queue. Applies to this sync only and is not saved.</p>
 <div class="row"><button id="upload" class="primary">Upload snapshot</button></div>
@@ -26,6 +30,9 @@ button{border:1px solid var(--figma-color-border,#ccc);border-radius:6px;padding
 <div id="message" role="status" aria-live="polite">Choose a scope to get started.</div>
 <div id="prompt" role="alertdialog" aria-labelledby="prompt-title" aria-describedby="prompt-text" hidden><p id="prompt-title"></p><p id="prompt-text">If the code already matches them (for example, you copied screens that are already built), mark them as implemented so they don't show up as work.</p>
 <div class="row"><button id="prompt-implemented" class="primary">Mark as implemented</button><button id="prompt-new">Track as new work</button><button id="prompt-cancel">Cancel</button></div></div>
+<div id="kind-prompt" role="alertdialog" aria-labelledby="kind-prompt-title" aria-describedby="kind-prompt-text" hidden><p id="kind-prompt-title"></p><p id="kind-prompt-text">Render checks compare what it contains with the built app: Screens are checked page by page, Components in the app's gallery. Saved on the section; you can change it any time under Contains.</p>
+<div class="choices"><label><input type="radio" name="kind-prompt-choice" id="kind-prompt-screens" value="screens">Screens</label><label><input type="radio" name="kind-prompt-choice" id="kind-prompt-components" value="components">Components</label><label><input type="radio" name="kind-prompt-choice" id="kind-prompt-none" value="none">Neither</label></div>
+<div class="row"><button id="kind-prompt-save" class="primary">Save and sync</button><button id="kind-prompt-cancel">Cancel</button></div></div>
 <div class="status"><span id="spinner" aria-hidden="true" hidden></span><div id="busy" role="status"></div></div><div id="bar" role="progressbar" aria-labelledby="busy" hidden><div id="bar-fill"></div></div><button id="cancel" disabled>Cancel operation</button>
 <section id="result-area" class="panel" hidden><h2 id="summary">3 · Sync result</h2>
 <p id="result-note" class="muted"></p>
@@ -35,28 +42,35 @@ button{border:1px solid var(--figma-color-border,#ccc);border-radius:6px;padding
 </section>
 <script>
 const $ = id => document.getElementById(id);
-let scope=null, busy=false, progress=null, pending=null;
+let scope=null, busy=false, progress=null, pending=null, kindPending=null;
 const PROMPT_BUTTONS=['prompt-implemented','prompt-new','prompt-cancel'];
+const KINDS=['screens','components','none'],KIND_PROMPT_BUTTONS=['kind-prompt-save','kind-prompt-cancel'];
 function post(type, extra={}){parent.postMessage({pluginMessage:{type,...extra}},'*');}
 function message(text,kind=''){$('message').textContent=text;$('message').className=kind;}
-function progressText(p){const n=v=>Number(v||0).toLocaleString();return p.phase+': '+n(p.count)+(p.total!==undefined?' / '+n(p.total):'')+(p.phase==='Exporting screens'?' screens':' nodes');}
+function progressText(p){const n=v=>Number(v||0).toLocaleString();return p.phase+': '+n(p.count)+(p.total!==undefined?' / '+n(p.total):'')+(p.phase==='Exporting check targets'?' targets':' nodes');}
 function bar(){
  const b=$('bar'),known=!!progress&&typeof progress.total==='number'&&progress.total>0;
- b.hidden=!busy||!!pending||!known;$('spinner').hidden=!busy||!!pending||known;
+ const paused=!!pending||!!kindPending;b.hidden=!busy||paused||!known;$('spinner').hidden=!busy||paused||known;
  if(known){const value=Math.min(progress.count,progress.total);b.setAttribute('aria-valuemin','0');b.setAttribute('aria-valuemax',String(progress.total));b.setAttribute('aria-valuenow',String(value));$('bar-fill').style.width=(100*value/progress.total)+'%';}
  else{['aria-valuemin','aria-valuemax','aria-valuenow'].forEach(a=>b.removeAttribute(a));$('bar-fill').style.width='';}
 }
 function controls(){
  document.querySelectorAll('button').forEach(b=>b.disabled=busy);
  $('mark-implemented').disabled=busy;
+ KINDS.forEach(k=>{$('kind-'+k).disabled=busy||!scope;$('kind-prompt-'+k).disabled=!kindPending;});
  $('upload').disabled=busy||!scope||!$('base-url').value.trim()||!$('token').value.trim();
  $('cancel').disabled=!busy;
  PROMPT_BUTTONS.forEach(id=>$(id).disabled=!pending);
- $('busy').textContent=!busy?'':pending?'Paused: choose how to track the new layers.':progress?progressText(progress):'Working… please pause design edits during scanning.';
+ KIND_PROMPT_BUTTONS.forEach(id=>$(id).disabled=!kindPending);
+ $('busy').textContent=!busy?'':kindPending?'Paused: choose what this section contains.':pending?'Paused: choose how to track the new layers.':progress?progressText(progress):'Working… please pause design edits during scanning.';
  bar();
 }
 function hidePrompt(){pending=null;$('prompt').hidden=true;$('prompt-title').textContent='';}
 function showPrompt(m){const n=v=>Number(v||0).toLocaleString();pending=m;$('prompt-title').textContent=`${n(m.added)} of ${n(m.total)} layers are new to Rolling Design Sync.`;$('prompt').hidden=false;controls();$('prompt-implemented').focus();}
+function showKind(kind){KINDS.forEach(k=>{$('kind-'+k).checked=k===kind;});$('kind-note').textContent=kind?'Saved on the section and sent with each sync. Screens: each top-level frame or variant is checked against its page in the app. Components: each main component is checked in the app\'s gallery.':'Not declared yet: asked on the first sync. Screens: each top-level frame or variant is checked against its page in the app. Components: each main component is checked in the app\'s gallery.';}
+function hideKindPrompt(){kindPending=null;$('kind-prompt').hidden=true;$('kind-prompt-title').textContent='';}
+function showKindPrompt(m){kindPending=m;$('kind-prompt-title').textContent=`What does “${m.name}” contain?`;KINDS.forEach(k=>{$('kind-prompt-'+k).checked=k==='none';});$('kind-prompt').hidden=false;controls();$('kind-prompt-none').focus();}
+function chooseKind(save){if(!kindPending)return;const id=kindPending.id,kind=save?KINDS.find(k=>$('kind-prompt-'+k).checked)||'none':'cancel';hideKindPrompt();post('scope-kind-choice',{id,kind});controls();}
 function choose(choice){if(!pending)return;const id=pending.id;hidePrompt();post('new-layers-choice',{id,choice});controls();}
 function elem(tag,text,cls){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function stat(label,value){const s=elem('div',undefined,'stat');s.append(elem('b',String(value)),elem('span',label,'tag'));return s;}
@@ -67,7 +81,7 @@ function renderResult(m){
  const library=k.librarySkipped?` ${n(k.librarySkipped)} library component${k.librarySkipped===1?'':'s'} not tracked (file setting).`:'';
  const mains=k.resolved?` ${n(k.resolved)} main component${k.resolved===1?'':'s'} resolved: ${n(k.scanned)} scanned (${n(k.scannedNodes)} nodes)${k.stale?`, ${n(k.stale)} of them re-scanned (stale)`:''}, ${n(k.present)} already present${k.unresolved?`, ${n(k.unresolved)} could not be loaded`:''}.`:'';
  const tokens=t?` Tokens: ${n(t.tracked)} tracked, ${n(t.changed)} changed, ${n(t.added)} new${t.deleted?`, ${n(t.deleted)} deleted`:''}.`:'';
- const screens=s&&s.needed?` Screens: ${n(s.updated)} reference${s.updated===1?'':'s'} updated${s.skipped?`, ${n(s.skipped)} skipped`:''}.`:'';
+ const screens=s&&s.needed?` Check targets: ${n(s.updated)} reference${s.updated===1?'':'s'} updated${s.skipped?`, ${n(s.skipped)} skipped`:''}.`:'';
  $('result-note').textContent=(uploaded+(m.deleted||0)+(k.scanned||0)===0
   ?`Nothing to upload: all ${n(m.tracked)} tracked nodes match the server. Scope ${m.scopeId}.`
   :`${n(uploaded)} of ${n(m.tracked)} tracked nodes uploaded in ${n(m.batches)} batch${m.batches===1?'':'es'} (${n(m.changed)} changed, ${n(m.added)} new) · ${n(m.deleted)} deleted · ${n(r.dirty)} now dirty for agents${m.markImplemented?` · ${n(r.baselined)} new marked implemented`:''} · scope ${m.scopeId}.`)+mains+library+tokens+screens;
@@ -78,11 +92,14 @@ function renderResult(m){
  $('raw').textContent=JSON.stringify(r,null,2);
 }
 $('select').onclick=()=>post('select');
-$('cancel').onclick=()=>{if(pending){choose('cancel');return;}post('cancel');message('Cancellation requested…');};
+$('cancel').onclick=()=>{if(kindPending){chooseKind(false);return;}if(pending){choose('cancel');return;}post('cancel');message('Cancellation requested…');};
 $('prompt-implemented').onclick=()=>choose('implemented');$('prompt-new').onclick=()=>choose('new');$('prompt-cancel').onclick=()=>choose('cancel');
 $('prompt').onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();choose('cancel');}};
+$('kind-prompt-save').onclick=()=>chooseKind(true);$('kind-prompt-cancel').onclick=()=>chooseKind(false);
+$('kind-prompt').onkeydown=e=>{if(e.key==='Escape'){e.preventDefault();chooseKind(false);}};
+KINDS.forEach(k=>{$('kind-'+k).onchange=()=>{if($('kind-'+k).checked)post('set-scope-kind',{kind:k});};});
 $('save-settings').onclick=()=>post('save-settings',{baseUrl:$('base-url').value,token:$('token').value});
-$('upload').onclick=()=>{message('');clearResult();hidePrompt();post('upload',{fileUrl:$('url').value,baseUrl:$('base-url').value,token:$('token').value,markImplemented:$('mark-implemented').checked});};
+$('upload').onclick=()=>{message('');clearResult();hidePrompt();hideKindPrompt();post('upload',{fileUrl:$('url').value,baseUrl:$('base-url').value,token:$('token').value,markImplemented:$('mark-implemented').checked});};
 $('show-token').onchange=()=>{$('token').type=$('show-token').checked?'text':'password';};
 $('base-url').oninput=controls;$('token').oninput=controls;
 onmessage=event=>{
@@ -90,13 +107,14 @@ onmessage=event=>{
  if(m.type==='yield'){setTimeout(()=>post('yield-ack',{id:m.id}),0);return;}
  if(m.type==='version')$('version').textContent=m.version;
  if(m.type==='progress'){progress={phase:m.phase,count:m.count,total:m.total};controls();}
- if(m.type==='busy'){busy=m.value;progress=null;if(!busy)hidePrompt();controls();}
+ if(m.type==='busy'){busy=m.value;progress=null;if(!busy){hidePrompt();hideKindPrompt();}controls();}
  if(m.type==='confirm-new-layers')showPrompt(m);
- if(m.type==='error'){hidePrompt();message(m.message,'error');}
+ if(m.type==='confirm-scope-kind')showKindPrompt(m);
+ if(m.type==='error'){hidePrompt();hideKindPrompt();message(m.message,'error');}
  if(m.type==='notice')message(m.message);
  if(m.type==='settings'){$('base-url').value=m.settings.baseUrl||'';$('token').value=m.settings.token||'';controls();}
- if(m.type==='scope'){const previousId=scope&&scope.id;scope=m;clearResult();$('scope').textContent=`${m.name} · ${m.id}`;if(previousId!==m.id){$('url').value='';$('mark-implemented').checked=false;}controls();}
+ if(m.type==='scope'){const previousId=scope&&scope.id;scope=m;clearResult();$('scope').textContent=`${m.name} · ${m.id}`;showKind(m.scopeKind||null);if(previousId!==m.id){$('url').value='';$('mark-implemented').checked=false;}controls();}
  if(m.type==='clear-result'){clearResult();hidePrompt();}
- if(m.type==='synced'){renderResult(m);$('mark-implemented').checked=false;const k=m.mains||{},t=m.tokens||{},tokens=(t.changed||0)+(t.added||0)+(t.deleted||0),screens=(m.references&&m.references.updated)||0;message((m.changed||0)+(m.added||0)+(m.deleted||0)+(k.scanned||0)+tokens+screens===0?'Sync complete. No changes since the last sync.':`Sync complete: ${m.changed||0} changed, ${m.added||0} new, ${m.deleted||0} deleted uploaded${k.scanned?`; ${k.scanned} main component${k.scanned===1?'':'s'} scanned${k.stale?` (${k.stale} stale, re-scanned)`:''}`:''}${tokens?`; ${tokens} token${tokens===1?'':'s'} changed`:''}${screens?`; ${screens} screen reference${screens===1?'':'s'} updated`:''}. Agents can pull the delta for this scope.`,'success');}
+ if(m.type==='synced'){renderResult(m);$('mark-implemented').checked=false;const k=m.mains||{},t=m.tokens||{},tokens=(t.changed||0)+(t.added||0)+(t.deleted||0),screens=(m.references&&m.references.updated)||0;message((m.changed||0)+(m.added||0)+(m.deleted||0)+(k.scanned||0)+tokens+screens===0?'Sync complete. No changes since the last sync.':`Sync complete: ${m.changed||0} changed, ${m.added||0} new, ${m.deleted||0} deleted uploaded${k.scanned?`; ${k.scanned} main component${k.scanned===1?'':'s'} scanned${k.stale?` (${k.stale} stale, re-scanned)`:''}`:''}${tokens?`; ${tokens} token${tokens===1?'':'s'} changed`:''}${screens?`; ${screens} check-target reference${screens===1?'':'s'} updated`:''}. Agents can pull the delta for this scope.`,'success');}
 };controls();post('load-settings');
 </script></body></html>

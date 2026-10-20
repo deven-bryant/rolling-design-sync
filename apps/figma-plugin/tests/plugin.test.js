@@ -8,7 +8,13 @@ const { version: PLUGIN_VERSION } = require('../package.json');
 const sandbox = { module: { exports: {} }, ChecklistCore: C, setTimeout, PLUGIN_VERSION };
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../src/plugin.js'),'utf8'),sandbox);
 const P = sandbox.module.exports;
-function node(id,type='FRAME',extra={}) { return { id,type,name:type+' '+id,visible:true,width:100,height:50,removed:false,...extra }; }
+/* Every fake node keeps shared plugin data like Figma (namespace + key -> string, '' when unset). */
+function node(id,type='FRAME',extra={}) {
+ const shared=new Map();
+ return { id,type,name:type+' '+id,visible:true,width:100,height:50,removed:false,
+  getSharedPluginData:(ns,key)=>shared.get(ns+'\u0000'+key)||'',setSharedPluginData:(ns,key,value)=>{shared.set(ns+'\u0000'+key,String(value));},
+  getPluginData:key=>shared.get('\u0000'+key)||'',setPluginData:(key,value)=>{shared.set('\u0000'+key,String(value));},...extra };
+}
 function fixture() {
  const root=node('1:1','SECTION',{children:[]});
  const child=node('1:2','RECTANGLE',{parent:root,fills:[{type:'SOLID',color:{r:1,g:0,b:0}}]});root.children.push(child);
@@ -132,9 +138,11 @@ function problemBody(code,detail,hint){const [status,title,defaultHint]=PROBLEMS
 /* `settings`: the file settings `…/hashes` returns (default `{trackLibraryComponents:true}`; null = an older server without them).
    `tokensMap: false` = an older server whose `?under=tokens` returns the root hash under "tokens" instead of the token map.
    `screens`: the `{ nodeId, designVersion }` list …/screens/references-needed returns (omitted = an older server without
-   the screen routes: 404); `refuseImages: true` answers every reference upload with images_disabled. */
-function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap,screens,refuseImages}={}) {
- const calls=[];const nodes=new Map();// key fileKey|nodeId -> row
+   the screen routes: 404); `refuseImages: true` answers every reference upload with images_disabled.
+   `legacy: true` = a server from before scope kinds and node maps: it refuses `scopeKind` and `nodeMap` (invalid_body).
+   `kinds` records the scopeKind stored per fileKey|rootNodeId. */
+function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap,screens,refuseImages,legacy}={}) {
+ const calls=[];const nodes=new Map();const kinds=new Map();// key fileKey|nodeId -> row
  const json=(status,body)=>({ok:status<300,status,json:async()=>body});
  const problem=(code,detail,hint)=>{const body=problemBody(code,detail,hint);return json(body.status,body);};
  const rowKey=(fileKey,id)=>fileKey+'|'+id;
@@ -148,7 +156,13 @@ function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap,s
    if(init.headers.Authorization!=='Bearer '+token)return problem('invalid_token','The bearer token is not recognized.');
    if(sm[2]&&init.method==='GET')return json(200,{screens:screens.map(s=>({...s}))});
    if(sm[3]&&init.method==='PUT'){
-    if(!body||typeof body.designVersion!=='string'||typeof body.image!=='string'||Object.keys(body).length!==2)return problem('invalid_body','Body must be { designVersion, image }.');
+    const {nodeMap,...rest}=body||{};
+    if(!body||typeof rest.designVersion!=='string'||typeof rest.image!=='string'||Object.keys(rest).length!==2)return problem('invalid_body','Body must be { designVersion, image, nodeMap? }.');
+    if(nodeMap!==undefined){
+     if(legacy)return problem('invalid_body',"body: unknown member 'nodeMap'.");
+     const keys=['nodeId','mainNodeId','x','y','width','height','depth'];
+     if(!Array.isArray(nodeMap)||!nodeMap.every(e=>e&&typeof e.nodeId==='string'&&(e.mainNodeId===undefined||typeof e.mainNodeId==='string')&&['x','y','width','height'].every(k=>Number.isInteger(e[k]))&&e.width>=0&&e.height>=0&&Number.isInteger(e.depth)&&e.depth>=0&&Object.keys(e).every(k=>keys.includes(k))))
+      return problem('invalid_body','nodeMap entries must be { nodeId, mainNodeId?, x, y, width, height, depth }.');}
     if(refuseImages)return problem('images_disabled','File FILE does not store images (settings.storeImages is false).');
     return json(200,{fileKey:decodeURIComponent(sm[1]),nodeId:decodeURIComponent(sm[3]),designVersion:body.designVersion,current:true});}
    return problem('route_not_found',`No route ${init.method} ${u.pathname}.`);
@@ -172,6 +186,10 @@ function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap,s
    const stale=present.filter(id=>nodes.get(rowKey(fileKey,id)).captureVersion<CAPTURE_VERSION);return json(200,{present,stale});}
   if(!body||!Array.isArray(body.upserts)||!Array.isArray(body.deletedNodeIds))return problem('invalid_body','Body must be { upserts, deletedNodeIds }.');
   if(body.markImplemented!==undefined&&typeof body.markImplemented!=='boolean')return problem('invalid_body','markImplemented must be a boolean.');
+  if(body.scopeKind!==undefined){
+   if(legacy)return problem('invalid_body',"body: unknown member 'scopeKind'.");
+   if(!['screens','components','none'].includes(body.scopeKind)||!body.rootNodeId)return problem('invalid_body','scopeKind must be screens, components or none, with rootNodeId.');
+   kinds.set(rowKey(fileKey,body.rootNodeId),body.scopeKind);}
   let upserted=0,dirty=0,skippedInstances=0,tombstoned=0,baselined=0;
   for(const up of body.upserts){
    if(typeof up.nodeId!=='string'||typeof up.contentHash!=='string')return problem('invalid_body','upsert.nodeId and contentHash are required.');
@@ -184,16 +202,18 @@ function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap,s
   for(const id of body.deletedNodeIds){const r=nodes.get(rowKey(fileKey,id));if(r&&!r.deletedAt){r.deletedAt='now';r.dirty=true;tombstoned++;}}
   return json(200,{fileKey,upserted,dirty,tombstoned,skippedInstances,...(body.markImplemented===true?{baselined}:{})});
  };
- return {fetch,calls,nodes};
+ return {fetch,calls,nodes,kinds};
 }
-/* `choice` answers the "already built?" prompt like the UI would ('new' unless a test sets r.choice). */
+/* `choice` answers the "already built?" prompt like the UI would ('new' unless a test sets r.choice);
+   `kind` answers the "Contains" prompt ('none', the UI's pre-selection, unless a test sets r.kind). */
 function runtime(f,server,stored) {
  const messages=[];const storage=new Map(Object.entries(stored||{}));
- const out={choice:'new'};
+ const out={choice:'new',kind:'none'};
  const api={...f.api,currentPage:{selection:[f.root]},showUI:()=>{},
   clientStorage:{getAsync:async k=>storage.get(k),setAsync:async(k,v)=>{storage.set(k,v);}},
   ui:{postMessage:m=>{messages.push(m);if(m.type==='yield')queueMicrotask(()=>api.ui.onmessage({type:'yield-ack',id:m.id}));
-   if(m.type==='confirm-new-layers'&&out.choice)queueMicrotask(()=>api.ui.onmessage({type:'new-layers-choice',id:m.id,choice:out.choice}));}}};
+   if(m.type==='confirm-new-layers'&&out.choice)queueMicrotask(()=>api.ui.onmessage({type:'new-layers-choice',id:m.id,choice:out.choice}));
+   if(m.type==='confirm-scope-kind'&&out.kind)queueMicrotask(()=>api.ui.onmessage({type:'scope-kind-choice',id:m.id,kind:out.kind}));}}};
  const ctx={figma:api,__html__:'',setTimeout,fetch:server.fetch,module:{exports:{}}};vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../code.js'),'utf8'),ctx);
  return Object.assign(out,{api,messages,storage,send:async m=>{messages.length=0;await api.ui.onmessage(m);return messages;}});
 }
@@ -709,7 +729,7 @@ test('runtime sends figma.root.name and the selected scope id with every batch',
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
  const batches=server.calls.filter(c=>c.path===SYNC);assert.equal(batches.length,1);
  assert.ok(batches.some(c=>c.body.upserts.some(u=>u.nodeId==='8:1')));
- assert.ok(batches.every(c=>C.stable(Object.keys(c.body).sort())===C.stable(BATCH_KEYS)&&c.body.fileName==='Design file'&&c.body.rootNodeId==='1:1'));
+ assert.ok(batches.every(c=>C.stable(Object.keys(c.body).sort())===C.stable(BATCH_KEYS.concat('scopeKind').sort())&&c.body.fileName==='Design file'&&c.body.rootNodeId==='1:1'&&c.body.scopeKind==='none'));
  assert.ok(server.calls.filter(c=>c.path!==SYNC).every(c=>!c.body||(c.body.fileName===undefined&&c.body.rootNodeId===undefined)));
 });
 
@@ -1047,7 +1067,7 @@ test('screens: an empty references-needed list exports and uploads nothing',asyn
  same(done.references,{needed:0,updated:0,skipped:0,warnings:[]});
  assert.equal(exports.length,0);same(refPuts(server),[]);
  assert.equal(server.calls.filter(c=>c.path===NEEDED).length,1);same(server.calls.find(c=>c.path===NEEDED).query,{under:'1:1'});
- assert.ok(!r.messages.some(m=>m.type==='progress'&&m.phase==='Exporting screens'));
+ assert.ok(!r.messages.some(m=>m.type==='progress'&&m.phase==='Exporting check targets'));
 });
 test('screens: two configured screens are exported as 1x PNGs and uploaded one at a time with their designVersion',async()=>{
  const f=fixture();const exports=screenScene(f,[['1:5'],['1:6',{type:'COMPONENT'}],['1:7']]);
@@ -1057,11 +1077,11 @@ test('screens: two configured screens are exported as 1x PNGs and uploaded one a
  same(exports.map(e=>e.id),['1:5','1:6']);
  assert.ok(exports.every(e=>C.stable(e.settings)===C.stable({format:'PNG',constraint:{type:'SCALE',value:1}})));
  const puts=refPuts(server);same(puts.map(c=>c.path),[REF('1:5'),REF('1:6')]);
- same(puts.map(c=>c.body),[{designVersion:'v-five',image:b64([137,80,78,71,3])},{designVersion:'v-six',image:b64([137,80,78,71,3])}]);
+ same(puts.map(c=>c.body),[{designVersion:'v-five',image:b64([137,80,78,71,3]),nodeMap:[]},{designVersion:'v-six',image:b64([137,80,78,71,3]),nodeMap:[]}]);
  assert.ok(puts.every(c=>c.auth==='Bearer secret'&&c.client==='plugin/'+PLUGIN_VERSION));
  // The reference pass runs after the layer and token passes.
  const order=server.calls.map(c=>c.path);assert.ok(order.lastIndexOf(SYNC)<order.indexOf(NEEDED));
- same(r.messages.filter(m=>m.type==='progress'&&m.phase==='Exporting screens').map(m=>[m.count,m.total]),[[0,2],[1,2],[2,2]]);
+ same(r.messages.filter(m=>m.type==='progress'&&m.phase==='Exporting check targets').map(m=>[m.count,m.total]),[[0,2],[1,2],[2,2]]);
  const done=r.messages.find(m=>m.type==='synced');same(done.references,{needed:2,updated:2,skipped:0,warnings:[]});
 });
 test('screens: figma.base64Encode is used when the runtime provides it',async()=>{
@@ -1088,7 +1108,7 @@ test('screens: missing, wrong-type, oversize and failed exports are skipped with
  assert.match(warnings[3],/\(1:8\) exports to 5\.0 MB, over 5 MB/);
  assert.match(warnings[4],/1:9: screen is a GROUP, not a frame, component or instance/);
  assert.match(warnings[5],/\(1:10\) could not be exported: Export failed/);
- same(r.messages.filter(m=>m.type==='progress'&&m.phase==='Exporting screens').at(-1),{type:'progress',phase:'Exporting screens',count:7,total:7});
+ same(r.messages.filter(m=>m.type==='progress'&&m.phase==='Exporting check targets').at(-1),{type:'progress',phase:'Exporting check targets',count:7,total:7});
 });
 test('screens: an older server without the screen routes (404) is a silent no-op',async()=>{
  const f=fixture();const exports=screenScene(f,[['1:5']]);const server=mockServer();const r=runtime(f,server,SETTINGS);
@@ -1107,7 +1127,7 @@ test('screens: other errors listing the screens fail the sync with the problem t
 test('screens: Cancel between exports stops before the next export',async()=>{
  const f=fixture();const exports=screenScene(f,[['1:5'],['1:6'],['1:7']]);
  const server=mockServer({screens:['1:5','1:6','1:7'].map(nodeId=>({nodeId,designVersion:'v'}))});const r=runtime(f,server,SETTINGS);
- const post=r.api.ui.postMessage;r.api.ui.postMessage=m=>{post(m);if(m.type==='progress'&&m.phase==='Exporting screens'&&m.count===1)r.api.ui.onmessage({type:'cancel'});};
+ const post=r.api.ui.postMessage;r.api.ui.postMessage=m=>{post(m);if(m.type==='progress'&&m.phase==='Exporting check targets'&&m.count===1)r.api.ui.onmessage({type:'cancel'});};
  await r.send({type:'upload',fileUrl:FILE});
  assert.match(r.messages.find(m=>m.type==='error').message,/cancelled/);
  same(exports.map(e=>e.id),['1:5']);same(refPuts(server).map(c=>c.path),[REF('1:5')]);
@@ -1129,4 +1149,101 @@ test('screens: P.sync skips the reference pass without the Figma api or with ref
  out=await P.sync(server.fetch,CFG,snapshot,{api:f.api,tokens:false,references:false});assert.equal(out.references,null);
  assert.ok(!server.calls.some(c=>c.path===NEEDED));
  out=await P.sync(server.fetch,CFG,snapshot,{api:f.api,tokens:false});assert.equal(out.references.updated,1);
+});
+
+/* ---- Scope kinds: what the section contains, saved as shared plugin data and sent with the sync. ---- */
+const kindOf=n=>n.getSharedPluginData('rds','scopeKind');
+test('scope kind: the first sync asks once, saves the answer on the section and sends it with every batch',async()=>{
+ const f=fixture();const server=mockServer();const r=runtime(f,server,SETTINGS);r.kind='screens';
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ const asked=r.messages.filter(m=>m.type==='confirm-scope-kind');assert.equal(asked.length,1);
+ assert.equal(asked[0].name,f.root.name);assert.equal(asked[0].scopeId,'1:1');
+ assert.equal(kindOf(f.root),'screens');assert.ok(r.messages.some(m=>m.type==='scope'&&m.scopeKind==='screens'));
+ const batches=server.calls.filter(c=>c.path===SYNC);assert.ok(batches.length>=1);assert.ok(batches.every(c=>c.body.scopeKind==='screens'));
+ assert.equal(server.kinds.get('FILE|1:1'),'screens');assert.equal(r.messages.find(m=>m.type==='synced').scopeKind,'screens');
+ // Declared: not asked again; nothing changed and the kind is already stored, so no batch is sent.
+ server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
+ assert.equal(r.messages.filter(m=>m.type==='confirm-scope-kind').length,0);assert.equal(server.calls.filter(c=>c.path===SYNC).length,0);
+ // Editable any time: saved on the section at once; the next sync sends it even with no layer changes.
+ server.calls.length=0;await r.send({type:'set-scope-kind',kind:'components'});
+ assert.equal(kindOf(f.root),'components');assert.ok(r.messages.some(m=>m.type==='scope'&&m.scopeKind==='components'));same(server.calls,[]);
+ await r.send({type:'upload',fileUrl:FILE});
+ const sent=server.calls.filter(c=>c.path===SYNC);assert.equal(sent.length,1);
+ same(sent[0].body.upserts,[]);same(sent[0].body.deletedNodeIds,[]);assert.equal(sent[0].body.scopeKind,'components');
+ assert.equal(server.kinds.get('FILE|1:1'),'components');
+ await r.send({type:'set-scope-kind',kind:'pages'});
+ assert.ok(r.messages.some(m=>m.type==='error'));assert.equal(kindOf(f.root),'components');
+});
+test('scope kind: cancelling the first-sync prompt uploads nothing and leaves the section undeclared',async()=>{
+ const f=fixture();const server=mockServer();const r=runtime(f,server,SETTINGS);r.kind='cancel';
+ await r.send({type:'upload',fileUrl:FILE});
+ same(server.calls,[]);assert.equal(kindOf(f.root),'');
+ assert.equal(r.messages.find(m=>m.type==='notice').message,'Sync cancelled. Nothing was uploaded.');
+});
+test('scope kind: a kind already saved on the section (it travels with the file) is sent without asking',async()=>{
+ const f=fixture();f.root.setSharedPluginData('rds','scopeKind','components');const server=mockServer();const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.equal(r.messages.filter(m=>m.type==='confirm-scope-kind').length,0);
+ assert.ok(server.calls.filter(c=>c.path===SYNC).every(c=>c.body.scopeKind==='components'));assert.equal(server.kinds.get('FILE|1:1'),'components');
+});
+/* An exportable target outside the scanned scope, with nested layers and Figma-style absolute boxes. */
+function mappedTarget(f){
+ const exports=[];const box=(x,y,width,height)=>({absoluteBoundingBox:{x,y,width,height}});
+ const target=node('2:1','FRAME',{children:[],...box(100.4,200.6,390,844),width:390,height:844,
+  exportAsync:async settings=>{exports.push(settings);return new Uint8Array([137,80,78,71]);}});
+ const rect=node('2:2','RECTANGLE',{parent:target,...box(110.6,210.2,50.5,20.4)});
+ const hidden=node('2:3','GROUP',{parent:target,visible:false,children:[],...box(120,220,10,10)});
+ hidden.children.push(node('2:4','RECTANGLE',{parent:hidden,...box(120,220,10,10)}));
+ const instance=node('2:5','INSTANCE',{parent:target,children:[],...box(100.4,300,80,40)});
+ const label=node('I2:5;4:2','FRAME',{parent:instance,children:[],...box(104.4,304.6,10,10)});
+ const nested=node('I2:5;4:3;6:7','TEXT',{parent:label,...box(110.4,310.6,5,5)});
+ const hiddenSub=node('I2:5;4:9','TEXT',{parent:instance,visible:false,...box(104,304,1,1)});
+ label.children.push(nested);instance.children.push(label,hiddenSub);target.children.push(rect,hidden,instance);
+ f.registry.set(target.id,target);
+ return exports;
+}
+const MAPPED=[
+ {nodeId:'2:1',x:0,y:0,width:390,height:844,depth:0},
+ {nodeId:'2:2',x:10,y:10,width:51,height:20,depth:1},
+ {nodeId:'2:5',x:0,y:99,width:80,height:40,depth:1},
+ {nodeId:'I2:5;4:2',mainNodeId:'4:2',x:4,y:104,width:10,height:10,depth:2},
+ {nodeId:'I2:5;4:3;6:7',mainNodeId:'6:7',x:10,y:110,width:5,height:5,depth:3}];
+test('check targets: an auto target from references-needed is exported once at 1x and uploaded with its node map',async()=>{
+ const f=fixture();const exports=mappedTarget(f);screenScene(f,[['1:5']]);
+ const server=mockServer({screens:[{nodeId:'2:1',designVersion:'v-auto',level:'auto'}]});const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ same(exports,[{format:'PNG',constraint:{type:'SCALE',value:1}}]);
+ const puts=refPuts(server);same(puts.map(c=>c.path),[REF('2:1')]);
+ assert.equal(puts[0].body.designVersion,'v-auto');same(puts[0].body.nodeMap,MAPPED);
+ same(r.messages.filter(m=>m.type==='progress'&&m.phase==='Exporting check targets').map(m=>[m.count,m.total]),[[0,1],[1,1]]);
+ same(r.messages.find(m=>m.type==='synced').references,{needed:1,updated:1,skipped:0,warnings:[]});
+});
+test('node map: visible layers only, px-rounded boxes relative to the target, instance sublayers point at their main node',()=>{
+ const f=fixture();mappedTarget(f);const map=P.nodeMap(f.registry.get('2:1'));
+ same(map,{entries:MAPPED,capped:false});
+ const big=node('3:1','FRAME',{children:[],absoluteBoundingBox:{x:0,y:0,width:10,height:10}});
+ for(let i=0;i<P.NODE_MAP_MAX_ENTRIES+5;i++)big.children.push({id:'3:'+(i+2),type:'RECTANGLE',visible:true,absoluteBoundingBox:{x:i%7,y:0,width:1,height:1}});
+ const capped=P.nodeMap(big);assert.equal(capped.capped,true);assert.equal(capped.entries.length,P.NODE_MAP_MAX_ENTRIES);
+ same(P.nodeMap(node('3:0','FRAME',{absoluteTransform:[[1,0,5.6],[0,1,7.2]],width:20.4,height:9.5})).entries,[{nodeId:'3:0',x:0,y:0,width:20,height:10,depth:0}]);
+});
+test('older server: a refused scopeKind is resent without it (one [scope] warning); a refused nodeMap falls back to image-only uploads',async()=>{
+ const f=fixture();screenScene(f,[['1:5'],['1:6']]);
+ const server=mockServer({legacy:true,screens:[{nodeId:'1:5',designVersion:'v-five'},{nodeId:'1:6',designVersion:'v-six'}]});const r=runtime(f,server,SETTINGS);
+ await r.send({type:'upload',fileUrl:FILE});
+ assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
+ const batches=server.calls.filter(c=>c.path===SYNC);
+ assert.equal(batches[0].body.scopeKind,'none');assert.ok(batches.slice(1).length>=1&&batches.slice(1).every(c=>c.body.scopeKind===undefined));
+ const done=r.messages.find(m=>m.type==='synced');assert.equal(done.scopeKind,null);
+ assert.equal(done.warnings.filter(w=>w.startsWith('[scope] ')).length,1);
+ assert.equal(f.root.getPluginData('scopeKind'),'');
+ const puts=refPuts(server);same(puts.map(c=>[c.path,Object.keys(c.body).sort().join()]),[[REF('1:5'),'designVersion,image,nodeMap'],[REF('1:5'),'designVersion,image'],[REF('1:6'),'designVersion,image']]);
+ same(done.references,{needed:2,updated:2,skipped:0,warnings:[]});
+});
+test('a 400 that does not name scopeKind or nodeMap is not retried',async()=>{
+ const f=fixture();screenScene(f,[['1:5']]);const server=mockServer({screens:[{nodeId:'1:5',designVersion:'v'}]});
+ const fetch=server.fetch;server.fetch=async(url,init)=>{if(init.method!=='PUT')return fetch(url,init);server.calls.push({method:'PUT'});const body=problemBody('invalid_body','image: not a PNG.');return {ok:false,status:400,json:async()=>body};};
+ const r=runtime(f,{fetch:(...a)=>server.fetch(...a)},SETTINGS);await r.send({type:'upload',fileUrl:FILE});
+ assert.equal(refPuts(server).length,1);const done=r.messages.find(m=>m.type==='synced');assert.equal(done.references.skipped,1);
 });

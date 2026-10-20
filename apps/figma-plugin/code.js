@@ -291,12 +291,45 @@ const DesignChecklist = (() => {
   // isn't published): the node's own values are still captured, only the token
   // name is unknown, so the snapshot is complete enough to upload.
   const TOKEN_WARNING = '[token] ';
-  // Reference pass: configured screens are exported at 1x, one at a time, within the API's image limits.
+  // Reference pass: check targets (set-up screens and auto targets) are exported at 1x, one at a time, within the
+  // API's image limits, each with a node map of its visible layers (at most NODE_MAP_MAX_ENTRIES / _BYTES).
   const SCREEN_WARNING = '[screen] ';
+  const REFERENCE_PHASE = 'Exporting check targets';
+  const NODE_MAP_MAX_ENTRIES = 20000;
+  const NODE_MAP_MAX_BYTES = 2 * 1024 * 1024;
+  const NODE_ID_MAX = 400;
+  // What a scope contains (for automatic check targets), declared per section and saved on it as shared plugin data.
+  const SCOPE_KINDS = ['screens', 'components', 'none'];
+  const SCOPE_KIND_NAMESPACE = 'rds';
+  const SCOPE_KIND_KEY = 'scopeKind';
+  const SCOPE_WARNING = '[scope] ';
   const SCREEN_TYPES = ['FRAME', 'COMPONENT', 'INSTANCE'];
   const EXPORT_MAX_SIDE = 8192;
   const EXPORT_MAX_BYTES = 5 * 1024 * 1024;
   const blockingWarnings = warnings => warnings.filter(w => !w.startsWith(METADATA_WARNING) && !w.startsWith(MAIN_WARNING) && !w.startsWith(TOKEN_WARNING));
+  /* The scope kind saved on `node` (shared plugin data `rds` / `scopeKind`); null when undeclared or unreadable. */
+  function readScopeKind(node) {
+    try {
+      const kind = node && typeof node.getSharedPluginData === 'function' ? node.getSharedPluginData(SCOPE_KIND_NAMESPACE, SCOPE_KIND_KEY) : '';
+      return SCOPE_KINDS.includes(kind) ? kind : null;
+    } catch (_) { return null; }
+  }
+  /* The kind last accepted by the API for `node` (private plugin data), so an unchanged kind needs no extra batch. */
+  function readScopeKindSent(node) {
+    try { return node && typeof node.getPluginData === 'function' ? node.getPluginData(SCOPE_KIND_KEY) : ''; } catch (_) { return ''; }
+  }
+  function writeScopeKindSent(node, kind) {
+    try { if (node && typeof node.setPluginData === 'function') node.setPluginData(SCOPE_KIND_KEY, kind || ''); } catch (_) { /* Only saves a batch. */ }
+  }
+  /* An API from before a body member refuses it by name ("unknown member 'nodeMap'"). */
+  function refusesMember(e, member) {
+    return !!(e && e.status === 400 && e.code === 'invalid_body' && typeof e.detail === 'string' && e.detail.includes("'" + member + "'"));
+  }
+  function writeScopeKind(node, kind) {
+    if (!SCOPE_KINDS.includes(kind)) throw new Error('Choose what the section contains: Screens, Components or Neither.');
+    node.setSharedPluginData(SCOPE_KIND_NAMESPACE, SCOPE_KIND_KEY, kind);
+    return kind;
+  }
   function componentSet(node) {
     try { return node.type === 'COMPONENT' && node.parent && node.parent.type === 'COMPONENT_SET' ? node.parent : null; }
     catch (_) { return null; }
@@ -679,7 +712,7 @@ const DesignChecklist = (() => {
     if (!data || typeof data.title !== 'string' || !data.title) return null;
     return typeof data.hint === 'string' && data.hint ? data.title + '. ' + data.hint : data.title + '.';
   }
-  /* Errors carry the HTTP `status` and the problem `code` (when the API sent one). */
+  /* Errors carry the HTTP `status` and the problem `code` and `detail` (when the API sent them). */
   async function request(http, settings, path, body, method) {
     let response;
     try {
@@ -693,7 +726,8 @@ const DesignChecklist = (() => {
     try { data = await response.json(); } catch (_) { data = null; }
     if (!response.ok) {
       const problem = problemText(data);
-      const failed = message => Object.assign(new Error(message), { status: response.status, code: data && typeof data.code === 'string' ? data.code : undefined });
+      const failed = message => Object.assign(new Error(message), { status: response.status, code: data && typeof data.code === 'string' ? data.code : undefined,
+        detail: data && typeof data.detail === 'string' ? data.detail : undefined });
       if (response.status === 401 || response.status === 403) {
         throw failed('The API rejected the upload token (' + response.status + '). Check Settings.' + (problem ? '\n' + problem : ''));
       }
@@ -789,7 +823,10 @@ const DesignChecklist = (() => {
      (when `options.api` is given) → upload only changed/new nodes + tombstones.
      `options.markImplemented: true` asks the server to insert never-seen nodes as already implemented
      (first-scan baseline); it is sent on every batch of the run and `result.baselined` sums the counts.
-     Every batch also carries `fileName` (`options.fileName`, the document name) and `rootNodeId` (the scope).
+     Every batch also carries `fileName` (`options.fileName`, the document name) and `rootNodeId` (the scope), and
+     the scope's declared `scopeKind` (`options.scopeKind`; with no changes it goes in one empty batch unless
+     `options.scopeKindChanged` is false). An API that
+     refuses `scopeKind` gets the batches without it and a non-blocking [scope] warning.
      The hashes response's `settings.trackLibraryComponents` (missing → true) decides whether remote mains are
      scanned. Without `markImplemented`, a plan that adds many never-seen layers (`manyNewLayers`) awaits
      `options.confirmNewLayers({ added, total })`: 'implemented' continues with `markImplemented`, 'new'
@@ -827,7 +864,8 @@ const DesignChecklist = (() => {
     const cancelMessage = 'Sync cancelled. Batches already uploaded were applied; run the sync again to finish.';
     const uploadOptions = { cancelled, cancelMessage, fileName: options.fileName, markImplemented,
       batchChars: options.batchChars, batchRecords: options.batchRecords, maxBatches: options.maxBatches };
-    const scope = await upload(http, config, snapshot.fileKey, { ...uploadOptions, rootNodeId: snapshot.scopeId, phase: 'Uploading',
+    const scope = await upload(http, config, snapshot.fileKey, { ...uploadOptions, rootNodeId: snapshot.scopeId, phase: 'Uploading', scopeKind: options.scopeKind,
+      scopeKindChanged: options.scopeKindSent === undefined || options.scopeKindSent !== options.scopeKind,
       upserts: plan.upserts.concat(mains.upserts), deletedNodeIds: plan.deletedNodeIds,
       progress: (count, total) => progress('Uploading', count, total) });
     let tokens = null;
@@ -841,8 +879,11 @@ const DesignChecklist = (() => {
       if (cancelled()) throw new Error(cancelMessage);
       references = await syncReferences(options.api, http, config, snapshot.fileKey, snapshot.scopeId, { cancelled, cancelMessage, pause: options.pause, progress });
     }
+    const scopeKind = SCOPE_KINDS.includes(options.scopeKind) && !scope.result.scopeKindIgnored ? options.scopeKind : null;
+    if (scope.result.scopeKindIgnored) mains.warnings = mains.warnings.concat(SCOPE_WARNING + 'This API does not store what a section contains; update the server to enable automatic check targets.');
+    delete scope.result.scopeKindIgnored;
     return { fileKey: snapshot.fileKey, scopeId: snapshot.scopeId, markImplemented, trackLibraryComponents: trackLibrary, batches: scope.batches, ...plan.counts,
-      mains: mains.counts, mainWarnings: mains.warnings, tokens, references, result: scope.result };
+      scopeKind, mains: mains.counts, mainWarnings: mains.warnings, tokens, references, result: scope.result };
   }
   const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   function base64(api, bytes) {
@@ -863,11 +904,57 @@ const DesignChecklist = (() => {
     } catch (_) { /* Render bounds are optional. */ }
     return { width: Math.ceil(width), height: Math.ceil(height) };
   }
-  /* Third pass of a sync: reference images for the configured screens under the scope whose design changed since
-     their last reference (`GET …/screens/references-needed?under=`). Each screen is loaded, exported as a 1x PNG
-     and uploaded (`PUT …/screens/{nodeId}/reference` with `{ designVersion, image }`), one at a time ("Exporting
-     screens"). Screens that are gone, of another type, or over EXPORT_MAX_SIDE px / EXPORT_MAX_BYTES are skipped
-     with a non-blocking [screen] warning. Returns null when the server has no screen routes (404); a file that
+  /* Node map of an exported target: `{ nodeId, mainNodeId?, x, y, width, height, depth }` for the target and every
+     visible layer in it (hidden layers and their subtrees are skipped), boxes in px relative to the export's
+     top-left, breadth first. Instance sublayers (`I<instance>;…;<id>`) carry the main component's node as
+     `mainNodeId`. Capped at NODE_MAP_MAX_ENTRIES entries / NODE_MAP_MAX_BYTES of JSON (deepest layers dropped). */
+  function nodeMap(target) {
+    const box = node => {
+      try {
+        const b = node.absoluteBoundingBox;
+        if (b && Number.isFinite(b.x) && Number.isFinite(b.y)) return { x: b.x, y: b.y, width: Number(b.width) || 0, height: Number(b.height) || 0 };
+        const t = node.absoluteTransform;
+        if (t && Number.isFinite(t[0][2]) && Number.isFinite(t[1][2])) return { x: t[0][2], y: t[1][2], width: Number(node.width) || 0, height: Number(node.height) || 0 };
+      } catch (_) { /* No geometry: left out. */ }
+      return null;
+    };
+    const origin = box(target) || { x: 0, y: 0 };
+    try {
+      // Effects past the frame (shadows) grow the exported image to its render bounds.
+      const r = target.absoluteRenderBounds;
+      if (r && Number.isFinite(r.x) && Number.isFinite(r.y)) { origin.x = Math.min(origin.x, r.x); origin.y = Math.min(origin.y, r.y); }
+    } catch (_) { /* Render bounds are optional. */ }
+    const entries = [];
+    let bytes = 2, capped = false;
+    const queue = [{ node: target, depth: 0 }];
+    for (let q = 0; q < queue.length; q++) {
+      const { node, depth } = queue[q];
+      let visible = true;
+      try { visible = node.visible !== false; } catch (_) { visible = true; }
+      if (!visible) continue;
+      const b = box(node);
+      if (b && typeof node.id === 'string' && node.id && node.id.length <= NODE_ID_MAX) {
+        const entry = { nodeId: node.id };
+        const cut = node.id.lastIndexOf(';');
+        if (node.id.startsWith('I') && cut > 0 && cut < node.id.length - 1) entry.mainNodeId = node.id.slice(cut + 1);
+        Object.assign(entry, { x: Math.round(b.x - origin.x), y: Math.round(b.y - origin.y), width: Math.max(0, Math.round(b.width)), height: Math.max(0, Math.round(b.height)), depth });
+        const size = JSON.stringify(entry).length + 1;
+        if (entries.length >= NODE_MAP_MAX_ENTRIES || bytes + size > NODE_MAP_MAX_BYTES) { capped = true; break; }
+        entries.push(entry); bytes += size;
+      }
+      let children = [];
+      try { children = 'children' in node && node.children ? Array.from(node.children) : []; } catch (_) { children = []; }
+      for (const child of children) queue.push({ node: child, depth: depth + 1 });
+    }
+    return { entries, capped };
+  }
+  /* Third pass of a sync: reference images for the check targets under the scope (set-up screens and the auto
+     targets of declared scope kinds) whose design changed since their last reference
+     (`GET …/screens/references-needed?under=`). Each target is loaded, exported as a 1x PNG and uploaded with its
+     node map (`PUT …/screens/{nodeId}/reference` with `{ designVersion, image, nodeMap }`), one at a time
+     ("Exporting check targets"); an API that refuses `nodeMap` by name gets the image alone. Targets that
+     are gone, of another type, or over EXPORT_MAX_SIDE px / EXPORT_MAX_BYTES are skipped with a non-blocking
+     [screen] warning. Returns null when the server has no screen routes (404); a file that
      stores no images (images_disabled) stops the pass with one warning. Cancel is honoured between exports. */
   async function syncReferences(api, http, config, fileKey, scopeId, options) {
     let listed;
@@ -882,7 +969,8 @@ const DesignChecklist = (() => {
     const result = { needed: screens.length, updated: 0, skipped: 0, warnings: [] };
     if (!screens.length) return result;
     const skip = message => { result.skipped++; result.warnings.push(SCREEN_WARNING + message); };
-    options.progress('Exporting screens', 0, screens.length);
+    options.progress(REFERENCE_PHASE, 0, screens.length);
+    let sendNodeMaps = true; // false after a server refuses the nodeMap member (older API)
     for (let i = 0; i < screens.length; i++) {
       if (options.cancelled()) throw new Error(options.cancelMessage);
       if (options.pause) await options.pause();
@@ -904,14 +992,26 @@ const DesignChecklist = (() => {
           } else if (bytes) {
             const body = { designVersion, image: base64(api, bytes) };
             bytes = null;
+            if (sendNodeMaps) {
+              const map = nodeMap(node);
+              body.nodeMap = map.entries;
+              if (map.capped) result.warnings.push(SCREEN_WARNING + `"${node.name}" (${nodeId}): node map capped at ${map.entries.length} layers; the deepest layers are left out.`);
+            }
+            const path = filePath(fileKey, 'screens/' + encodeURIComponent(nodeId) + '/reference');
             try {
-              await request(http, config, filePath(fileKey, 'screens/' + encodeURIComponent(nodeId) + '/reference'), body, 'PUT');
+              try { await request(http, config, path, body, 'PUT'); }
+              catch (e) {
+                // An API from before node maps rejects the unknown member: upload the image alone from now on.
+                if (!(body.nodeMap && refusesMember(e, 'nodeMap'))) throw e;
+                sendNodeMaps = false; delete body.nodeMap;
+                await request(http, config, path, body, 'PUT');
+              }
               result.updated++;
             } catch (e) {
               if (e && e.code === 'images_disabled') {
                 result.skipped += screens.length - i;
                 result.warnings.push(SCREEN_WARNING + 'This file does not store images (file setting), so no screen references were uploaded.');
-                options.progress('Exporting screens', screens.length, screens.length);
+                options.progress(REFERENCE_PHASE, screens.length, screens.length);
                 return result;
               }
               if (e && (e.status === 401 || e.status === 403)) throw e;
@@ -920,7 +1020,7 @@ const DesignChecklist = (() => {
           }
         }
       }
-      options.progress('Exporting screens', i + 1, screens.length);
+      options.progress(REFERENCE_PHASE, i + 1, screens.length);
     }
     return result;
   }
@@ -929,6 +1029,18 @@ const DesignChecklist = (() => {
      `fileName`, `rootNodeId` and `markImplemented`; `result` sums the server's counts. */
   async function upload(http, config, fileKey, options) {
     const result = { fileKey, upserted: 0, dirty: 0, tombstoned: 0, skippedInstances: 0 };
+    // Sent on every batch; an API from before scope kinds refuses the member by name: resend without it.
+    let scopeKind = SCOPE_KINDS.includes(options.scopeKind) ? options.scopeKind : undefined;
+    const send = async body => {
+      if (scopeKind === undefined) return request(http, config, filePath(fileKey, 'sync'), body);
+      try { return await request(http, config, filePath(fileKey, 'sync'), { ...body, scopeKind }); }
+      catch (e) {
+        if (!refusesMember(e, 'scopeKind')) throw e;
+        const response = await request(http, config, filePath(fileKey, 'sync'), body);
+        scopeKind = undefined; result.scopeKindIgnored = true;
+        return response;
+      }
+    };
     const counted = ['upserted','dirty','tombstoned','skippedInstances'];
     if (options.markImplemented) { result.baselined = 0; counted.push('baselined'); }
     const upserts = options.upserts;
@@ -939,7 +1051,7 @@ const DesignChecklist = (() => {
     const flush = async () => {
       if (!batch.length && !deleted.length) return;
       if (options.cancelled()) throw new Error(options.cancelMessage);
-      const response = await request(http, config, filePath(fileKey, 'sync'), { fileKey, fileName: options.fileName, rootNodeId: options.rootNodeId,
+      const response = await send({ fileKey, fileName: options.fileName, rootNodeId: options.rootNodeId,
         upserts: batch, deletedNodeIds: deleted, markImplemented: options.markImplemented });
       for (const k of counted) result[k] += Number(response && response[k]) || 0;
       done += batch.length + deleted.length;
@@ -954,6 +1066,12 @@ const DesignChecklist = (() => {
       batch.push(upserts[i]); size += sizes[i];
     }
     await flush();
+    if (!batches && scopeKind !== undefined && options.scopeKindChanged !== false) {
+      // Nothing changed, but the declared kind still has to reach the server.
+      if (options.cancelled()) throw new Error(options.cancelMessage);
+      await send({ fileKey, fileName: options.fileName, rootNodeId: options.rootNodeId, upserts: [], deletedNodeIds: [], markImplemented: options.markImplemented });
+      batches++;
+    }
     return { result, batches };
   }
   /* Second pass of a sync: the file's design tokens as the `tokens` scope (`rootNodeId: "tokens"`), planned against
@@ -984,6 +1102,9 @@ const DesignChecklist = (() => {
     const confirmNewLayers = layers => new Promise(resolve => {
       const id = ++choiceId; choices.set(id, resolve); send({ type: 'confirm-new-layers', id, ...layers });
     });
+    const confirmScopeKind = () => new Promise(resolve => {
+      const id = ++choiceId; choices.set(id, resolve); send({ type: 'confirm-scope-kind', id, name: scope.name, scopeId: scope.id });
+    });
     const answer = (id, choice) => { const resolve = choices.get(id); if (resolve) { choices.delete(id); resolve(choice); } };
     async function loadSettings() {
       try {
@@ -1004,7 +1125,7 @@ const DesignChecklist = (() => {
       return s[0];
     }
     const progressMessage = (phase, count, total) => total === undefined ? { type: 'progress', phase, count } : { type: 'progress', phase, count, total };
-    const scopeState = () => ({ type: 'scope', id: scope.id, name: scope.name, nodeType: scope.type });
+    const scopeState = () => ({ type: 'scope', id: scope.id, name: scope.name, nodeType: scope.type, scopeKind: readScopeKind(scope) });
     /* Scan, then re-scan until two consecutive passes match (at most VERIFY_RETRIES extra passes): values Figma
        loads lazily on first access (library styles and variables, remote mains, text metrics) settle after one. */
     async function stableCapture(key, mainNodes) {
@@ -1026,6 +1147,7 @@ const DesignChecklist = (() => {
     api.ui.onmessage = async msg => {
       if (msg.type === 'yield-ack') { const resolve = waiters.get(msg.id); if (resolve) { waiters.delete(msg.id); resolve(); } return; }
       if (msg.type === 'new-layers-choice') { answer(msg.id, msg.choice); return; }
+      if (msg.type === 'scope-kind-choice') { answer(msg.id, msg.kind); return; }
       if (msg.type === 'cancel') { cancelled = true; for (const id of Array.from(choices.keys())) answer(id, 'cancel'); return; }
       if (busy) { send({ type: 'error', message: 'An operation is already running.' }); return; }
       busy = true; cancelled = false; send({ type: 'busy', value: true });
@@ -1038,17 +1160,29 @@ const DesignChecklist = (() => {
           send({ type: 'notice', message: settings.baseUrl && settings.token ? 'Settings saved on this machine.' : 'Settings saved. Both the API base URL and upload token are required before uploading.' });
         } else if (msg.type === 'select') {
           scope = selected(); send(scopeState());
+        } else if (msg.type === 'set-scope-kind') {
+          if (!scope || scope.removed) throw new Error('Choose a section or frame first.');
+          writeScopeKind(scope, msg.kind); send(scopeState());
         } else if (msg.type === 'upload') {
           if (!scope || scope.removed) throw new Error('Choose a section or frame first.');
           const settings = validateSettings(msg.baseUrl !== undefined || msg.token !== undefined ? await saveSettings(msg) : await loadSettings());
           const key = C.fileKey(msg.fileUrl);
+          // Asked once per section (pre-selected Neither in the UI); saved on the section so it travels with the file.
+          let scopeKind = readScopeKind(scope);
+          if (!scopeKind) {
+            const choice = await confirmScopeKind();
+            if (!SCOPE_KINDS.includes(choice)) throw Object.assign(new Error('Sync cancelled. Nothing was uploaded.'), { notice: true });
+            scopeKind = writeScopeKind(scope, choice); send(scopeState());
+          }
           send({ type: 'clear-result' });
           const mainNodes = new Map();
           const snapshot = await stableCapture(key, mainNodes);
           if (blockingWarnings(snapshot.warnings).length) throw new Error('Snapshot not uploaded because some properties could not be read: ' + blockingWarnings(snapshot.warnings).slice(0,3).join(' '));
-          const synced = await sync(http, settings, snapshot, { cancelled: () => cancelled, api, pause, mainNodes, fileName: api.root.name, confirmNewLayers,
+          const synced = await sync(http, settings, snapshot, { cancelled: () => cancelled, api, pause, mainNodes, fileName: api.root.name, confirmNewLayers, scopeKind,
+            scopeKindSent: readScopeKindSent(scope),
             markImplemented: msg.markImplemented === true,
             progress: (phase, count, total) => send(progressMessage(phase, count, total)) });
+          if (synced.scopeKind) writeScopeKindSent(scope, synced.scopeKind);
           send({ type: 'synced', ...synced, warnings: snapshot.warnings.concat(synced.mainWarnings, synced.tokens ? synced.tokens.warnings : [], synced.references ? synced.references.warnings : []) });
         } else {
           throw new Error('Unknown action: ' + msg.type);
@@ -1058,8 +1192,8 @@ const DesignChecklist = (() => {
     };
     try { scope = selected(); send(scopeState()); } catch (_) { send({ type: 'notice', message: 'Select a section or frame, then click Use selection.' }); }
   }
-  return { capture, planDelta, scanDifference, resolveMains, collectTokens, planTokens, sync, validateSettings, start, NEW_LAYERS_MIN, NEW_LAYERS_SHARE,
-    BATCH_CHARS, BATCH_RECORDS, MAX_UPLOAD_BATCHES, BATCH_CHARS_MAX, VERIFY_RETRIES, EXPORT_MAX_SIDE, EXPORT_MAX_BYTES };
+  return { capture, planDelta, scanDifference, resolveMains, collectTokens, planTokens, sync, validateSettings, start, nodeMap, readScopeKind, NEW_LAYERS_MIN, NEW_LAYERS_SHARE,
+    BATCH_CHARS, BATCH_RECORDS, MAX_UPLOAD_BATCHES, BATCH_CHARS_MAX, VERIFY_RETRIES, EXPORT_MAX_SIDE, EXPORT_MAX_BYTES, NODE_MAP_MAX_ENTRIES, NODE_MAP_MAX_BYTES, SCOPE_KINDS };
 })();
 if (typeof figma !== 'undefined') DesignChecklist.start(figma);
 if (typeof module !== 'undefined') module.exports = DesignChecklist;
