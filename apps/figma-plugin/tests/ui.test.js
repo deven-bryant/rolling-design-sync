@@ -225,18 +225,48 @@ test('the result reports the design tokens pass with a tokens stat', () => {
   u.receive(SYNCED);
   assert.doesNotMatch(u.$('result-note').textContent, /Tokens/);
 });
-test('the result reports screen references and the export phase counts screens', () => {
+test('the result reports check-target references and the export phase counts targets', () => {
   const u = ui();
-  u.receive({ type: 'busy', value: true }, { type: 'progress', phase: 'Exporting screens', count: 1, total: 2 });
-  assert.equal(u.$('busy').textContent, 'Exporting screens: 1 / 2 screens');
+  u.receive({ type: 'busy', value: true }, { type: 'progress', phase: 'Exporting check targets', count: 1, total: 2 });
+  assert.equal(u.$('busy').textContent, 'Exporting check targets: 1 / 2 targets');
   u.receive({ type: 'busy', value: false }, { ...NO_CHANGES, references: { needed: 2, updated: 2, skipped: 0, warnings: [] } });
-  assert.match(u.$('result-note').textContent, / Screens: 2 references updated\.$/);
-  assert.match(u.$('message').textContent, /; 2 screen references updated\./);
+  assert.match(u.$('result-note').textContent, / Check targets: 2 references updated\.$/);
+  assert.match(u.$('message').textContent, /; 2 check-target references updated\./);
   u.receive({ ...SYNCED, references: { needed: 3, updated: 1, skipped: 2, warnings: [] } });
-  assert.match(u.$('result-note').textContent, / Screens: 1 reference updated, 2 skipped\.$/);
+  assert.match(u.$('result-note').textContent, / Check targets: 1 reference updated, 2 skipped\.$/);
   for (const references of [null, { needed: 0, updated: 0, skipped: 0, warnings: [] }]) {
     u.receive({ ...NO_CHANGES, references });
-    assert.doesNotMatch(u.$('result-note').textContent, /Screens/);
+    assert.doesNotMatch(u.$('result-note').textContent, /Check targets/);
     assert.equal(u.$('message').textContent, 'Sync complete. No changes since the last sync.');
   }
+});
+
+test('Contains shows the kind saved on the section, explains an undeclared one, and saves a change at once', () => {
+  const u = ui();
+  assert.ok(['screens', 'components', 'none'].every(k => !u.$('kind-' + k).checked));
+  assert.match(u.$('kind-note').textContent, /^Not declared yet: asked on the first sync\./);
+  u.receive({ type: 'scope', id: '1:1', name: 'Screens', nodeType: 'SECTION', scopeKind: 'components' });
+  assert.deepEqual(['screens', 'components', 'none'].map(k => u.$('kind-' + k).checked), [false, true, false]);
+  assert.match(u.$('kind-note').textContent, /^Saved on the section and sent with each sync\./);
+  u.posted.length = 0;
+  u.$('kind-screens').checked = true; u.$('kind-screens').onchange();
+  assert.deepEqual(JSON.parse(JSON.stringify(u.posted)), [{ type: 'set-scope-kind', kind: 'screens' }]);
+});
+test('the first-sync Contains prompt pre-selects Neither; Save answers with the choice, Cancel and Escape with cancel', () => {
+  const u = ui();
+  u.receive({ type: 'busy', value: true }, { type: 'confirm-scope-kind', id: 7, name: 'Checkout', scopeId: '1:1' });
+  assert.equal(u.$('kind-prompt').hidden, false);
+  assert.equal(u.$('kind-prompt-title').textContent, 'What does “Checkout” contain?');
+  assert.deepEqual(['screens', 'components', 'none'].map(k => u.$('kind-prompt-' + k).checked), [false, false, true]);
+  assert.equal(u.$('busy').textContent, 'Paused: choose what this section contains.');
+  u.posted.length = 0;
+  u.$('kind-prompt-none').checked = false; u.$('kind-prompt-components').checked = true; u.$('kind-prompt-save').onclick();
+  assert.deepEqual(JSON.parse(JSON.stringify(u.posted)), [{ type: 'scope-kind-choice', id: 7, kind: 'components' }]);
+  assert.equal(u.$('kind-prompt').hidden, true);
+  u.receive({ type: 'confirm-scope-kind', id: 8, name: 'Checkout', scopeId: '1:1' }); u.posted.length = 0;
+  u.$('kind-prompt-cancel').onclick();
+  assert.deepEqual(JSON.parse(JSON.stringify(u.posted)), [{ type: 'scope-kind-choice', id: 8, kind: 'cancel' }]);
+  u.receive({ type: 'confirm-scope-kind', id: 9, name: 'Checkout', scopeId: '1:1' }); u.posted.length = 0;
+  u.$('kind-prompt').onkeydown({ key: 'Escape', preventDefault() {} });
+  assert.deepEqual(JSON.parse(JSON.stringify(u.posted)), [{ type: 'scope-kind-choice', id: 9, kind: 'cancel' }]);
 });
