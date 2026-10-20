@@ -408,7 +408,7 @@ export interface paths {
                                     trackLibraryComponents?: boolean;
                                     /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
                                     storeImages?: boolean;
-                                    /** @description Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed). */
+                                    /** @description Default true. Detect check targets in every checked scope (its `checks` switch, on by default): its top-level FRAME / COMPONENT / INSTANCE nodes, each variant of a top-level COMPONENT_SET and every main COMPONENT in it. false: only screens set up with set_screen (auto targets and their checks are removed). */
                                     autoTargets?: boolean;
                                     /** @description How variant properties reach the app, by property name, e.g. `{ "Color Mode": { "as": "theme", "values": { "Light": "light", "Dark": "dark" } } }`. `as: "theme"` renders the variant in that theme; `as: "query"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}. */
                                     variantMappings?: {
@@ -589,7 +589,7 @@ export interface paths {
                                 trackLibraryComponents?: boolean;
                                 /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
                                 storeImages?: boolean;
-                                /** @description Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed). */
+                                /** @description Default true. Detect check targets in every checked scope (its `checks` switch, on by default): its top-level FRAME / COMPONENT / INSTANCE nodes, each variant of a top-level COMPONENT_SET and every main COMPONENT in it. false: only screens set up with set_screen (auto targets and their checks are removed). */
                                 autoTargets?: boolean;
                                 /** @description How variant properties reach the app, by property name, e.g. `{ "Color Mode": { "as": "theme", "values": { "Light": "light", "Dark": "dark" } } }`. `as: "theme"` renders the variant in that theme; `as: "query"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}. */
                                 variantMappings?: {
@@ -747,7 +747,7 @@ export interface paths {
         head?: never;
         /**
          * Change file settings
-         * @description Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. `storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled. Render checks: `autoTargets` (default true) detects check targets from scope kinds (set_scope_kind); `variantMappings`, `themeMode` / `themeKey` and `gallery` say how targets render; `checkRetention` (default 5) results are kept per target. `gallery` and `variantMappings` are replaced whole. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
+         * @description Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. `storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled. Render checks: `autoTargets` (default true) detects check targets in checked scopes (set_scope_checks); `variantMappings`, `themeMode` / `themeKey` and `gallery` say how targets render; `checkRetention` (default 5) results are kept per target. `gallery` and `variantMappings` are replaced whole. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
          */
         patch: {
             parameters: {
@@ -771,7 +771,7 @@ export interface paths {
                             trackLibraryComponents?: boolean;
                             /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
                             storeImages?: boolean;
-                            /** @description Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed). */
+                            /** @description Default true. Detect check targets in every checked scope (its `checks` switch, on by default): its top-level FRAME / COMPONENT / INSTANCE nodes, each variant of a top-level COMPONENT_SET and every main COMPONENT in it. false: only screens set up with set_screen (auto targets and their checks are removed). */
                             autoTargets?: boolean;
                             /** @description How variant properties reach the app, by property name, e.g. `{ "Color Mode": { "as": "theme", "values": { "Light": "light", "Dark": "dark" } } }`. `as: "theme"` renders the variant in that theme; `as: "query"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}. */
                             variantMappings?: {
@@ -824,7 +824,7 @@ export interface paths {
                                 trackLibraryComponents?: boolean;
                                 /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
                                 storeImages?: boolean;
-                                /** @description Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed). */
+                                /** @description Default true. Detect check targets in every checked scope (its `checks` switch, on by default): its top-level FRAME / COMPONENT / INSTANCE nodes, each variant of a top-level COMPONENT_SET and every main COMPONENT in it. false: only screens set up with set_screen (auto targets and their checks are removed). */
                                 autoTargets?: boolean;
                                 /** @description How variant properties reach the app, by property name, e.g. `{ "Color Mode": { "as": "theme", "values": { "Light": "light", "Dark": "dark" } } }`. `as: "theme"` renders the variant in that theme; `as: "query"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}. */
                                 variantMappings?: {
@@ -1028,11 +1028,8 @@ export interface paths {
                                     clean?: number;
                                     blocked?: number;
                                 };
-                                /**
-                                 * @description What the scope contains, for automatic check targets (declared in the Figma plugin or with set_scope_kind); `none` when never declared.
-                                 * @enum {string}
-                                 */
-                                kind?: "screens" | "components" | "none";
+                                /** @description The scope's check switch (the Figma plugin's *Check this section's screens and components*, or set_scope_checks): true (the default) = its screens and components are check targets. Always false for the tokens scope. */
+                                checks?: boolean;
                             }[];
                         };
                     };
@@ -1328,6 +1325,8 @@ export interface paths {
                                     status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
                                     stale?: boolean;
                                     score?: null | number;
+                                    /** @description Excluded from checks (update_check_target `excluded`). */
+                                    excluded?: boolean;
                                 };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
@@ -1626,6 +1625,8 @@ export interface paths {
                                 status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
                                 stale?: boolean;
                                 score?: null | number;
+                                /** @description Excluded from checks (update_check_target `excluded`). */
+                                excluded?: boolean;
                             };
                             /** @description `get_node` only: how many of its notes clears have resolved. */
                             notesResolved?: number;
@@ -2254,6 +2255,8 @@ export interface paths {
                                     status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
                                     stale?: boolean;
                                     score?: null | number;
+                                    /** @description Excluded from checks (update_check_target `excluded`). */
+                                    excluded?: boolean;
                                 };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
@@ -2865,6 +2868,8 @@ export interface paths {
                                     status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
                                     stale?: boolean;
                                     score?: null | number;
+                                    /** @description Excluded from checks (update_check_target `excluded`). */
+                                    excluded?: boolean;
                                 };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
@@ -3706,6 +3711,8 @@ export interface paths {
                                     status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
                                     stale?: boolean;
                                     score?: null | number;
+                                    /** @description Excluded from checks (update_check_target `excluded`). */
+                                    excluded?: boolean;
                                 };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
@@ -4001,6 +4008,8 @@ export interface paths {
                                     status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
                                     stale?: boolean;
                                     score?: null | number;
+                                    /** @description Excluded from checks (update_check_target `excluded`). */
+                                    excluded?: boolean;
                                 };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
@@ -4529,6 +4538,8 @@ export interface paths {
                                     status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
                                     stale?: boolean;
                                     score?: null | number;
+                                    /** @description Excluded from checks (update_check_target `excluded`). */
+                                    excluded?: boolean;
                                 };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
@@ -4855,6 +4866,8 @@ export interface paths {
                                     status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
                                     stale?: boolean;
                                     score?: null | number;
+                                    /** @description Excluded from checks (update_check_target `excluded`). */
+                                    excluded?: boolean;
                                 };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
@@ -5168,6 +5181,8 @@ export interface paths {
                                     status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
                                     stale?: boolean;
                                     score?: null | number;
+                                    /** @description Excluded from checks (update_check_target `excluded`). */
+                                    excluded?: boolean;
                                 };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
@@ -5491,6 +5506,8 @@ export interface paths {
                                     status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
                                     stale?: boolean;
                                     score?: null | number;
+                                    /** @description Excluded from checks (update_check_target `excluded`). */
+                                    excluded?: boolean;
                                 };
                                 /** @description `get_node` only: how many of its notes clears have resolved. */
                                 notesResolved?: number;
@@ -5897,15 +5914,18 @@ export interface paths {
                                     submittedAt?: null | string;
                                 };
                                 /**
-                                 * @description `screen` (rendered at a route) or `component` (rendered through the gallery).
+                                 * @deprecated
+                                 * @description Deprecated (targets have no levels; every target renders from the gallery first, then its route). `component` for a main component below its scope's top level, else `screen`.
                                  * @enum {string}
                                  */
                                 level?: "screen" | "component";
                                 /**
-                                 * @description `manual`: set up with set_screen; `auto`: detected from its scope's kind.
+                                 * @description `manual`: set up with set_screen; `auto`: detected in a checked scope.
                                  * @enum {string}
                                  */
                                 source?: "manual" | "auto";
+                                /** @description Excluded from checks (update_check_target `excluded`): skipped by the ready list and `rds-agent check --all`, never blocks other targets; keeps its history. */
+                                excluded?: boolean;
                                 /** @description Screen variants that differ only in mapped variant properties share this key and their route. */
                                 familyKey?: null | string;
                                 /** @description Nodes masked out of the comparison (their node-map rectangles). */
@@ -6154,15 +6174,18 @@ export interface paths {
                                     submittedAt?: null | string;
                                 };
                                 /**
-                                 * @description `screen` (rendered at a route) or `component` (rendered through the gallery).
+                                 * @deprecated
+                                 * @description Deprecated (targets have no levels; every target renders from the gallery first, then its route). `component` for a main component below its scope's top level, else `screen`.
                                  * @enum {string}
                                  */
                                 level?: "screen" | "component";
                                 /**
-                                 * @description `manual`: set up with set_screen; `auto`: detected from its scope's kind.
+                                 * @description `manual`: set up with set_screen; `auto`: detected in a checked scope.
                                  * @enum {string}
                                  */
                                 source?: "manual" | "auto";
+                                /** @description Excluded from checks (update_check_target `excluded`): skipped by the ready list and `rds-agent check --all`, never blocks other targets; keeps its history. */
+                                excluded?: boolean;
                                 /** @description Screen variants that differ only in mapped variant properties share this key and their route. */
                                 familyKey?: null | string;
                                 /** @description Nodes masked out of the comparison (their node-map rectangles). */
@@ -7509,17 +7532,17 @@ export interface paths {
         };
         /**
          * List check targets
-         * @description Every render-check target — screens and components, set up with set_screen or detected from scope kinds (`autoTargets`) — in check order: components first, children before the composites that contain them, then screens. Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing component inside; `waiting`: a contained component's latest result is a mismatch) and `render`, everything a renderer needs (route + theme/query for screens; gallery settings + the variant's key, set, variant string and props for components; the Figma size as viewport). Run them with `rds-agent check --ready`.
+         * @description Every render-check target — set up with set_screen or detected in checked scopes (`autoTargets`: top-level frames / components / instances, the variants of top-level component sets and every main component) — in check order by containment: a target that contains other targets (nested, or as instances) comes after them, then document order. Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing target inside; `waiting`: a contained target's latest result is a mismatch; excluded targets never match a status filter) and `render`, everything a renderer needs (gallery settings + the key, set, variant string and props; the route + theme/query when set; the Figma size as viewport). `containing=<nodeId>` lists the targets that contain that node (itself included), each with `renderNotes`. Run them with `rds-agent check --ready`.
          */
         get: {
             parameters: {
                 query?: {
-                    /** @description Only screens or only components. */
-                    level?: "screen" | "component";
                     /** @description `ready`: the targets to check now. */
                     status?: "building" | "ready" | "waiting" | "requested" | "passed" | "mismatch" | "error";
                     /** @description Only targets at or under this node id (e.g. a section). */
                     under?: string;
+                    /** @description Only targets containing this node (at or above it, or placing an instance of a main component it is in); adds `renderNotes`. */
+                    containing?: string;
                 };
                 header?: never;
                 path: {
@@ -7543,18 +7566,21 @@ export interface paths {
                                 name?: null | string;
                                 type?: null | string;
                                 /**
-                                 * @description `screen` (rendered at a route) or `component` (rendered through the gallery).
+                                 * @deprecated
+                                 * @description Deprecated (targets have no levels; every target renders from the gallery first, then its route). `component` for a main component below its scope's top level, else `screen`.
                                  * @enum {string}
                                  */
                                 level?: "screen" | "component";
                                 /**
-                                 * @description `manual`: set up with set_screen; `auto`: detected from its scope's kind.
+                                 * @description `manual`: set up with set_screen; `auto`: detected in a checked scope.
                                  * @enum {string}
                                  */
                                 source?: "manual" | "auto";
+                                /** @description Excluded from checks (update_check_target `excluded`): skipped by the ready list and `rds-agent check --all`, never blocks other targets; keeps its history. */
+                                excluded?: boolean;
                                 /** @description Screen variants that differ only in mapped variant properties share this key and their route. */
                                 familyKey?: null | string;
-                                /** @description Screens: the app route (an auto screen takes its family's; null until set_target_route or `rds-agent check --url` sets it). Components: null. */
+                                /** @description The app route it renders at when the gallery has no entry for it (an auto target takes its family's; null until update_check_target or `rds-agent check --url` sets it). */
                                 route?: null | string;
                                 /** @description From a mapped variant property (`as: theme`) or set_screen. */
                                 theme?: null | string;
@@ -7613,21 +7639,21 @@ export interface paths {
                                     createdAt?: string;
                                 };
                                 /**
-                                 * @description building: nodes under it are dirty; ready: built and no result for its current design (check it); waiting: would be ready, but a component it contains last failed (`waitingOn`); requested; passed; mismatch; error.
+                                 * @description building: nodes under it are dirty; ready: built and no result for its current design (check it); waiting: would be ready, but a target it contains last failed (`waitingOn`); requested; passed; mismatch; error. Excluded targets keep their status but never match a `status` filter.
                                  * @enum {string}
                                  */
                                 status?: "building" | "ready" | "waiting" | "requested" | "passed" | "mismatch" | "error";
                                 /** @description The last result is for an older design version. */
                                 stale?: boolean;
                                 score?: null | number;
-                                /** @description status waiting: the contained component target whose latest result is a mismatch. */
+                                /** @description status waiting: the contained target whose latest result is a mismatch. */
                                 waitingOn?: null | {
                                     nodeId?: string;
                                     name?: null | string;
                                 };
-                                /** @description Component targets the CLI found no gallery entry for (`gallery.mapped: false`); they never block other targets. */
+                                /** @description No gallery entry (the CLI stored `gallery.mapped: false`) and no route: shown as Not mapped, never blocks other targets. */
                                 notMapped?: boolean;
-                                /** @description Component targets inside this one (nested, or placed as instances). */
+                                /** @description Other targets inside this one (nested, or placed as instances); it is checked after them. */
                                 contains?: string[];
                                 /** @description The newest check of the screen. */
                                 lastCheck?: null | {
@@ -7639,13 +7665,23 @@ export interface paths {
                                     requestedAt?: string;
                                     submittedAt?: null | string;
                                 };
-                                /** @description What a renderer needs. Screens: `route`, `theme`, `query`, `themeMode`, `themeKey`, `viewport`. Components: `gallery` ({ urlTemplate, storybookUrl } from file settings), `key` (component key), `nodeId`, `set` (set or component name), `variant` (Figma variant string, e.g. `Size=sm, State=Hover`), `props`, `theme`, `query`, `themeMode`, `themeKey`, `viewport` (the Figma size), `cache` (the stored gallery resolution). */
+                                /** @description What a renderer needs — gallery first, then the route: `gallery` ({ urlTemplate, storybookUrl } from file settings), `key` (component key; null for frames), `nodeId`, `set` (set or node name), `variant` (Figma variant string, e.g. `Size=sm, State=Hover`), `props`, `cache` (the stored gallery resolution), `route` (null when not set), `theme`, `query`, `themeMode`, `themeKey`, `viewport` (the Figma size). */
                                 render?: {
                                     [key: string]: unknown;
                                 };
-                                /** @description Components: the gallery resolution the CLI stored with update_check_target (e.g. `{ "mapped": true, "storyId": "…" }`). */
+                                /** @description The gallery resolution the CLI stored with update_check_target (e.g. `{ "mapped": true, "storyId": "…" }`). */
                                 gallery?: null | {
                                     [key: string]: unknown;
+                                };
+                                /** @description With `containing` only: the open render-check notes in the target (on it or any node under it). */
+                                renderNotes?: {
+                                    open?: number;
+                                    latest?: null | {
+                                        noteId?: string;
+                                        nodeId?: string;
+                                        body?: string;
+                                        createdAt?: string;
+                                    };
                                 };
                                 updatedBy?: string;
                                 updatedAt?: string;
@@ -7788,7 +7824,7 @@ export interface paths {
         head?: never;
         /**
          * Change a check target
-         * @description Changes how a check target renders. `route` on a screen sets its route — for an auto screen, the route of its whole family (variants that differ only in mapped properties); `rds-agent check --url` calls this the first time it checks a screen without one. Components take no route (they render through the gallery). `gallery` stores the CLI's gallery resolution for a component (`mapped: false` = no gallery entry: shown as not mapped, never blocks). `maskNodeIds` masks nodes via the node map; `threshold` is the max % of differing pixels. Agent tokens and agent sessions only.
+         * @description Changes a check target. `route` sets where it renders when the gallery has no entry for it — for an auto target, the route of its whole family (variants that differ only in mapped properties); `rds-agent check --url` calls this the first time it checks a target without one. `gallery` stores the CLI's gallery resolution (`mapped: false` = no gallery entry; with no route either it is Not mapped and never blocks). `excluded: true` excludes it from checks (skipped by the ready list and `--all`, never blocks; keeps its history; re-detection keeps the flag), false includes it again. `maskNodeIds` masks nodes via the node map; `threshold` is the max % of differing pixels. Agent tokens and agent sessions only.
          */
         patch: {
             parameters: {
@@ -7805,13 +7841,15 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        /** @description Screens: the app route, starting with `/`. */
+                        /** @description The app route, starting with `/`. */
                         route?: string;
+                        /** @description true: exclude it from checks; false: include it again. */
+                        excluded?: boolean;
                         /** @description Nodes the comparison ignores, by id (their rectangles come from the node map the plugin uploads with the reference). */
                         maskNodeIds?: string[];
                         /** @description Max % of differing pixels that still passes (default 1). */
                         threshold?: number;
-                        /** @description Components: the gallery resolution (replaces the stored one). */
+                        /** @description The gallery resolution (replaces the stored one). */
                         gallery?: {
                             /** @description false: no gallery entry or story for this variant. */
                             mapped?: boolean;
@@ -7837,18 +7875,21 @@ export interface paths {
                                 name?: null | string;
                                 type?: null | string;
                                 /**
-                                 * @description `screen` (rendered at a route) or `component` (rendered through the gallery).
+                                 * @deprecated
+                                 * @description Deprecated (targets have no levels; every target renders from the gallery first, then its route). `component` for a main component below its scope's top level, else `screen`.
                                  * @enum {string}
                                  */
                                 level?: "screen" | "component";
                                 /**
-                                 * @description `manual`: set up with set_screen; `auto`: detected from its scope's kind.
+                                 * @description `manual`: set up with set_screen; `auto`: detected in a checked scope.
                                  * @enum {string}
                                  */
                                 source?: "manual" | "auto";
+                                /** @description Excluded from checks (update_check_target `excluded`): skipped by the ready list and `rds-agent check --all`, never blocks other targets; keeps its history. */
+                                excluded?: boolean;
                                 /** @description Screen variants that differ only in mapped variant properties share this key and their route. */
                                 familyKey?: null | string;
-                                /** @description Screens: the app route (an auto screen takes its family's; null until set_target_route or `rds-agent check --url` sets it). Components: null. */
+                                /** @description The app route it renders at when the gallery has no entry for it (an auto target takes its family's; null until update_check_target or `rds-agent check --url` sets it). */
                                 route?: null | string;
                                 /** @description From a mapped variant property (`as: theme`) or set_screen. */
                                 theme?: null | string;
@@ -7907,21 +7948,21 @@ export interface paths {
                                     createdAt?: string;
                                 };
                                 /**
-                                 * @description building: nodes under it are dirty; ready: built and no result for its current design (check it); waiting: would be ready, but a component it contains last failed (`waitingOn`); requested; passed; mismatch; error.
+                                 * @description building: nodes under it are dirty; ready: built and no result for its current design (check it); waiting: would be ready, but a target it contains last failed (`waitingOn`); requested; passed; mismatch; error. Excluded targets keep their status but never match a `status` filter.
                                  * @enum {string}
                                  */
                                 status?: "building" | "ready" | "waiting" | "requested" | "passed" | "mismatch" | "error";
                                 /** @description The last result is for an older design version. */
                                 stale?: boolean;
                                 score?: null | number;
-                                /** @description status waiting: the contained component target whose latest result is a mismatch. */
+                                /** @description status waiting: the contained target whose latest result is a mismatch. */
                                 waitingOn?: null | {
                                     nodeId?: string;
                                     name?: null | string;
                                 };
-                                /** @description Component targets the CLI found no gallery entry for (`gallery.mapped: false`); they never block other targets. */
+                                /** @description No gallery entry (the CLI stored `gallery.mapped: false`) and no route: shown as Not mapped, never blocks other targets. */
                                 notMapped?: boolean;
-                                /** @description Component targets inside this one (nested, or placed as instances). */
+                                /** @description Other targets inside this one (nested, or placed as instances); it is checked after them. */
                                 contains?: string[];
                                 /** @description The newest check of the screen. */
                                 lastCheck?: null | {
@@ -7933,13 +7974,23 @@ export interface paths {
                                     requestedAt?: string;
                                     submittedAt?: null | string;
                                 };
-                                /** @description What a renderer needs. Screens: `route`, `theme`, `query`, `themeMode`, `themeKey`, `viewport`. Components: `gallery` ({ urlTemplate, storybookUrl } from file settings), `key` (component key), `nodeId`, `set` (set or component name), `variant` (Figma variant string, e.g. `Size=sm, State=Hover`), `props`, `theme`, `query`, `themeMode`, `themeKey`, `viewport` (the Figma size), `cache` (the stored gallery resolution). */
+                                /** @description What a renderer needs — gallery first, then the route: `gallery` ({ urlTemplate, storybookUrl } from file settings), `key` (component key; null for frames), `nodeId`, `set` (set or node name), `variant` (Figma variant string, e.g. `Size=sm, State=Hover`), `props`, `cache` (the stored gallery resolution), `route` (null when not set), `theme`, `query`, `themeMode`, `themeKey`, `viewport` (the Figma size). */
                                 render?: {
                                     [key: string]: unknown;
                                 };
-                                /** @description Components: the gallery resolution the CLI stored with update_check_target (e.g. `{ "mapped": true, "storyId": "…" }`). */
+                                /** @description The gallery resolution the CLI stored with update_check_target (e.g. `{ "mapped": true, "storyId": "…" }`). */
                                 gallery?: null | {
                                     [key: string]: unknown;
+                                };
+                                /** @description With `containing` only: the open render-check notes in the target (on it or any node under it). */
+                                renderNotes?: {
+                                    open?: number;
+                                    latest?: null | {
+                                        noteId?: string;
+                                        nodeId?: string;
+                                        body?: string;
+                                        createdAt?: string;
+                                    };
                                 };
                                 updatedBy?: string;
                                 updatedAt?: string;
@@ -8329,8 +8380,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Set a scope's kind
-         * @description Declares what a synced scope (a section) contains, for automatic check targets: `screens` (its top-level frames / components / instances and the variants of its top-level component sets are screen targets), `components` (every main component in it is a component target) or `none` (default: no targets). The Figma plugin sends it with the sync; this changes it from the API. Targets update at once (with `autoTargets` on). Agent tokens and agent sessions only.
+         * Turn a scope's checks on or off
+         * @description The one check switch of a synced scope (a section): `checks: true` (the default) makes its top-level frames / components / instances, the variants of its top-level component sets and every main component in it check targets; false removes them (and their checks). The Figma plugin sends it with each sync (*Check this section's screens and components*); this changes it from the API or the portal. Targets update at once (with `autoTargets` on). `kind` is the deprecated rev9b form (`screens` / `components` = true, `none` = false). Agent tokens and agent sessions only.
          */
         patch: {
             parameters: {
@@ -8347,11 +8398,14 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** @description true: check the scope's screens and components; false: no targets. */
+                        checks?: boolean;
                         /**
-                         * @description `screens`, `components` or `none`.
+                         * @deprecated
+                         * @description Deprecated: send checks. `screens` / `components` = true, `none` = false.
                          * @enum {string}
                          */
-                        kind: "screens" | "components" | "none";
+                        kind?: "screens" | "components" | "none";
                     };
                 };
             };
@@ -8365,8 +8419,7 @@ export interface paths {
                         "application/json": {
                             fileKey?: string;
                             nodeId?: string;
-                            /** @enum {string} */
-                            kind?: "screens" | "components" | "none";
+                            checks?: boolean;
                             /** @description Auto targets now detected in the scope. */
                             targets?: number;
                         };
@@ -9083,6 +9136,8 @@ export interface paths {
                                     status?: "building" | "ready" | "requested" | "passed" | "mismatch" | "error";
                                     stale?: boolean;
                                     score?: null | number;
+                                    /** @description Excluded from checks (update_check_target `excluded`). */
+                                    excluded?: boolean;
                                 };
                                 /** @description Token items with `include=usage`: `{ nodeId: { layers } }` for the listed tokens — how many live layers use each. */
                                 usage?: {
@@ -9507,7 +9562,7 @@ export interface paths {
                                 trackLibraryComponents?: boolean;
                                 /** @description Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). */
                                 storeImages?: boolean;
-                                /** @description Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed). */
+                                /** @description Default true. Detect check targets in every checked scope (its `checks` switch, on by default): its top-level FRAME / COMPONENT / INSTANCE nodes, each variant of a top-level COMPONENT_SET and every main COMPONENT in it. false: only screens set up with set_screen (auto targets and their checks are removed). */
                                 autoTargets?: boolean;
                                 /** @description How variant properties reach the app, by property name, e.g. `{ "Color Mode": { "as": "theme", "values": { "Light": "light", "Dark": "dark" } } }`. `as: "theme"` renders the variant in that theme; `as: "query"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}. */
                                 variantMappings?: {
@@ -9705,8 +9760,11 @@ export interface paths {
                         fileName?: string | null;
                         /** @description The synced scope root (1:2 or 1-2). */
                         rootNodeId?: string | null;
+                        /** @description The scope's check switch, saved on the section in Figma (needs `rootNodeId`): true checks its top-level frames / components / instances, the variants of its top-level component sets and every main component in it; false = no check targets. Stored for the scope; omitted = unchanged (older plugins send nothing; scopes never set are checked). */
+                        checks?: boolean;
                         /**
-                         * @description What the scope contains, as declared in Figma (needs `rootNodeId`): `screens`, `components` or `none`. Stored for the scope and used for automatic check targets; omitted = unchanged (older plugins send nothing; undeclared scopes are `none`).
+                         * @deprecated
+                         * @description Deprecated: send checks. `screens` / `components` = true, `none` = false (needs `rootNodeId`).
                          * @enum {string}
                          */
                         scopeKind?: "screens" | "components" | "none";
@@ -10064,7 +10122,7 @@ export interface paths {
         };
         /**
          * Targets needing a reference (plugin)
-         * @description Check targets under `under` — set-up screens and, with `autoTargets`, the screen and component targets detected from scope kinds — whose reference image is missing or for an older design version: export each at 1x and upload it with its node map. Plugin tokens only.
+         * @description Check targets under `under` — set-up screens and, with `autoTargets`, the targets detected in checked scopes — whose reference image is missing or for an older design version: export each at 1x and upload it with its node map. Plugin tokens only.
          */
         get: {
             parameters: {
@@ -10091,7 +10149,10 @@ export interface paths {
                             screens?: {
                                 nodeId?: string;
                                 designVersion?: string;
-                                /** @enum {string} */
+                                /**
+                                 * @deprecated
+                                 * @enum {string}
+                                 */
                                 level?: "screen" | "component";
                             }[];
                         };

@@ -270,7 +270,7 @@ test('every tool round-trips: inputs → HTTP request → JSON result', async t 
   const { tools } = await client.listTools();
   // The screen / render-check tools and get_attachment have their own test below.
   const own = new Set(['set_screen', 'delete_screen', 'list_screens', 'request_render_check', 'list_render_checks', 'get_render_check', 'submit_render_check', 'get_attachment',
-    'list_check_targets', 'update_check_target', 'list_target_checks', 'set_scope_kind']);
+    'list_check_targets', 'update_check_target', 'list_target_checks', 'set_scope_checks']);
   assert.deepEqual([...done].sort(), tools.map(tool => tool.name).filter(n => !own.has(n)).sort(), 'every tool is exercised');
 });
 
