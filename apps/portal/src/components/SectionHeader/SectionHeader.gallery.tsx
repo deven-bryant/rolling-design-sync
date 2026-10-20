@@ -24,6 +24,7 @@ const bothThemes = (examples: { figma: string; render: (mode: string) => ReturnT
 
 export default {
   component: 'SectionHeader',
+  figma: 'Custom Section header',
   examples: bothThemes([
     {
       figma: 'Custom Section header · Actions (Tertiary icon only)',

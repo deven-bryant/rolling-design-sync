@@ -23,6 +23,7 @@ export default untitled.model(collection, schema, collection)`;
 
 export default {
   component: 'CodeSnippet',
+  figma: 'Code snippet',
   examples: inBothThemes([
     { figma: 'Type=Simple', render: () => <CodeSnippet code={code} copyLabel="Copy code" /> },
     { figma: 'Type=Simple, tabs slot', render: () => <CodeSnippet code="npm ci" tabs={<div className="border-b border-secondary px-2xl py-lg text-sm font-semibold text-secondary">Shell</div>} /> },

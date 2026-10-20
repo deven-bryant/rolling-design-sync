@@ -3,9 +3,10 @@ import { Metric, MetricChange } from './Metric';
 
 export default {
   component: 'Metric',
+  figma: 'Metric item',
   examples: inBothThemes([
     {
-      figma: 'Metric item: Actions=False, Type=Simple, Breakpoint=Desktop',
+      figma: 'Metric item: Actions=False, Type=Simple, Breakpoint=Desktop', set: 'Metric item', variant: 'Actions=False, Type=Simple, Breakpoint=Desktop',
       render: () => (
         <Metric
           className="w-97"
@@ -20,6 +21,6 @@ export default {
         />
       ),
     },
-    { figma: '_Change: Type=03, Trend=Positive', render: () => <MetricChange>100%</MetricChange> },
+    { figma: '_Change: Type=03, Trend=Positive', set: '_Change', variant: 'Type=03, Trend=Positive', render: () => <MetricChange>100%</MetricChange> },
   ]),
 } satisfies GalleryEntry;

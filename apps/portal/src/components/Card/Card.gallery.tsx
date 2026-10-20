@@ -6,9 +6,10 @@ const button = 'rounded-md border border-primary bg-primary px-3.5 py-2.5 text-s
 
 export default {
   component: 'Card',
+  figma: 'Card header',
   examples: inBothThemes([
     {
-      figma: 'Card header: Avatar=False, Breakpoint=Desktop',
+      figma: 'Card header: Avatar=False, Breakpoint=Desktop', set: 'Card header', variant: 'Avatar=False, Breakpoint=Desktop',
       render: () => (
         <Card>
           <Card.Header
@@ -37,7 +38,7 @@ export default {
       ),
     },
     {
-      figma: 'Card header: Divider=False, no supporting text',
+      figma: 'Card header: Divider=False, no supporting text', set: 'Card header', variant: 'Divider=False, no supporting text',
       render: () => (
         <Card>
           <Card.Header title="Team members" divider={false} />

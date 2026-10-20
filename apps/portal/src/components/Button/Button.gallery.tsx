@@ -5,6 +5,7 @@ const placeholder = <Icon name="placeholder" />;
 
 export default {
   component: 'Button',
+  figma: 'Buttons/Button',
   examples: inBothThemes([
     {
       figma: 'Size=md, Hierarchy=Primary, State=Default, Icon only=False',
@@ -111,23 +112,23 @@ export default {
       ),
     },
     {
-      figma: 'Button utility · Size=xs, Hierarchy=Tertiary, State=Default',
+      figma: 'Button utility · Size=xs, Hierarchy=Tertiary, State=Default', set: 'Buttons/Button utility', variant: 'Size=xs, Hierarchy=Tertiary, State=Default',
       render: () => <ButtonUtility size="xs" hierarchy="tertiary" icon={placeholder} tooltip="Tooltip" />,
     },
     {
-      figma: 'Button utility · Size=xs, Hierarchy=Tertiary, State=Hover',
+      figma: 'Button utility · Size=xs, Hierarchy=Tertiary, State=Hover', set: 'Buttons/Button utility', variant: 'Size=xs, Hierarchy=Tertiary, State=Hover',
       render: () => <ButtonUtility size="xs" hierarchy="tertiary" icon={placeholder} tooltip="Tooltip" />,
     },
     {
-      figma: 'Button utility · Size=xs, Hierarchy=Secondary',
+      figma: 'Button utility · Size=xs, Hierarchy=Secondary', set: 'Buttons/Button utility', variant: 'Size=xs, Hierarchy=Secondary',
       render: () => <ButtonUtility size="xs" hierarchy="secondary" icon={placeholder} tooltip="Tooltip" />,
     },
     {
-      figma: 'Button close X · Size=sm, Dark background=False, State=Default',
+      figma: 'Button close X · Size=sm, Dark background=False, State=Default', set: 'Button close X', variant: 'Size=sm, Dark background=False, State=Default',
       render: () => <CloseButton size="sm" />,
     },
     {
-      figma: 'Button close X · Size=md, Dark background=False, State=Default',
+      figma: 'Button close X · Size=md, Dark background=False, State=Default', set: 'Button close X', variant: 'Size=md, Dark background=False, State=Default',
       render: () => <CloseButton size="md" />,
     },
   ]),

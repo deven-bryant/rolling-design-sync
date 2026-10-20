@@ -3,6 +3,7 @@ import { KvBadge, KvBadgeList } from '.';
 
 export default {
   component: 'KvBadge',
+  figma: 'KV Badge',
   examples: inBothThemes([
     { figma: 'KV Badge', render: () => <dl><KvBadge label="Checked" value="2h ago" /></dl> },
     {

@@ -3,6 +3,7 @@ import { VerticalDivider } from '.';
 
 export default {
   component: 'VerticalDivider',
+  figma: 'Vertical Divider',
   examples: inBothThemes([
     {
       figma: 'Vertical Divider',

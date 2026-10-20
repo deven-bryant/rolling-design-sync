@@ -23,6 +23,7 @@ const bothThemes = (examples: { figma: string; render: (mode: string) => ReturnT
 
 export default {
   component: 'PageHeader',
+  figma: 'Page header',
   examples: bothThemes([
     {
       figma: 'Style=Simple, Breakpoint=Desktop · Breadcrumbs, Supporting text, Actions, Divider',

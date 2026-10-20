@@ -4,6 +4,7 @@ import { ClaimHolder } from '.';
 
 export default {
   component: 'ClaimHolder',
+  figma: 'Node Details - Claim Holder',
   examples: inBothThemes([
     {
       figma: 'Property 1=Claimed',

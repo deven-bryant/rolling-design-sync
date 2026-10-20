@@ -37,7 +37,7 @@ export default {
         </span>
       ),
     },
-    { figma: '_Dot · Size=md, Outline=False', render: () => <BadgeDot size="md" /> },
-    { figma: 'Featured icon · Size=md, Color=Gray, Type=Modern', render: () => <FeaturedIcon /> },
+    { figma: '_Dot · Size=md, Outline=False', set: '_Dot', variant: 'Size=md, Outline=False', render: () => <BadgeDot size="md" /> },
+    { figma: 'Featured icon · Size=md, Color=Gray, Type=Modern', set: 'Featured icon', variant: 'Size=md, Color=Gray, Type=Modern', render: () => <FeaturedIcon /> },
   ]),
 } satisfies GalleryEntry;

@@ -5,6 +5,7 @@ const labels = ['My details', 'Profile', 'Password', 'Team', 'Plan'];
 
 export default {
   component: 'Tabs',
+  figma: 'Horizontal tabs',
   examples: inBothThemes([
     {
       figma: 'Type=Underline, Size=md, Full width=False, Breakpoint=Desktop',
