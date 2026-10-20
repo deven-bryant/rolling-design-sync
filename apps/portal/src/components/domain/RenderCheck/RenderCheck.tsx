@@ -5,13 +5,28 @@ import { cx, Text } from '../../primitives';
 import { Tabs } from '../../Tabs';
 import { KvBadgeList } from '../KvBadge';
 
-/** A screen's render-check state: the API's screen `status`, `stale` when its last result is for an older design, or `not-set-up`. */
-export type RenderCheckStatus = 'not-set-up' | 'building' | 'ready' | 'requested' | 'passed' | 'mismatch' | 'error' | 'stale';
+/**
+ * A target's render-check state: the API's target `status`, `stale` when its last result is for an older design,
+ * `not-mapped` when neither the gallery nor a route renders it, or `not-set-up`.
+ */
+export type RenderCheckStatus =
+  | 'not-set-up'
+  | 'not-mapped'
+  | 'building'
+  | 'ready'
+  | 'waiting'
+  | 'requested'
+  | 'passed'
+  | 'mismatch'
+  | 'error'
+  | 'stale';
 
 export const renderCheckColors = {
   'not-set-up': 'gray',
+  'not-mapped': 'gray',
   building: 'gray-blue',
   ready: 'brand',
+  waiting: 'warning',
   requested: 'blue-light',
   passed: 'success',
   mismatch: 'error',
@@ -21,8 +36,10 @@ export const renderCheckColors = {
 
 export const renderCheckLabels: Record<RenderCheckStatus, string> = {
   'not-set-up': 'Not set up',
+  'not-mapped': 'Not mapped',
   building: 'Building',
   ready: 'Ready',
+  waiting: 'Waiting',
   requested: 'Requested',
   passed: 'Passed',
   mismatch: 'Render mismatch',

@@ -21,6 +21,7 @@ describe('Icon', () => {
       'chevron-selector-vertical',
       'chevron-up',
       'dots-vertical',
+      'edit-01',
       'file-04',
       'help-circle',
       'home-line',
