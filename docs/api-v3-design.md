@@ -446,20 +446,27 @@ design: `POST …/nodes/{nodeId}/notes { body, worker? }` (body 1–4000 chars).
 
 ### Check targets
 
-- **Targets.** A `screen` row is a check target: `level` screen | component,
-  `source` manual (set_screen) | auto, `family_key`, `theme`, `query`,
-  `gallery` (the CLI's resolution cache, `mapped: false` = not mapped),
-  `mask_node_ids` and `node_map_id`. Rev9 screens are `manual` / `screen`.
-- **Scope kinds.** `scope_setting (file_key, node_id, kind screens |
-  components | none)`; the plugin sends `scopeKind` with a sync batch that has
-  `rootNodeId` (omitted = unchanged; undeclared = none);
-  `PATCH …/scopes/{nodeId}` changes it. `…/scopes` lists each scope's `kind`.
-- **Detection.** With `autoTargets` (file setting, default true): a `screens`
-  scope → its top-level FRAME / COMPONENT / INSTANCE nodes and each variant of
-  a top-level COMPONENT_SET; a `components` scope → every main COMPONENT
-  (library nodes excluded). Auto rows follow syncs, scope-kind and settings
-  changes; a node that stops qualifying loses its auto target with its checks
-  and images. `autoTargets: false` leaves only manual screens.
+- **Targets.** A `screen` row is a check target: `source` manual
+  (set_screen) | auto, `family_key`, `theme`, `query`, `gallery` (the CLI's
+  resolution cache), `mask_node_ids`, `node_map_id` and `excluded`. `level`
+  is deprecated (kept readable: `component` for a main component below its
+  scope's top level, else `screen`). Rev9 screens are `manual` / `screen`.
+- **Scope checks.** `scope_setting (file_key, node_id, checks)` — one switch
+  per scope, true for scopes without a row. The plugin sends `checks` with a
+  sync batch that has `rootNodeId` (omitted = unchanged); the deprecated
+  `scopeKind` maps `screens` / `components` to true and `none` to false (the
+  migration backfills stored kinds the same way). `PATCH …/scopes/{nodeId}`
+  `{ checks }` changes it; `…/scopes` lists each scope's `checks`.
+- **Detection.** With `autoTargets` (file setting, default true), each checked
+  scope → the union of its top-level FRAME / COMPONENT / INSTANCE nodes, each
+  variant of a top-level COMPONENT_SET and every main COMPONENT inside it
+  (library nodes excluded), each node once. Auto rows follow syncs, scope
+  switches and settings changes; a node that stops qualifying loses its auto
+  target with its checks and images. `excluded` is never reset by
+  re-detection. `autoTargets: false` leaves only manual screens.
+- **Exclude.** `PATCH …/targets/{nodeId}` `{ excluded }`: an excluded target
+  keeps its history, matches no `status` filter (so it leaves the ready
+  list), never blocks and is skipped by `rds-agent check --all`.
 - **Families.** Variants of one set whose properties differ only in mapped
   ones (`variantMappings`: `as` theme | query, `key`, `values`) share a
   `family_key`; `target_family (file_key, family_key, route)` holds the route,
@@ -471,10 +478,16 @@ design: `POST …/nodes/{nodeId}/notes { body, worker? }` (body 1–4000 chars).
   mainNodeId?, x, y, width, height, depth }]` (≤ 20000 entries, ≤ 2 MiB of
   JSON), stored as a `node_map` JSON attachment with the reference.
 - **Ready list.** `GET …/targets` computes each target's status (rev9's plus
-  `waiting`: it would be ready but a contained component target — nested, or
-  placed as an instance, transitively — last failed; not-mapped components
-  never block) and returns them in check order: components by containment
-  depth (children first), then screens; document order within a level.
+  `waiting`: it would be ready but a contained target — nested, or placed as
+  an instance, transitively — last failed; not-mapped (no gallery entry and
+  no route) and excluded targets never block) and returns them in check order
+  by containment depth (contained targets first), then document order.
+  `render` carries the gallery info (key, set, variant string, props) and the
+  route + theme / query for every target: the CLI tries the gallery, then the
+  route, else reports *Not mapped*. `?containing=<nodeId>` returns the targets
+  containing a node (at or above it, placing an instance of a main component
+  it is in, or containing such a target) with `renderNotes` (open render-check
+  notes in the target, and the latest).
 - **Attribution.** On a mismatch with a node map, each differing region goes
   to the deepest touched entries with their own record (an instance sublayer
   → `mainNodeId`; an entry is dropped when a deeper touched entry covers its

@@ -409,34 +409,46 @@ on the API. RDS never starts one: someone requests it (the portal, or
 `request_render_check` / `rds-agent checks request`) and an agent or a CI job
 runs it where the app runs, with `rds-agent check`.
 
-**Automatic targets.** Each synced section declares what it contains — the
-Figma plugin asks once (*Contains: Screens · Components · Neither*), or
-`set_scope_kind` / `node scripts/rds-agent.js scopes kind 1-2 --file-key AbC123 --kind screens`
-sets it. With the file setting `autoTargets` on (the default), a **screens**
-section makes every top-level frame / component / instance and each variant
-of a top-level component set a screen target, and a **components** section
-makes every main component a component target. The plugin uploads each
-changed target's reference with its node map; nothing to set up per frame.
+**Automatic targets — one switch per section.** Every synced section is
+checked unless someone turns it off: the Figma plugin's checkbox *Check this
+section's screens and components* (on by default, saved on the section), or
+`set_scope_checks` / `node scripts/rds-agent.js scopes checks 1-2 --file-key AbC123 --checks=false`.
+With the file setting `autoTargets` on (the default), a checked section's
+targets are the union of its top-level frames / components / instances, every
+variant of its top-level component sets and every main component inside it —
+each node once, no screen / component levels. The plugin uploads each changed
+target's reference with its node map; nothing to set up per frame. To skip
+one frame, exclude it: `update_check_target { "excluded": true }` /
+`rds-agent targets set 2-5 --file-key AbC123 --excluded` (the portal's
+*Exclude from checks*). An excluded target keeps its history, never blocks
+others, is left out of the ready list and `check --all`, and stays excluded
+when targets are re-detected.
 
-- **Screens** render at a route. Variants that differ only in **mapped**
-  properties (`variantMappings`, e.g. `{ "Color Mode": { "as": "theme",
-  "values": { "Light": "light", "Dark": "dark" } } }`) share one route; the
-  first `rds-agent check --url <full url>` of a screen without one saves it
-  for the whole family (`update_check_target { "route": "/files" }` does the
-  same). `themeMode` says how a theme reaches the app: `color-scheme`
-  (default), `query` (`?<themeKey>=dark`) or `storage` (localStorage).
-- **Components** render through the app's gallery: the file setting
+- **Rendering: gallery first, then the route.** Every target renders from the
+  app's gallery when it has an entry there — the file setting
   `gallery.urlTemplate` (e.g. `/gallery?figma={set}&variant={variant}`) or
-  `gallery.storybookUrl` (stories tagged `figma:<component key>`) — see
-  [the gallery contract](#the-gallery-contract) below.
+  `gallery.storybookUrl` (stories tagged `figma:<component key>`), see
+  [the gallery contract](#the-gallery-contract) below — else at its route,
+  else it is **Not mapped** (shown, never blocks).
+- **Routes.** Variants that differ only in **mapped** properties
+  (`variantMappings`, e.g. `{ "Color Mode": { "as": "theme", "values": {
+  "Light": "light", "Dark": "dark" } } }`) share one route; the first
+  `rds-agent check --url <full url>` of a target without one saves it for the
+  whole family (`update_check_target { "route": "/files" }` does the same).
+  `themeMode` says how a theme reaches the app: `color-scheme` (default),
+  `query` (`?<themeKey>=dark`) or `storage` (localStorage). Variant mappings
+  apply to gallery and route alike.
+- **Which targets contain a node.** `list_check_targets { "containing": "4-1" }`
+  lists the targets a node is part of (itself, its ancestors, and anything
+  placing an instance of a component it is in), each with its status, last
+  check and open render notes.
 - **The ready list.** `list_check_targets { "status": "ready" }` /
   `rds-agent targets ls --status ready` lists the targets your pass finished
   (no dirty nodes under them, no result for their current design) in check
-  order — components first, children before the composites that contain
-  them, then screens — with everything needed to render each. A target
-  containing a component whose latest result is a mismatch is **waiting** on
-  it instead; components with no gallery entry are *not mapped* and never
-  block.
+  order by containment — a target containing other targets (nested, or as
+  instances) comes after them — with everything needed to render each. A
+  target containing one whose latest result is a mismatch is **waiting** on
+  it instead; *not mapped* and excluded targets never block.
 - **End every pass with `rds-agent check --ready --base-url <app>`.** A
   mismatch is traced through the node map to the deepest layer with its own
   record (inside an instance, the main component's layer, so you fix it once);
@@ -448,7 +460,7 @@ changed target's reference with its node map; nothing to set up per frame.
 
 #### The gallery contract
 
-Component targets render one variant at a time in the app. Set one of the two
+The gallery renders one target (a variant, a component or a frame) at a time in the app. Set one of the two
 in the file settings (`update_file_settings`, or
 `rds-agent files settings --file-key AbC123 --gallery '{"urlTemplate":"/gallery?figma={set}&variant={variant}"}'`):
 
@@ -490,9 +502,10 @@ in the file settings (`update_file_settings`, or
   screenshots `#storybook-root` (or a `[data-rds-target]` inside it). The
   component key is in `targets ls` (`render.key`) and in the portal.
 
-A component with no entry (no story with its tag, or a template placeholder
-it has no value for) is **not mapped**: shown, never an error, never blocks
-screens. `rds-agent check --file-key AbC123 --list-unmapped` prints them to add.
+A target with no entry (no story with its tag, or a template placeholder it
+has no value for) renders at its route instead; with no route either it is
+**not mapped**: shown, never an error, never blocks other targets.
+`rds-agent check --file-key AbC123 --list-unmapped` prints them to add.
 
 **Themes.** The file setting `themeMode` says how a target's theme (from a
 mapped variant property, e.g. `Color Mode=Dark` → `dark`) reaches the app:

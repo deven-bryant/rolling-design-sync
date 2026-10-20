@@ -136,27 +136,26 @@ rds-agent check --file-key AbC123 --list-unmapped
 
 1. Which targets: `--ready` the ones the API lists as ready
    (`targets ls --status ready`), `--all` every target (`targets ls`), both in
-   the API's check order (components, children before composites, then
-   screens); `--requested` every requested check (`checks ls --status
+   the API's check order (contained targets first), excluded targets skipped; `--requested` every requested check (`checks ls --status
    requested`); `--screen <nodeId>` requests a check of that target first
    (`checks request`), then runs it.
-2. **Waiting** (`--ready` / `--all`): after a component mismatches, the targets
-   that contain it are skipped and reported *Waiting on <component>*; a target
-   the API lists as waiting runs once its component passes in the same run.
-   *Not mapped* components never block.
-3. Where each renders:
-   - **Screens:** `base-url + route (+ query)`. A screen whose family has no
-     route is *No route* — pass `--url <full url>` to render it there; the
-     route is saved for its family (`targets set --route`) and used from then
-     on.
-   - **Components:** with the file's `gallery.storybookUrl` (or `--storybook`),
+2. **Waiting** (`--ready` / `--all`): after a target mismatches, the targets
+   that contain it are skipped and reported *Waiting on <target>*; a target
+   the API lists as waiting runs once the one it waits on passes in the same
+   run. *Not mapped* targets never block.
+3. Where each renders — gallery first, then the route, else *Not mapped*:
+   - **Gallery:** with the file's `gallery.storybookUrl` (or `--storybook`),
      the story tagged `figma:<component key>` (or `figma-node:<nodeId>`) in
      `<storybook>/index.json`, opened at `iframe.html?id=<id>&viewMode=story`
      and shot at `#storybook-root` (its `[data-rds-target]` when present);
      else `gallery.urlTemplate` filled in (`{key}`, `{nodeId}`, `{set}`,
      `{variant}`, `{prop.<Name>}`, each URL-encoded), shot at its
-     `[data-rds-target]` element (else the viewport). Neither → *Not mapped*.
+     `[data-rds-target]` element (else the viewport).
      The resolution is stored with the target (`targets set --mapped --story-id --url`).
+   - **Route:** no gallery entry → `base-url + route (+ query)`. A target
+     whose family has no route either is *Not mapped* — pass `--url <full url>`
+     to render it there; the route is saved for its family
+     (`targets set --route`) and used from then on.
    - **Theme** (file setting `themeMode`): `color-scheme` emulates
      `prefers-color-scheme` for a `dark` / `light` theme; `query` adds
      `?<themeKey>=<theme>`; `storage` sets localStorage `<themeKey>` and adds
@@ -176,8 +175,8 @@ rds-agent check --file-key AbC123 --list-unmapped
   region 10,20 300x40 (1234 px)
 2:5  waiting  Waiting on Button (1:4)
 
-TARGET  NAME         LEVEL      RESULT    DETAIL
-1:4     Button       component  passed    score 0% / limit 1%
+TARGET  NAME         RESULT    DETAIL
+1:4     Button       passed    score 0% / limit 1%
 …
 3 checks: 1 passed, 1 mismatch, 0 errors, 1 waiting
 ```
@@ -186,8 +185,8 @@ TARGET  NAME         LEVEL      RESULT    DETAIL
 |------|-------------|
 | `--file-key` | **Required.** The Figma file key. |
 | `--base-url` | **Required** (except `--list-unmapped`). Where the built app runs. |
-| `--ready` / `--all` / `--requested` / `--screen <nodeId>` / `--list-unmapped` | **One required.** What to run; `--list-unmapped` prints the component targets with no gallery entry and renders nothing. |
-| `--url <full url>` | A screen without a route renders here; saved as its family's route. |
+| `--ready` / `--all` / `--requested` / `--screen <nodeId>` / `--list-unmapped` | **One required.** What to run; `--list-unmapped` prints the targets with no gallery entry and no route, and renders nothing. |
+| `--url <full url>` | A target with no gallery entry and no route renders here; saved as its family's route. |
 | `--storybook <url>` | Storybook to resolve stories in. Default: the file's `gallery.storybookUrl`. |
 | `--storage-state <file>` | Playwright storage state (cookies, local storage) for a signed-in app. |
 | `--browser` | `chromium` (default), `firefox` or `webkit`. |
