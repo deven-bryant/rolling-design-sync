@@ -1,9 +1,9 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { NodeDrawer } from './NodeDrawer';
-import { parseMasks } from './RenderCheckPanel';
+import { EXCLUDED_HINT, NOT_TARGET_HINT, parseMasks } from './RenderCheckPanel';
 import { acceptScreenshots, fileToBase64, formatBytes, SCREENSHOT_MAX_BYTES } from './screenshots';
 import { breadcrumbs, FILE, mockApi, node, renderWithClient, treeRoutes, type Route } from './test-fixtures';
 import type { SessionRole } from './types';
@@ -49,12 +49,45 @@ const check = {
 };
 const renderNote = { noteId: 'n1', body: 'Render check: 3.4% of pixels differ', author: 'rds', source: 'render_check', createdAt: new Date().toISOString() };
 
+const target = {
+  nodeId: '1:9',
+  name: 'Work items',
+  type: 'FRAME',
+  source: 'auto',
+  excluded: false,
+  route: '/work',
+  theme: 'light',
+  status: 'mismatch',
+  stale: false,
+  score: 3.4,
+  threshold: 1,
+  notMapped: false,
+  waitingOn: null,
+  render: { variant: 'Color Mode=Light' },
+  lastCheck: { checkId: 'k1', status: 'mismatch', score: 3.4, submittedAt: check.submittedAt },
+  renderNotes: { open: 1, latest: { noteId: 'n1', nodeId: '1:3', body: 'Render check: 3.4% of pixels differ around Breadcrumbs' } },
+};
+const passed = { ...check, checkId: 'k0', status: 'passed', score: 0.4, commitRef: '71fd0b2cc', submittedAt: new Date(Date.now() - 86_400_000 * 3).toISOString() };
+const history = [{ ...check, attribution: [{ nodeId: '1:3', regions: [0] }] }, passed];
+
 function routes({
   detail = {},
   screens = [screenState],
   settings = {},
-}: { detail?: Record<string, unknown>; screens?: object[]; settings?: Record<string, unknown> } = {}): Route {
+  targets = [],
+}: { detail?: Record<string, unknown>; screens?: object[]; settings?: Record<string, unknown>; targets?: Record<string, unknown>[] } = {}): Route {
+  let current = targets;
   return treeRoutes(call => {
+    if (call.method === 'GET' && call.path === `/v3/files/${FILE}/targets`) {
+      const inside = call.query.get('containing');
+      const contains = (t: Record<string, unknown>) => t.nodeId === inside || ((t.contains as string[] | undefined) ?? []).includes(inside ?? '');
+      return { fileKey: FILE, targets: inside ? current.filter(contains) : current };
+    }
+    if (call.method === 'GET' && call.path === `/v3/files/${FILE}/targets/1:9/checks`) return { fileKey: FILE, checks: history };
+    if (call.method === 'PATCH' && call.path === `/v3/files/${FILE}/targets/1:9`) {
+      current = current.map(t => (t.nodeId === '1:9' ? { ...t, ...(call.body as object) } : t));
+      return { fileKey: FILE, target: current.find(t => t.nodeId === '1:9') };
+    }
     if (call.method === 'GET' && call.path === `/v3/files/${FILE}/nodes/1:9`) return { ...frame, screen: screenState, notes: [renderNote], ...detail };
     if (call.method === 'GET' && call.path === `/v3/files/${FILE}/nodes/1:3`) return { ...breadcrumbs, type: 'INSTANCE', changesKnown: true };
     if (call.method === 'GET' && call.path === `/v3/files/${FILE}/screens`) return { fileKey: FILE, screens };
@@ -153,13 +186,19 @@ describe('render check section', () => {
     expect(api.find('PUT', `/v3/files/${FILE}/screens/1:9`)).toHaveLength(0);
   });
 
-  it('offers agents to set up a frame that isn’t a screen; viewers see nothing', async () => {
+  it('hints that a frame isn’t a check target; agents can set it up, viewers can’t', async () => {
     const plain = routes({ detail: { screen: null, notes: [] }, screens: [] });
     renderDrawer('agent', plain);
-    const section = within(await screen.findByRole('group', { name: /Render check/ }));
-    expect(section.getByText('Not set up')).toBeTruthy();
+    const section = within(await screen.findByRole('group', { name: 'Render check' }));
+    expect(section.getByText(NOT_TARGET_HINT)).toBeTruthy();
     expect(section.getByRole('button', { name: 'Set up check' })).toBeTruthy();
     expect(section.queryByRole('button', { name: 'Request check' })).toBeNull();
+    expect(section.queryByRole('switch', { name: 'Exclude from checks' })).toBeNull();
+    cleanup();
+    renderDrawer('viewer', plain);
+    const viewer = within(await screen.findByRole('group', { name: 'Render check' }));
+    expect(viewer.getByText(NOT_TARGET_HINT)).toBeTruthy();
+    expect(viewer.queryByRole('button', { name: 'Set up check' })).toBeNull();
   });
 
   it.each([
@@ -181,6 +220,93 @@ describe('render check section', () => {
     renderDrawer('agent', routes(), '1:3');
     await screen.findByRole('group', { name: 'Claim Holder' });
     expect(screen.queryByRole('group', { name: /Render check/ })).toBeNull();
+  });
+});
+
+describe('render check targets', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const asTarget = (over: Record<string, unknown> = {}) => routes({ targets: [{ ...target, contains: ['1:3'], ...over }] });
+
+  it('shows the target details, and the history with the viewed result and the baseline', async () => {
+    const user = userEvent.setup();
+    renderDrawer('viewer', asTarget());
+    const dialog = within(await screen.findByRole('dialog'));
+    const details = within(await dialog.findByRole('group', { name: 'Render Check Target Details' }));
+    expect(details.getAllByRole('term').map(t => t.textContent)).toEqual(['Source', 'Route', 'Variants', 'Theme']);
+    expect(details.getAllByRole('definition').map(d => d.textContent)).toEqual([
+      'Auto · detected in a checked section',
+      '/work',
+      'Color Mode: Light',
+      'light · color-scheme',
+    ]);
+    const toggle = details.getByRole('switch', { name: 'Exclude from checks' }) as HTMLInputElement;
+    expect(toggle.disabled).toBe(true);
+    expect(details.queryByRole('button', { name: 'Edit route' })).toBeNull();
+    const historyList = within(await dialog.findByRole('group', { name: 'History' }));
+    const rows = historyList.getAllByRole('listitem');
+    expect(within(rows[0]!).getByText('Viewing')).toBeTruthy();
+    expect(within(rows[0]!).getByText('3.4% · 4b11b44')).toBeTruthy();
+    expect(within(rows[1]!).getByText('Baseline')).toBeTruthy();
+    await user.click(within(rows[1]!).getByRole('button'));
+    const section = within(dialog.getByRole('group', { name: /Render check/ }));
+    expect(await section.findByText('71fd0b2')).toBeTruthy();
+    expect(within(historyList.getAllByRole('listitem')[1]!).getByText('Viewing')).toBeTruthy();
+    await expectNoAxeViolations(screen.getByRole('dialog'));
+  });
+
+  it('agent: excludes the target and edits its route', async () => {
+    const user = userEvent.setup();
+    const { api } = renderDrawer('agent', asTarget());
+    const details = within(await screen.findByRole('group', { name: 'Render Check Target Details' }));
+    await user.click(details.getByRole('button', { name: 'Edit route' }));
+    const form = within(screen.getByRole('form', { name: 'Edit route' }));
+    const input = form.getByRole('textbox', { name: /Route/ });
+    await user.clear(input);
+    await user.type(input, 'work');
+    await user.click(form.getByRole('button', { name: 'Save route' }));
+    expect(form.getByText('Enter the built page’s path, e.g. /work.')).toBeTruthy();
+    await user.clear(input);
+    await user.type(input, '/work/list');
+    await user.click(form.getByRole('button', { name: 'Save route' }));
+    await waitFor(() => expect(api.find('PATCH', `/v3/files/${FILE}/targets/1:9`)[0]?.body).toEqual({ route: '/work/list' }));
+    await user.click(details.getByRole('switch', { name: 'Exclude from checks' }));
+    await waitFor(() => expect(api.find('PATCH', `/v3/files/${FILE}/targets/1:9`)[1]?.body).toEqual({ excluded: true }));
+    expect(await details.findByText(EXCLUDED_HINT)).toBeTruthy();
+    expect(details.queryByRole('term')).toBeNull();
+  });
+
+  it.each([
+    [{ status: 'waiting', waitingOn: { nodeId: '1:3', name: 'Breadcrumbs' } }, 'Waiting', /Breadcrumbs last failed/],
+    [{ status: 'ready', notMapped: true, route: null }, 'Not mapped', /no gallery entry or route/],
+  ])('shows %o as %s', async (over, label, message) => {
+    renderDrawer('viewer', asTarget(over));
+    const section = within(await screen.findByRole('group', { name: /Render check/ }));
+    expect(await section.findByText(label)).toBeTruthy();
+    expect(section.getByText(message)).toBeTruthy();
+  });
+
+  it('on a node inside a mismatched target: the containing list, the target’s note with its heatmap crop, and Go to target', async () => {
+    const user = userEvent.setup();
+    const api = mockApi(asTarget());
+    const onOpenNode = vi.fn();
+    renderWithClient(<NodeDrawer fileKey={FILE} nodeId="1:3" onClose={vi.fn()} role="viewer" onOpenNode={onOpenNode} />);
+    const dialog = within(await screen.findByRole('dialog'));
+    const containing = within(await dialog.findByRole('group', { name: 'Render checks' }));
+    expect(containing.getByText('Work items')).toBeTruthy();
+    expect(containing.getByText(/Screen · checked/)).toBeTruthy();
+    expect(containing.getByText('Mismatch')).toBeTruthy();
+    await user.click(containing.getByRole('button', { name: 'Open Work items' }));
+    expect(onOpenNode).toHaveBeenCalledWith('1:9');
+    await user.click(await dialog.findByRole('tab', { name: 'Change List' }));
+    const note = within(await dialog.findByRole('listitem', { name: 'Render check note on Work items' }));
+    expect(note.getByText('Render check: 3.4% of pixels differ around Breadcrumbs')).toBeTruthy();
+    expect(note.getByText('Render mismatch')).toBeTruthy();
+    expect((await note.findByRole('img', { name: 'Heatmap of Work items' })).getAttribute('src')).toBe(`/v3/files/${FILE}/attachments/heat`);
+    expect(note.getByText('Cropped from the heatmap')).toBeTruthy();
+    await user.click(note.getByRole('button', { name: 'Go to target' }));
+    expect(onOpenNode).toHaveBeenLastCalledWith('1:9');
+    expect(api.find('GET', `/v3/files/${FILE}/targets`).some(c => c.query.get('containing') === '1:3')).toBe(true);
+    await expectNoAxeViolations(screen.getByRole('dialog'));
   });
 });
 

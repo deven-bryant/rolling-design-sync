@@ -155,6 +155,11 @@ export function useNodeLiveUpdates(fileKey: string): NodeLiveUpdates {
     'render_check.requested': () => refreshRenderChecks(queryClient, fileKey),
     'render_check.passed': () => refreshRenderChecks(queryClient, fileKey),
     'render_check.mismatch': () => refreshRenderChecks(queryClient, fileKey),
+    'file.settings_changed': () => {
+      void queryClient.invalidateQueries({ queryKey: nodeKeys.file(fileKey) });
+      void queryClient.invalidateQueries({ queryKey: nodeKeys.scopes(fileKey) });
+      refreshRenderChecks(queryClient, fileKey);
+    },
     'note.resolved': () => void queryClient.invalidateQueries({ queryKey: nodeKeys.all(fileKey) }),
     'note.dismissed': () => void queryClient.invalidateQueries({ queryKey: nodeKeys.all(fileKey) }),
   });

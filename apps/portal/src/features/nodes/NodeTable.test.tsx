@@ -373,4 +373,24 @@ describe('NodeTable notes', () => {
     expect(within(row('1:3')).getByRole('img', { name: '1 open note' })).toBeTruthy();
     expect(within(row('1:2')).queryByRole('img', { name: /open note/ })).toBeNull();
   });
+
+  it('shows render-check status in the Check column, before Notes; In mismatch on attributed nodes; — elsewhere', async () => {
+    const base = treeRoutes();
+    const routes: Route = call => {
+      if (call.method === 'GET' && call.path === `/v3/files/${FILE}/targets`)
+        return { fileKey: FILE, targets: [{ nodeId: '1:2', name: 'Page header', status: 'waiting', notMapped: false }] };
+      const r = base(call) as { nodes?: { nodeId: string }[] } | undefined;
+      if (call.method === 'GET' && call.path === pagePath && r?.nodes)
+        return { ...r, nodes: r.nodes.map(n => (n.nodeId === '1:3' ? { ...n, notes: [{ noteId: 'n1', body: 'x', status: 'open', source: 'render_check' }] } : n)) };
+      return r;
+    };
+    renderTable({}, routes);
+    await screen.findByText('Breadcrumbs');
+    const headers = screen.getAllByRole('columnheader').map(h => h.textContent);
+    expect(headers.slice(-2)).toEqual(['Check', 'Notes']);
+    const checkCell = (id: string) => [...row(id).querySelectorAll('td')].at(-2)!;
+    expect(await within(row('1:2')).findByText('Waiting')).toBeTruthy();
+    expect(within(checkCell('1:3')).getByText('In mismatch')).toBeTruthy();
+    expect(checkCell('1:1').textContent).toBe('—');
+  });
 });

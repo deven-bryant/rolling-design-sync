@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { createContext, use, useEffect, useState, type ReactNode } from 'react';
+import { createContext, use, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { buildUrl } from '../../api/client';
 import { useFileClaims } from '../../api/hooks/useFileClaims';
 import { useNow } from '../../api/hooks/useNow';
@@ -10,6 +10,7 @@ import { AgentCell } from '../../components/domain/AgentCell';
 import { CategoryBadges } from '../../components/domain/CategoryBadges';
 import { ChangeBadge } from '../../components/domain/ChangeBadge';
 import { NodeCell } from '../../components/domain/NodeCell';
+import { RenderCheckStatusBadge } from '../../components/domain/RenderCheckTarget';
 import { StateBadge } from '../../components/domain/StateBadge';
 import { TokenValue } from '../../components/domain/TokenValue';
 import { Input } from '../../components/Input';
@@ -22,6 +23,7 @@ import { cx, Icon, Text, VisuallyHidden } from '../../components/primitives';
 import { CATEGORIES, categoriesOf, type Category } from './categories';
 import { isTokenNodeId, nodeMeta, plural, timeAgo, tokenMeta, tokenModeChanges, tokenValueView, whatChanged, type TokenModeChange } from './format';
 import { useNodeLiveUpdates, type NodeLiveUpdates } from './live';
+import { targetStatus, useTargets, type CheckTarget } from './renderChecks';
 import { filterParams, listNodes, nodeKeys, nodePageParams, PAGE_SIZE, splitUnder, useChildNodes, useFile, useNodePage, useScope } from './queries';
 import type { ChangeFilter, FileClaim, NodeFilters, NodeItem, StateFilter } from './types';
 
@@ -35,6 +37,7 @@ const COLUMNS = [
   { id: 'categories', label: 'Categories', width: 'w-43' },
   { id: 'changed', label: 'What changed', width: 'w-45' },
   { id: 'agent', label: 'Agent', width: 'w-45' },
+  { id: 'check', label: 'Check', width: 'w-32' },
   { id: 'notes', label: 'Notes', width: 'w-45' },
 ] as const;
 export type NodeColumn = (typeof COLUMNS)[number]['id'];
@@ -161,6 +164,8 @@ interface RowContextValue {
   claims: ReadonlyMap<string, FileClaim>;
   /** The file's scope names by root node id. */
   scopeNames: ReadonlyMap<string, string>;
+  /** The file's render-check targets by node id. */
+  targets: ReadonlyMap<string, CheckTarget>;
   now: number;
   /** Rows the user opened or closed, by row key; others fall back to their default. */
   expansion: ReadonlyMap<string, boolean>;
@@ -177,6 +182,20 @@ function useRowContext(): RowContextValue {
 
 function Dash() {
   return <Text color="quaternary">—</Text>;
+}
+
+/** `Check`: a target's render-check status; *In mismatch* on a node a failed check was traced to; `—` elsewhere. */
+function CheckCell({ node }: { node: NodeItem }) {
+  const { targets } = useRowContext();
+  const target = targets.get(node.nodeId ?? '');
+  if (target && !target.excluded) return <RenderCheckStatusBadge status={targetStatus(target)} />;
+  if (node.notes?.some(n => n.source === 'render_check'))
+    return (
+      <Badge size="sm" color="error">
+        In mismatch
+      </Badge>
+    );
+  return <Dash />;
 }
 
 function AgentColumn({ node }: { node: NodeItem }) {
@@ -304,6 +323,11 @@ function NodeRowView({ node, scope, depth, via, expandable, expanded, onToggle }
       {columns.has('agent') && (
         <Table.Cell>
           <AgentColumn node={node} />
+        </Table.Cell>
+      )}
+      {columns.has('check') && (
+        <Table.Cell>
+          <CheckCell node={node} />
         </Table.Cell>
       )}
       {columns.has('notes') && <FileTypeCell label={node.notes?.length ? plural(node.notes.length, 'open note', 'open notes') : undefined} />}
@@ -548,6 +572,8 @@ export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNo
   const live = useNodeLiveUpdates(fileKey);
   const claimsQuery = useFileClaims(fileKey);
   const file = useFile(fileKey);
+  const targetList = useTargets(fileKey).data;
+  const targets = useMemo(() => new Map((targetList ?? []).map(t => [t.nodeId ?? '', t])), [targetList]);
   const { scope, selected, data: scopeList } = useScope(fileKey, scopeId);
   const scopeNames = new Map((scopeList?.scopes ?? []).flatMap(s => (s.nodeId && s.name ? [[s.nodeId, s.name] as const] : [])));
   const now = useNow(30_000);
@@ -612,7 +638,7 @@ export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNo
                 </Table.HeaderCell>
               ))}
             </Table.Header>
-            <RowContext value={{ fileKey, filters, columns, onOpenNode, selectedNodeId, live, claims, scopeNames, now, expansion: expansion.rows, setExpanded }}>
+            <RowContext value={{ fileKey, filters, columns, onOpenNode, selectedNodeId, live, claims, scopeNames, targets, now, expansion: expansion.rows, setExpanded }}>
               <PagedRows key={pageKey} fileKey={fileKey} scopeId={scopeId} filters={filters} colSpan={visible.length + 1} />
             </RowContext>
           </Table>

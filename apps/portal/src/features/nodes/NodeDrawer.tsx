@@ -27,7 +27,9 @@ import { Text } from '../../components/primitives';
 import { showToast } from '../../components/Toast';
 import { Tooltip, TooltipTrigger } from '../../components/Tooltip';
 import { categoriesOf, type Category } from './categories';
+import { HeatmapCrop } from '../../components/domain/RenderCheckTarget';
 import { RenderCheckPanel } from './RenderCheckPanel';
+import { useContainingTargets, useTargetChecks, type CheckTarget } from './renderChecks';
 import { acceptScreenshots, fileToBase64, formatBytes, SCREENSHOT_MAX } from './screenshots';
 import {
   changeEntries,
@@ -397,9 +399,11 @@ interface NoteItemProps {
   mine: boolean;
   canDismiss: boolean;
   now: number;
+  /** Render-check notes: opens the target whose check found the mismatch. */
+  onGoToTarget?: () => void;
 }
 
-function NoteItem({ fileKey, note, title, mine, canDismiss, now }: NoteItemProps) {
+function NoteItem({ fileKey, note, title, mine, canDismiss, now, onGoToTarget }: NoteItemProps) {
   const edit = useEditNote(fileKey);
   const remove = useDeleteNote(fileKey);
   const dismiss = useDismissNote(fileKey);
@@ -415,8 +419,14 @@ function NoteItem({ fileKey, note, title, mine, canDismiss, now }: NoteItemProps
     if (error) return;
     edit.mutate({ noteId, body: body.trim() }, { onSuccess: () => (setMode('view'), void showToast('Note updated')) });
   };
-  const actions = mode === 'view' && (mine || canDismiss) && (
+  const goToTarget = note.source === 'render_check' && onGoToTarget && (
+    <Button hierarchy="link-color" size="sm" onPress={onGoToTarget}>
+      Go to target
+    </Button>
+  );
+  const actions = mode === 'view' && (mine || canDismiss || goToTarget) && (
     <>
+      {goToTarget}
       {mine && (
         <Button hierarchy="secondary" size="md" onPress={() => setMode('edit')}>
           Edit
@@ -520,12 +530,84 @@ function NoteItem({ fileKey, note, title, mine, canDismiss, now }: NoteItemProps
   );
 }
 
+/**
+ * Figma `Node Details - Note Section`, `Property 1=Preview Target Note Reference`: on a node inside a mismatched
+ * target, the target's render-check note with the part of its heatmap traced to this node, and *Go to target*.
+ */
+function TargetNoteReference({
+  fileKey,
+  nodeId,
+  target,
+  title,
+  onGoToTarget,
+}: {
+  fileKey: string;
+  nodeId: string;
+  target: CheckTarget;
+  title: string;
+  onGoToTarget?: () => void;
+}) {
+  const check = useTargetChecks(fileKey, target.nodeId).data?.[0];
+  const latest = target.renderNotes?.latest;
+  const heatmap = check?.heatmap;
+  const traced = check?.attribution?.find(a => a.nodeId === nodeId)?.regions?.[0];
+  const region = traced != null ? check?.regions?.[traced] : undefined;
+  return (
+    <li aria-label={`Render check note on ${target.name ?? target.nodeId}`}>
+      <NoteSection
+        title={title}
+        badge={
+          <Badge size="md" color="error">
+            Render mismatch
+          </Badge>
+        }
+        actions={
+          onGoToTarget && (
+            <Button hierarchy="link-color" size="sm" onPress={onGoToTarget}>
+              Go to target
+            </Button>
+          )
+        }
+        screenshots={
+          heatmap?.url && heatmap.width && heatmap.height ? (
+            <HeatmapCrop
+              src={heatmap.url}
+              width={heatmap.width}
+              height={heatmap.height}
+              region={region && { x: region.x ?? 0, y: region.y ?? 0, width: region.width ?? 0, height: region.height ?? 0 }}
+              alt={`Heatmap of ${target.name ?? 'the target'}`}
+            />
+          ) : undefined
+        }
+      >
+        <p className="whitespace-pre-wrap break-words">{latest?.body ?? `Render check on ${target.name ?? target.nodeId}: mismatch.`}</p>
+      </NoteSection>
+    </li>
+  );
+}
+
 /** A node's open notes, newest first: *Edit* / *Delete* for their author, *Dismiss* for the author or agents. */
-function NoteList({ fileKey, notes, role, now }: { fileKey: string; notes: readonly NodeNote[]; role: SessionRole; now: number }) {
+function NoteList({
+  fileKey,
+  notes,
+  role,
+  now,
+  onGoToTarget,
+  reference,
+}: {
+  fileKey: string;
+  notes: readonly NodeNote[];
+  role: SessionRole;
+  now: number;
+  onGoToTarget?: () => void;
+  /** Before the node's own notes: the containing target's render-check note. */
+  reference?: ReactNode;
+}) {
   const me = useSessionAuthor();
   return (
     <section aria-label="Open notes">
       <ul className="flex flex-col gap-3xl">
+        {reference}
         {notes.map((note, i) => {
           const mine = !!me && note.author === me;
           return (
@@ -533,10 +615,11 @@ function NoteList({ fileKey, notes, role, now }: { fileKey: string; notes: reado
               key={note.noteId}
               fileKey={fileKey}
               note={note}
-              title={i === 0 ? `Open notes (${notes.length})` : `Note ${i + 1}`}
+              title={i === 0 && !reference ? `Open notes (${notes.length})` : `Note ${i + 1 + (reference ? 1 : 0)}`}
               mine={mine}
               canDismiss={mine || role === 'agent'}
               now={now}
+              onGoToTarget={onGoToTarget}
             />
           );
         })}
@@ -673,7 +756,14 @@ function LoadedNode({
     ...(notes.some(n => n.source !== 'render_check') ? (['note'] as const) : []),
     ...(renderMismatch ? (['render'] as const) : []),
   ];
-  const storeImages = useFile(fileKey).data?.settings?.storeImages !== false;
+  const settings = useFile(fileKey).data?.settings;
+  const storeImages = settings?.storeImages !== false;
+  const containing = useContainingTargets(fileKey, nodeId, { enabled: !node.deleted }).data ?? [];
+  const mismatched = containing.find(t => t.nodeId !== nodeId && !t.excluded && t.status === 'mismatch');
+  const latestNote = mismatched?.renderNotes?.latest;
+  const reference = latestNote && !notes.some(n => n.noteId === latestNote.noteId) ? mismatched : undefined;
+  const goToTarget = mismatched && onOpenNode ? () => onOpenNode(mismatched.nodeId ?? '') : undefined;
+  const noteCount = notes.length + (reference ? 1 : 0);
   const blocked = node.state === 'blocked' || !!node.blocked;
   const name = node.name ?? nodeId;
   const componentKey = node.library?.key;
@@ -713,11 +803,34 @@ function LoadedNode({
           </>
         }
         {...claim}
-        renderCheck={<RenderCheckPanel fileKey={fileKey} node={node} canAct={canAct} now={now} />}
+        renderCheck={
+          <RenderCheckPanel
+            fileKey={fileKey}
+            node={node}
+            canAct={canAct}
+            now={now}
+            onOpenNode={onOpenNode}
+            retention={settings?.checkRetention}
+            themeMode={settings?.themeMode}
+          />
+        }
         changes={node.changesKnown === false ? [] : changeRows(node, onOpenNode)}
         changesDescription={changedSince(node, now)}
-        hideEmptyChanges={notes.length > 0}
-        notes={notes.length > 0 && <NoteList fileKey={fileKey} notes={notes} role={role} now={now} />}
+        hideEmptyChanges={noteCount > 0}
+        notes={
+          noteCount > 0 && (
+            <NoteList
+              fileKey={fileKey}
+              notes={notes}
+              role={role}
+              now={now}
+              onGoToTarget={goToTarget}
+              reference={
+                reference && <TargetNoteReference fileKey={fileKey} nodeId={nodeId} target={reference} title={`Open notes (${noteCount})`} onGoToTarget={goToTarget} />
+              }
+            />
+          )
+        }
         addChange={!node.deleted && <NoteForm fileKey={fileKey} nodeId={nodeId} storeImages={storeImages} onDone={() => onTabChange('change-list')} />}
         changesEmpty={
           node.changesKnown === false
