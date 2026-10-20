@@ -78,17 +78,24 @@ export interface NodeNote {
 
 export interface Attachment {
   attachmentId: string; fileKey: string; ownerKind: 'note' | 'screen' | 'check'; ownerId: string;
-  kind: 'screenshot' | 'reference' | 'built' | 'heatmap'; contentType: string; size: number; width: number; height: number;
+  kind: 'screenshot' | 'reference' | 'built' | 'heatmap' | 'node_map'; contentType: string; size: number; width: number; height: number;
   sha256: string; blobKey: string; thumbKey: string | null; createdBy: string; createdAt: string;
 }
 
 export interface ScreenMask { x: number; y: number; width: number; height: number }
 
+/** A check target (`screen` row): a manual screen (set_screen) or an auto-detected screen / component target. */
 export interface Screen {
-  fileKey: string; nodeId: string; route: string; viewport: { width: number; height: number }; theme: string | null; query: string | null;
+  fileKey: string; nodeId: string; route: string | null; viewport: { width: number; height: number }; theme: string | null; query: string | null;
   masks: ScreenMask[]; threshold: number; referenceId: string | null; referenceVersion: string | null;
+  level: 'screen' | 'component'; source: 'manual' | 'auto'; familyKey: string | null; gallery: Record<string, any> | null;
+  maskNodeIds: string[]; nodeMapId: string | null;
   createdBy: string; updatedBy: string; createdAt: string; updatedAt: string;
 }
+
+export interface ScopeKind { fileKey: string; nodeId: string; kind: 'screens' | 'components' | 'none'; updatedBy: string; updatedAt: string }
+
+export interface TargetFamily { fileKey: string; familyKey: string; route: string; updatedBy: string; updatedAt: string }
 
 export interface RenderRegion { x: number; y: number; width: number; height: number; pixels: number }
 
@@ -97,6 +104,8 @@ export interface RenderCheck {
   requestedBy: string; requestedAt: string; submittedBy: string | null; submittedAt: string | null; commitRef: string | null; source: string | null;
   score: number | null; threshold: number | null; regions: RenderRegion[]; builtId: string | null; heatmapId: string | null;
   referenceId: string | null; error: string | null;
+  /** The nodes a mismatch was attributed to (v3/targets.js `attribute`). */
+  attribution: Record<string, any>[];
 }
 
 export interface StoredEvent { id: number; fileKey: string; type: string; actor: string | null; data: Record<string, any>; createdAt: string }
@@ -221,12 +230,17 @@ export interface Store {
   listAttachments(fileKey: string, ownerKind: Attachment['ownerKind'], ownerIds: string[]): Promise<Attachment[]>;
   /** Deletes the rows; returns them so the caller can delete their blobs. */
   deleteAttachments(fileKey: string, attachmentIds: string[]): Promise<Attachment[]>;
-  upsertScreen(screen: { fileKey: string; nodeId: string; route: string; viewport: { width: number; height: number }; theme?: string | null;
-    query?: string | null; masks?: ScreenMask[]; threshold: number; by: string; at: string }): Promise<Screen>;
+  upsertScreen(screen: { fileKey: string; nodeId: string; route: string | null; viewport: { width: number; height: number }; theme?: string | null;
+    query?: string | null; masks?: ScreenMask[]; threshold: number; level?: Screen['level']; source?: Screen['source']; familyKey?: string | null;
+    gallery?: Record<string, any> | null; maskNodeIds?: string[]; by: string; at: string }): Promise<Screen>;
   getScreen(fileKey: string, nodeId: string): Promise<Screen | null>;
   listScreens(fileKey: string): Promise<Screen[]>;
   deleteScreen(fileKey: string, nodeId: string): Promise<Screen | null>;
-  setScreenReference(fileKey: string, nodeId: string, ref: { referenceId: string; referenceVersion: string; at: string }): Promise<Screen | null>;
+  setScreenReference(fileKey: string, nodeId: string, ref: { referenceId: string; referenceVersion: string; nodeMapId?: string | null; at: string }): Promise<Screen | null>;
+  setScopeKind(fileKey: string, nodeId: string, kind: { kind: ScopeKind['kind']; by: string; at: string }): Promise<ScopeKind>;
+  listScopeKinds(fileKey: string): Promise<ScopeKind[]>;
+  setFamilyRoute(fileKey: string, familyKey: string, family: { route: string; by: string; at: string }): Promise<TargetFamily>;
+  listFamilies(fileKey: string): Promise<TargetFamily[]>;
   insertCheck(check: { fileKey: string; nodeId: string; designVersion: string; requestedBy: string; at: string }): Promise<RenderCheck>;
   getCheck(fileKey: string, checkId: string): Promise<RenderCheck | null>;
   listChecks(fileKey: string, options?: { status?: RenderCheck['status'] | null; nodeId?: string | null; limit?: number }): Promise<RenderCheck[]>;
@@ -234,9 +248,9 @@ export interface Store {
   latestChecks(fileKey: string, nodeIds: string[]): Promise<RenderCheck[]>;
   /** Records the result of a requested check; null when it isn't requested (anymore). */
   finishCheck(fileKey: string, checkId: string, result: Pick<RenderCheck, 'status' | 'designVersion' | 'submittedBy' | 'submittedAt'>
-    & Partial<Pick<RenderCheck, 'commitRef' | 'source' | 'score' | 'threshold' | 'regions' | 'builtId' | 'heatmapId' | 'referenceId' | 'error'>>): Promise<RenderCheck | null>;
+    & Partial<Pick<RenderCheck, 'commitRef' | 'source' | 'score' | 'threshold' | 'regions' | 'builtId' | 'heatmapId' | 'referenceId' | 'error' | 'attribution'>>): Promise<RenderCheck | null>;
   /** Deletes the screen's checks but the newest `keep`; returns the deleted ones. */
-  deleteChecks(fileKey: string, nodeId: string, options?: { keep?: number }): Promise<RenderCheck[]>;
+  deleteChecks(fileKey: string, nodeId: string, options?: { keep?: number; except?: string[] }): Promise<RenderCheck[]>;
 
   // --- events
   insertEvent(event: { fileKey: string; type: string; actor?: string | null; data?: Record<string, any>; createdAt?: string | null }): Promise<StoredEvent>;

@@ -53,6 +53,11 @@ const PROBES = Object.freeze({
   '20261017000000_api_v3_render_checks.sql': all(
     table('blob'), table('attachment'), table('screen'), table('render_check'), column('node_note', 'source'),
   ),
+  '20261020000000_api_v3_check_targets.sql': all(
+    column('screen', 'level'), column('screen', 'source'), column('screen', 'family_key'), column('screen', 'gallery'),
+    column('screen', 'mask_node_ids'), column('screen', 'node_map_id'), column('render_check', 'attribution'),
+    table('scope_setting'), table('target_family'), constraint('attachment', 'attachment_kind_check', '%node_map%'),
+  ),
 });
 
 /** The `*.sql` filenames in `dir`, in apply order. */

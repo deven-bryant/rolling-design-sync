@@ -120,6 +120,8 @@ class MemoryStore {
     this.attachments = new Map(); // attachmentId -> attachment row
     this.screens = new Map(); // `${fileKey}\u0000${nodeId}` -> screen row
     this.checks = new Map(); // checkId -> render_check row
+    this.scopeKinds = new Map(); // `${fileKey}\u0000${nodeId}` -> scope_setting row
+    this.families = new Map(); // `${fileKey}\u0000${familyKey}` -> target_family row
     this._checkSeq = 0; // creation order of render checks
     this._eventSeq = 0; // like bigserial: never rolled back
     this._lock = Promise.resolve();
@@ -138,7 +140,7 @@ class MemoryStore {
   }
 
   _dump() {
-    return ['nodes', 'files', 'syncEvents', 'claims', 'events', 'libraryComponents', 'notes', 'attachments', 'screens', 'checks'].map(k => [k, new Map(structuredClone(Array.from(this[k].entries())))]);
+    return ['nodes', 'files', 'syncEvents', 'claims', 'events', 'libraryComponents', 'notes', 'attachments', 'screens', 'checks', 'scopeKinds', 'families'].map(k => [k, new Map(structuredClone(Array.from(this[k].entries())))]);
   }
 
   _restore(backup) { for (const [k, m] of backup) this[k] = m; }
@@ -724,6 +726,8 @@ class MemoryStore {
       fileKey: screen.fileKey, nodeId: screen.nodeId, route: screen.route, viewport: clone(screen.viewport), theme: screen.theme ?? null,
       query: screen.query ?? null, masks: clone(screen.masks || []), threshold: screen.threshold,
       referenceId: prior ? prior.referenceId : null, referenceVersion: prior ? prior.referenceVersion : null,
+      level: screen.level || 'screen', source: screen.source || 'manual', familyKey: screen.familyKey ?? null,
+      gallery: clone(screen.gallery ?? null), maskNodeIds: clone(screen.maskNodeIds || []), nodeMapId: prior ? prior.nodeMapId : null,
       createdBy: prior ? prior.createdBy : screen.by, updatedBy: screen.by, createdAt: prior ? prior.createdAt : screen.at, updatedAt: screen.at,
     };
     this.screens.set(key, row);
@@ -747,11 +751,31 @@ class MemoryStore {
     return clone(s);
   }
 
-  async setScreenReference(fileKey, nodeId, { referenceId, referenceVersion, at }) {
+  async setScreenReference(fileKey, nodeId, { referenceId, referenceVersion, nodeMapId = null, at }) {
     const s = this.screens.get(`${fileKey}\u0000${nodeId}`);
     if (!s) return null;
-    Object.assign(s, { referenceId, referenceVersion, updatedAt: at });
+    Object.assign(s, { referenceId, referenceVersion, nodeMapId, updatedAt: at });
     return clone(s);
+  }
+
+  async setScopeKind(fileKey, nodeId, { kind, by, at }) {
+    const row = { fileKey, nodeId, kind, updatedBy: by, updatedAt: at };
+    this.scopeKinds.set(`${fileKey}\u0000${nodeId}`, row);
+    return clone(row);
+  }
+
+  async listScopeKinds(fileKey) {
+    return Array.from(this.scopeKinds.values()).filter(k => k.fileKey === fileKey).sort((a, b) => cmp(a.nodeId, b.nodeId)).map(clone);
+  }
+
+  async setFamilyRoute(fileKey, familyKey, { route, by, at }) {
+    const row = { fileKey, familyKey, route, updatedBy: by, updatedAt: at };
+    this.families.set(`${fileKey}\u0000${familyKey}`, row);
+    return clone(row);
+  }
+
+  async listFamilies(fileKey) {
+    return Array.from(this.families.values()).filter(f => f.fileKey === fileKey).sort((a, b) => cmp(a.familyKey, b.familyKey)).map(clone);
   }
 
   _checkOut(c) { const { seq, ...rest } = c; return clone(rest); }
@@ -766,7 +790,7 @@ class MemoryStore {
     const c = {
       checkId: randomUUID(), fileKey, nodeId, status: 'requested', designVersion, requestedBy, requestedAt: at,
       submittedBy: null, submittedAt: null, commitRef: null, source: null, score: null, threshold: null, regions: [],
-      builtId: null, heatmapId: null, referenceId: null, error: null, seq: this._checkSeq,
+      builtId: null, heatmapId: null, referenceId: null, error: null, attribution: [], seq: this._checkSeq,
     };
     this.checks.set(c.checkId, c);
     return this._checkOut(c);
@@ -795,9 +819,10 @@ class MemoryStore {
     return this._checkOut(c);
   }
 
-  async deleteChecks(fileKey, nodeId, { keep = 0 } = {}) {
+  async deleteChecks(fileKey, nodeId, { keep = 0, except = [] } = {}) {
     const out = [];
-    for (const c of this._checksOf(fileKey, nodeId).slice(keep)) {
+    const kept = new Set(except);
+    for (const c of this._checksOf(fileKey, nodeId).slice(keep).filter(x => !kept.has(x.checkId))) {
       this.checks.delete(c.checkId);
       out.push(this._checkOut(c));
     }
