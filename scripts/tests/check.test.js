@@ -21,7 +21,7 @@ const screenCheck = (checkId, nodeId, extra = {}) => ({
 });
 
 /** A fake API: `results` maps checkId → the check the submit returns (or a { problem } to fail with). */
-function fakeApi({ requested = [], requestReply, results = {} }) {
+function fakeApi({ requested = [], requestReply, results = {}, targets = [] }) {
   const calls = [];
   const reply = (status, body) => ({ ok: status < 300, status, headers: { get: () => 'application/json' }, text: async () => JSON.stringify(body) });
   const fetchImpl = async (url, init) => {
@@ -29,6 +29,7 @@ function fakeApi({ requested = [], requestReply, results = {} }) {
     const body = init.body ? JSON.parse(init.body) : undefined;
     calls.push({ method: init.method, path: u.pathname, query: Object.fromEntries(u.searchParams), body, headers: init.headers });
     if (init.method === 'GET' && /\/checks$/.test(u.pathname)) return reply(200, { fileKey: 'fk', checks: requested });
+    if (init.method === 'GET' && /\/targets$/.test(u.pathname)) return reply(200, { fileKey: 'fk', targets });
     if (init.method === 'POST' && /\/screens\/[^/]+\/checks$/.test(u.pathname)) return reply(200, { fileKey: 'fk', created: true, check: requestReply });
     const m = /\/checks\/([^/]+)\/result$/.exec(u.pathname);
     if (init.method === 'POST' && m) {
@@ -90,7 +91,8 @@ test('check --requested: screenshots every requested check at its viewport and s
 
   assert.deepEqual(api.calls[0], { ...api.calls[0], method: 'GET', path: '/v3/files/fk/checks', query: { status: 'requested', limit: '500' } });
   assert.equal(api.calls[0].headers.authorization, 'Bearer agent-secret');
-  const submits = api.calls.slice(1);
+  assert.equal(api.calls[1].path, '/v3/files/fk/targets');
+  const submits = api.calls.slice(2);
   assert.deepEqual(submits.map(c => `${c.method} ${c.path}`), ['POST /v3/files/fk/checks/c1/result', 'POST /v3/files/fk/checks/c2/result']);
   for (const s of submits) assert.deepEqual(s.body, { image: PNG.toString('base64'), commitRef: 'abc123', source: 'rds-agent check' });
 
@@ -125,8 +127,8 @@ test('check --screen: requests a check for the screen first, then runs it; a mis
     env, fetchImpl: api.fetchImpl, stdout: out, stderr: sink(), playwright: pw.module, cwd: os.tmpdir(),
   });
   assert.equal(code, 1);
-  assert.deepEqual(api.calls.map(c => `${c.method} ${c.path}`), ['POST /v3/files/fk/screens/2%3A1/checks', 'POST /v3/files/fk/checks/c9/result']);
-  assert.equal(api.calls[1].body.source, 'ci');
+  assert.deepEqual(api.calls.map(c => `${c.method} ${c.path}`), ['POST /v3/files/fk/screens/2%3A1/checks', 'GET /v3/files/fk/targets', 'POST /v3/files/fk/checks/c9/result']);
+  assert.equal(api.calls[2].body.source, 'ci');
   assert.equal(pw.log.launches[0].name, 'firefox');
   assert.equal(pw.log.pages[0].timeout, 5000);
   assert.equal(pw.log.pages[0].gotos[0].url, 'http://localhost:3000/settings?tab=team');
@@ -148,7 +150,7 @@ test('check: a page that does not render is submitted as an error and exits 2; A
   const err = sink();
   const code = await run(['check', ...base, '--requested'], { env: { ...env, RDS_WORKER: 'agent-7' }, fetchImpl: api.fetchImpl, stdout: out, stderr: err, playwright: pw.module, cwd: os.tmpdir() });
   assert.equal(code, 2);
-  const [c1, c2, c3] = api.calls.slice(1).map(c => c.body);
+  const [c1, c2, c3] = api.calls.slice(2).map(c => c.body);
   assert.match(c1.error, /^could not render http:\/\/localhost:3000\/broken: net::ERR_CONNECTION_REFUSED/);
   assert.equal(c1.image, undefined);
   assert.equal(c1.source, 'agent-7');
@@ -177,14 +179,14 @@ test('check: commit ref defaults to git rev-parse HEAD in a git repo, and is omi
   const ok = { nodeId: '2:1', status: 'passed', score: 0, threshold: 1, regions: [] };
   const inRepo = fakeApi({ requested: [screenCheck('c1', '2:1')], results: { c1: ok } });
   await run(['check', ...base, '--requested'], { env, fetchImpl: inRepo.fetchImpl, stdout: sink(), stderr: sink(), playwright: fakePlaywright().module, cwd: dir });
-  assert.equal(inRepo.calls[1].body.commitRef, head);
+  assert.equal(inRepo.calls[2].body.commitRef, head);
 
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'rds-nogit-'));
   t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
   const noRepo = fakeApi({ requested: [screenCheck('c1', '2:1')], results: { c1: ok } });
   await run(['check', ...base, '--requested'], { env: { ...env, GIT_CEILING_DIRECTORIES: os.tmpdir() }, fetchImpl: noRepo.fetchImpl, stdout: sink(), stderr: sink(), playwright: fakePlaywright().module, cwd: outside });
   if (spawnSync('git', ['rev-parse', 'HEAD'], { cwd: outside }).status === 0) return;
-  assert.equal('commitRef' in noRepo.calls[1].body, false);
+  assert.equal('commitRef' in noRepo.calls[2].body, false);
 });
 
 test('check: missing Playwright names the install command and exits 2', async () => {
@@ -221,7 +223,7 @@ test('check: usage errors exit 2; --help exits 0; listed in rds-agent --help', a
   assert.equal(await run(['check', '--help'], { env: {}, stdout: help, stderr: sink() }), 0);
   assert.match(help.text(), /^Usage: rds-agent check /);
   assert.equal(await run(['help', 'check'], { env: {}, stdout: sink(), stderr: sink() }), 0);
-  assert.match(usage(), /^ {2}check +Screenshot screens/m);
+  assert.match(usage(), /^ {2}check +Screenshot check targets/m);
   assert.equal(parseCheckArgs([...base, '--requested']).baseUrl, 'http://localhost:3000');
   assert.equal(checkUrl('http://localhost:3000/app', { route: '/files', query: 'a=1&b=2' }), 'http://localhost:3000/app/files?a=1&b=2');
 });

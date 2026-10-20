@@ -71,7 +71,7 @@ function usage() {
     'Usage: rds-agent <command> [arguments] [flags]',
     '',
     'Commands:',
-    ...pad([...[...COMMANDS.values()].map(c => [`  ${c.command}${argsOf(c)}`, c.summary || '']), ['  check', 'Screenshot screens of the built app and submit render checks (Playwright)']]),
+    ...pad([...[...COMMANDS.values()].map(c => [`  ${c.command}${argsOf(c)}`, c.summary || '']), ['  check', 'Screenshot check targets of the built app and submit render checks (Playwright)']]),
     '',
     "Run 'rds-agent <command> --help' for a command's flags.",
     '',
@@ -548,22 +548,34 @@ const CHECK_DEFAULT_TIMEOUT = 30000;
 /** The page's clock is frozen at this instant, so dates and relative times render the same on every run. */
 const CHECK_FROZEN_TIME = '2025-01-01T12:00:00.000Z';
 const CHECK_SOURCE = 'rds-agent check';
-const CHECK_FLAGS = ['file-key', 'base-url', 'screen', 'requested', 'storage-state', 'browser', 'timeout', 'commit-ref', 'source', 'help'];
+const CHECK_MODES = ['screen', 'requested', 'ready', 'all', 'list-unmapped'];
+const CHECK_BOOLEANS = ['requested', 'ready', 'all', 'list-unmapped'];
+const CHECK_FLAGS = ['file-key', 'base-url', ...CHECK_MODES, 'url', 'storybook', 'storage-state', 'browser', 'timeout', 'commit-ref', 'source', 'help'];
+/** The element a gallery page or story marks as the thing to screenshot. */
+const RDS_TARGET = '[data-rds-target]';
+const STORYBOOK_ROOT = '#storybook-root';
 
 function checkHelp() {
   return [
-    'Usage: rds-agent check --file-key <key> --base-url <url> (--screen <nodeId> | --requested) [flags]',
+    'Usage: rds-agent check --file-key <key> --base-url <url> (--ready | --all | --requested | --screen <nodeId>) [flags]',
+    '       rds-agent check --file-key <key> --list-unmapped [--base-url <url>] [--storybook <url>]',
     '',
-    'Screenshots each screen of the built app with Playwright and submits it as a render check result;',
-    'the API compares it with the screen\'s Figma reference. Playwright is an optional peer dependency:',
-    'npm i -D playwright && npx playwright install chromium',
+    'Screenshots check targets of the built app with Playwright and submits them as render check results;',
+    'the API compares them with their Figma references. Components render through the gallery (the file\'s',
+    'gallery.urlTemplate, or Storybook stories tagged figma:<component key>); screens at base-url + route.',
+    'Playwright is an optional peer dependency: npm i -D playwright && npx playwright install chromium',
     '',
     'Flags:',
     ...pad([
       ['  --file-key <string>', '(required) The Figma file key.'],
-      ['  --base-url <url>', '(required) Where the built app runs (e.g. http://localhost:3000); each screen opens at base-url + route (+ query).'],
-      ['  --screen <nodeId>', 'Request a check of this screen, then run it.'],
+      ['  --base-url <url>', '(required, except with --list-unmapped) Where the built app runs (e.g. http://localhost:3000); screens open at base-url + route (+ query).'],
+      ['  --ready', 'Check every target the API lists as ready, in its order (components, children first, then screens). End each pass with this.'],
+      ['  --all', 'Check every target (e.g. nightly CI, for regressions in clean nodes).'],
       ['  --requested', 'Run every requested check of the file.'],
+      ['  --screen <nodeId>', 'Request a check of this target, then run it.'],
+      ['  --list-unmapped', 'Print the component targets with no gallery entry or story; renders nothing.'],
+      ['  --url <url>', 'The full app URL of a screen without a route; saved as its (family\'s) route.'],
+      ['  --storybook <url>', '(default: the file\'s gallery.storybookUrl) Storybook to resolve component stories in.'],
       ['  --storage-state <file>', 'Playwright storage state (cookies, local storage) for a signed-in app.'],
       ['  --browser <chromium|firefox|webkit>', '(default "chromium")'],
       ['  --timeout <ms>', `(default ${CHECK_DEFAULT_TIMEOUT}) Per page: navigation, network idle and fonts.`],
@@ -571,9 +583,16 @@ function checkHelp() {
       ['  --source <string>', `(default $RDS_WORKER, else "${CHECK_SOURCE}") What rendered the screenshots.`],
     ]),
     '',
-    'Exit codes: 0 every check passed (or none was requested), 1 a render mismatch, 2 an error.',
+    'With --ready / --all, a target containing a component that just mismatched is skipped (Waiting on <component>);',
+    'components with no gallery entry are Not mapped and never block; a screen with no route is No route.',
+    '',
+    'Exit codes: 0 every check passed (or there was nothing to check), 1 a render mismatch, 2 an error.',
   ].join('\n');
 }
+
+const absoluteUrl = value => {
+  try { return new URL(value).toString(); } catch { return null; }
+};
 
 /** Parse `check` flags (argv after `check`); usage errors are CliErrors with exit code 2. */
 function parseCheckArgs(argv) {
@@ -589,7 +608,7 @@ function parseCheckArgs(argv) {
     if (!CHECK_FLAGS.includes(key)) {
       throw new CliError(`Unknown option for 'check': --${key}. Valid: ${CHECK_FLAGS.map(k => `--${k}`).join(' ')}`, { exitCode: 2 });
     }
-    if (key === 'requested') { options.requested = value === undefined ? true : value !== 'false'; continue; }
+    if (CHECK_BOOLEANS.includes(key)) { options[key] = value === undefined ? true : value !== 'false'; continue; }
     if (value === undefined) {
       if (i + 1 >= argv.length) throw new CliError(`Missing value for --${key}\n\n${checkHelp()}`, { exitCode: 2 });
       value = argv[++i];
@@ -599,8 +618,11 @@ function parseCheckArgs(argv) {
   }
   if (options.help) throw new CliError(checkHelp(), { exitCode: 0 });
   const usageError = message => new CliError(`${message}\n\n${checkHelp()}`, { exitCode: 2 });
-  for (const key of ['file-key', 'base-url']) if (!options[key]) throw usageError(`--${key} is required`);
-  if (!options.screen === !options.requested) throw usageError('Pass one of --screen <nodeId> or --requested');
+  const modes = CHECK_MODES.filter(m => options[m]);
+  if (modes.length !== 1) throw usageError('Pass one of --ready, --all, --requested, --screen <nodeId> or --list-unmapped');
+  const mode = modes[0];
+  const required = mode === 'list-unmapped' ? ['file-key'] : ['file-key', 'base-url'];
+  for (const key of required) if (!options[key]) throw usageError(`--${key} is required`);
   const browser = options.browser || 'chromium';
   if (!CHECK_BROWSERS.includes(browser)) throw usageError(`--browser must be one of: ${CHECK_BROWSERS.join(', ')}`);
   let timeout = CHECK_DEFAULT_TIMEOUT;
@@ -608,13 +630,25 @@ function parseCheckArgs(argv) {
     if (!/^\d+$/.test(options.timeout) || Number(options.timeout) < 1) throw usageError('--timeout must be a positive integer (ms)');
     timeout = Number(options.timeout);
   }
-  let baseUrl;
-  try { baseUrl = new URL(options['base-url']); } catch { throw usageError('--base-url must be an absolute URL (e.g. http://localhost:3000)'); }
+  let baseUrl = null;
+  if (options['base-url']) {
+    baseUrl = absoluteUrl(options['base-url']);
+    if (!baseUrl) throw usageError('--base-url must be an absolute URL (e.g. http://localhost:3000)');
+  }
+  let url = null;
+  if (options.url) {
+    if (mode === 'list-unmapped') throw usageError('--url renders a screen; it does not combine with --list-unmapped');
+    url = absoluteUrl(options.url);
+    if (!url) throw usageError('--url must be a full URL (e.g. http://localhost:3000/files?tab=recent)');
+  }
   return {
+    mode,
     fileKey: options['file-key'],
-    baseUrl: baseUrl.toString().replace(/\/+$/, ''),
+    baseUrl: baseUrl ? baseUrl.replace(/\/+$/, '') : null,
     screen: options.screen ? normalizeNodeId(options.screen) : null,
-    requested: !!options.requested,
+    requested: mode === 'requested',
+    url,
+    storybook: options.storybook || null,
     storageState: options['storage-state'] || null,
     browser,
     timeout,
@@ -652,32 +686,131 @@ async function loadPlaywright({ cwd = process.cwd(), name = 'playwright', browse
   }
 }
 
-/** The page a check renders: base URL + route, with the screen's query string. */
-function checkUrl(baseUrl, check) {
-  const url = new URL(baseUrl + (check.route || '/'));
-  const query = String(check.query || '').replace(/^\?/, '');
-  if (query) for (const [k, v] of new URLSearchParams(query)) url.searchParams.append(k, v);
-  return url.toString();
+/** `query` (with or without a leading `?`) appended to `url`'s query string as given. */
+function withQuery(url, query) {
+  const u = new URL(url);
+  const q = String(query || '').replace(/^\?/, '');
+  if (q) u.search = u.search ? `${u.search}&${q}` : `?${q}`;
+  return u.toString();
 }
 
-/** A viewport-sized PNG of one screen (reduced motion, frozen clock, after network idle and fonts). */
-async function screenshot(browser, check, options) {
-  const viewport = check.viewport && check.viewport.width && check.viewport.height ? check.viewport : null;
-  if (!viewport) throw new Error(`screen ${check.nodeId} has no viewport`);
+/** The page a check renders: base URL + route, with the screen's query string. */
+function checkUrl(baseUrl, check) {
+  return withQuery(baseUrl + (check.route || '/'), check.query);
+}
+
+/** `path` (absolute, or relative to the app) as a full URL. */
+function appUrl(baseUrl, path) {
+  if (absoluteUrl(path)) return new URL(path).toString();
+  if (!baseUrl) throw new CliError(`${path} is relative: pass --base-url to resolve it`, { exitCode: 2 });
+  return baseUrl + (path.startsWith('/') ? path : `/${path}`);
+}
+
+/**
+ * Fill a gallery URL template: `{key}`, `{nodeId}`, `{set}`, `{variant}`, `{prop.<Name>}`,
+ * each URL-encoded. Returns null when a placeholder has no value for this variant.
+ * @param {string} template
+ * @param {{ key?: string | null, nodeId?: string, set?: string | null, variant?: string | null, props?: Record<string, string> }} render
+ */
+function fillTemplate(template, render) {
+  let missing = false;
+  const filled = template.replace(/\{([^{}]+)\}/g, (whole, name) => {
+    const value = name.startsWith('prop.') ? (render.props || {})[name.slice(5)]
+      : ['key', 'nodeId', 'set', 'variant'].includes(name) ? render[name] : undefined;
+    if (value === undefined || value === null || (value === '' && name !== 'variant')) { missing = true; return whole; }
+    return encodeURIComponent(String(value));
+  });
+  return missing ? null : filled;
+}
+
+/** Storybook index entries (`index.json` v4+, or `stories.json` v3 shape). */
+function storybookEntries(index) {
+  const entries = (index && (index.entries || index.stories)) || {};
+  return Object.values(entries).filter(e => e && typeof e.id === 'string' && (!e.type || e.type === 'story'));
+}
+
+/** The story tagged `figma:<key>` (else `figma-node:<nodeId>`) in a Storybook index, or null. */
+function findStory(index, { key, nodeId }) {
+  const entries = storybookEntries(index);
+  const tagged = tag => entries.find(e => Array.isArray(e.tags) && e.tags.includes(tag));
+  return (key && tagged(`figma:${key}`)) || (nodeId && (tagged(`figma-node:${nodeId}`) || tagged(`figma-node:${nodeId.replace(':', '-')}`))) || null;
+}
+
+/**
+ * How one component target renders: `{ mapped: true, url, storyId?, selectors }` or
+ * `{ mapped: false, reason }`. Storybook (when configured) first, then the URL template.
+ */
+async function resolveComponent(render, { baseUrl, storybook, storybookIndex }) {
+  const gallery = render.gallery || {};
+  const sbUrl = storybook || gallery.storybookUrl || null;
+  if (sbUrl) {
+    const root = appUrl(baseUrl, sbUrl).replace(/\/+$/, '');
+    const story = findStory(await storybookIndex(root), render);
+    if (story) {
+      return {
+        mapped: true, storyId: story.id, url: `${root}/iframe.html?id=${encodeURIComponent(story.id)}&viewMode=story`,
+        selectors: [`${STORYBOOK_ROOT} ${RDS_TARGET}`, STORYBOOK_ROOT],
+      };
+    }
+  }
+  if (gallery.urlTemplate) {
+    const path = fillTemplate(gallery.urlTemplate, render);
+    if (path !== null) return { mapped: true, storyId: null, url: baseUrl || absoluteUrl(path) ? appUrl(baseUrl, path) : path, selectors: [RDS_TARGET] };
+    if (!sbUrl) return { mapped: false, reason: `gallery.urlTemplate needs a value this variant lacks (${gallery.urlTemplate})` };
+  }
+  if (sbUrl) return { mapped: false, reason: `no story tagged figma:${render.key || '?'}${render.nodeId ? ` or figma-node:${render.nodeId}` : ''}` };
+  return { mapped: false, reason: 'no gallery: set gallery.urlTemplate or gallery.storybookUrl (files settings)' };
+}
+
+/** The theme of a render: the URL to open, context options and an init script. */
+function themed(url, render) {
+  const theme = render.theme || null;
+  const mode = render.themeMode || 'color-scheme';
+  const key = render.themeKey || 'theme';
+  let out = withQuery(url, render.query);
+  /** @type {Record<string, any>} */
+  const contextOptions = {};
+  let initScript = null;
+  if (theme && mode === 'query') {
+    out = withQuery(out, `${encodeURIComponent(key)}=${encodeURIComponent(theme)}`);
+  } else if (theme && mode === 'storage') {
+    initScript = `(() => { const k = ${JSON.stringify(key)}, v = ${JSON.stringify(theme)};`
+      + ' try { localStorage.setItem(k, v); } catch (_) {}'
+      + ' const add = () => document.documentElement && document.documentElement.classList.add(v);'
+      + ' if (document.documentElement) add(); else document.addEventListener("DOMContentLoaded", add); })();';
+  } else if (theme === 'dark' || theme === 'light') {
+    contextOptions.colorScheme = theme;
+  }
+  return { url: out, contextOptions, initScript };
+}
+
+/**
+ * A PNG of one page (reduced motion, frozen clock, after network idle and fonts): the first of
+ * `job.selectors` present on the page, else the viewport.
+ * @param {any} browser
+ * @param {{ url: string, viewport: { width: number, height: number }, contextOptions?: object, initScript?: string | null, selectors?: string[] }} job
+ */
+async function screenshot(browser, job, options) {
   const context = await browser.newContext({
-    viewport: { width: viewport.width, height: viewport.height },
+    viewport: { width: job.viewport.width, height: job.viewport.height },
     deviceScaleFactor: 1,
     reducedMotion: 'reduce',
-    ...(check.theme === 'dark' || check.theme === 'light' ? { colorScheme: check.theme } : {}),
+    ...(job.contextOptions || {}),
     ...(options.storageState ? { storageState: options.storageState } : {}),
   });
   try {
     const page = await context.newPage();
     page.setDefaultTimeout(options.timeout);
+    if (job.initScript) await page.addInitScript(job.initScript);
     await page.clock.setFixedTime(new Date(CHECK_FROZEN_TIME));
-    await page.goto(checkUrl(options.baseUrl, check), { waitUntil: 'networkidle', timeout: options.timeout });
+    await page.goto(job.url, { waitUntil: 'networkidle', timeout: options.timeout });
     await page.evaluate('document.fonts.ready.then(() => true)');
-    return await page.screenshot({ type: 'png', fullPage: false, animations: 'disabled', caret: 'hide', timeout: options.timeout });
+    const shot = { type: 'png', animations: 'disabled', caret: 'hide', timeout: options.timeout };
+    for (const selector of job.selectors || []) {
+      const found = page.locator(selector);
+      if (await found.count()) return await found.first().screenshot(shot);
+    }
+    return await page.screenshot({ ...shot, fullPage: false });
   } finally {
     await context.close();
   }
@@ -695,53 +828,191 @@ function checkLine(check) {
 }
 
 const asCheckError = err => (err instanceof CliError ? err.message : `error: ${err && err.message ? err.message : err}`);
+const errorText = err => (err && err.message ? err.message : String(err));
+const targetLabel = t => (t && t.name ? `${t.name} (${t.nodeId})` : t ? t.nodeId : '?');
+const sameGallery = (a, b) => !!a && !!b && a.mapped === b.mapped && (a.storyId ?? null) === (b.storyId ?? null) && (a.url ?? null) === (b.url ?? null);
+
+/** The route `url` gives relative to the app at `baseUrl` (its path, query and hash otherwise). */
+function routeOf(url, baseUrl) {
+  if (baseUrl && url.startsWith(`${baseUrl}/`)) return url.slice(baseUrl.length);
+  const u = new URL(url);
+  return `${u.pathname}${u.search}${u.hash}`;
+}
 
 /**
- * `rds-agent check`: list (or request) the checks, screenshot each screen, submit it.
- * Returns the exit code: 0 all passed, 1 any mismatch, 2 any error.
+ * `rds-agent check`: list (or request) the checks / targets, screenshot each, submit it.
+ * Returns the exit code: 0 all passed (or nothing to check), 1 any mismatch, 2 any error.
  */
 async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cwd(), playwright }) {
   const opts = parseCheckArgs(argv);
   readEnv(env);
-  const pw = playwright || await loadPlaywright({ cwd, browser: opts.browser });
   const call = (method, path, extra = {}) => execute({ method, path, query: {}, ...extra }, { env, fetchImpl });
   const fk = encodeURIComponent(opts.fileKey);
-  let checks;
-  if (opts.screen) {
-    checks = [(await call('POST', `/v3/files/${fk}/screens/${encodeURIComponent(opts.screen)}/checks`)).check];
-  } else {
-    checks = (await call('GET', `/v3/files/${fk}/checks`, { query: { status: 'requested', limit: '500' } })).checks || [];
+  const targetPath = nodeId => `/v3/files/${fk}/targets/${encodeURIComponent(nodeId)}`;
+  const listTargets = async (query = {}) => (await call('GET', `/v3/files/${fk}/targets`, { query })).targets || [];
+
+  const indexes = new Map();
+  const storybookIndex = root => {
+    if (!indexes.has(root)) {
+      indexes.set(root, (async () => {
+        const res = await fetchImpl(`${root}/index.json`, { method: 'GET', headers: { accept: 'application/json' } });
+        if (!res.ok) throw new Error(`could not read the Storybook index ${root}/index.json: HTTP ${res.status}`);
+        return JSON.parse(await res.text());
+      })());
+    }
+    return indexes.get(root);
+  };
+  /** Resolve a component's gallery entry and store it with the target when it changed (`listOnly`: only not-mapped ones). */
+  async function galleryOf(target, { listOnly = false } = {}) {
+    const render = { nodeId: target.nodeId, ...(target.render || {}) };
+    const resolved = await resolveComponent(render, { baseUrl: opts.baseUrl, storybook: opts.storybook, storybookIndex });
+    const stored = { mapped: resolved.mapped, storyId: resolved.mapped ? resolved.storyId : null, url: resolved.mapped ? resolved.url : null };
+    if ((!listOnly || !resolved.mapped) && !sameGallery(render.cache || target.gallery, stored)) {
+      try { await call('PATCH', targetPath(target.nodeId), { body: { gallery: stored } }); } catch (err) {
+        stderr.write(`${target.nodeId}  warning  could not store its gallery resolution: ${asCheckError(err)}\n`);
+      }
+    }
+    return resolved;
   }
-  if (!checks.length) {
-    stdout.write('no requested checks\n');
+
+  if (opts.mode === 'list-unmapped') {
+    const rows = [];
+    let errors = 0;
+    for (const t of await listTargets({ level: 'component' })) {
+      try {
+        const g = await galleryOf(t, { listOnly: true });
+        if (!g.mapped) rows.push([t.nodeId, t.render && t.render.set, t.render && t.render.variant, t.render && t.render.key, g.reason]);
+      } catch (err) {
+        errors++;
+        stderr.write(`${t.nodeId}  error  ${asCheckError(err)}\n`);
+      }
+    }
+    stdout.write(rows.length ? table(['component', 'set', 'variant', 'key', 'reason'], rows) : 'every component target is mapped\n');
+    return errors ? 2 : 0;
+  }
+
+  /** @type {{ target: any, check?: any }[]} */
+  let items;
+  let runsAll = false;
+  if (opts.mode === 'ready' || opts.mode === 'all') {
+    runsAll = true;
+    items = (await listTargets(opts.mode === 'ready' ? { status: 'ready' } : {})).map(target => ({ target }));
+  } else {
+    let checks;
+    if (opts.screen) checks = [(await call('POST', `/v3/files/${fk}/screens/${encodeURIComponent(opts.screen)}/checks`)).check];
+    else checks = (await call('GET', `/v3/files/${fk}/checks`, { query: { status: 'requested', limit: '500' } })).checks || [];
+    const byNode = checks.length ? new Map((await listTargets()).map(t => [t.nodeId, t])) : new Map();
+    items = checks.map(check => ({ check, target: byNode.get(check.nodeId) || null }));
+  }
+  if (!items.length) {
+    stdout.write(opts.mode === 'ready' ? 'no ready targets\n' : opts.mode === 'all' ? 'no check targets\n' : 'no requested checks\n');
     return 0;
   }
+
+  const pw = playwright || await loadPlaywright({ cwd, browser: opts.browser });
   const commitRef = opts.commitRef || gitHead(cwd);
   const source = opts.source || envVar(env, 'WORKER') || CHECK_SOURCE;
   const meta = { ...(commitRef ? { commitRef } : {}), source };
-  const counts = { passed: 0, mismatch: 0, error: 0 };
-  const browser = await pw[opts.browser].launch();
+  const counts = { passed: 0, mismatch: 0, error: 0, waiting: 0, 'not mapped': 0, 'no route': 0 };
+  const summary = [];
+  /** Component targets that mismatched (or wait on one) in this run → the component to name. */
+  const failed = new Map();
+  const passed = new Set();
+  /** --url: the family whose route it captured. */
+  let captured = null;
+  const note = (target, nodeId, status, detail) => {
+    counts[status]++;
+    summary.push([nodeId, target && target.name, target ? target.level : 'screen', status, detail]);
+  };
+
+  /**
+   * What to open for one item, or a skip `{ skip, detail }`.
+   * @param {{ target: any, check?: any }} item
+   * @returns {Promise<any>}
+   */
+  async function plan({ target, check }) {
+    const level = target ? target.level : 'screen';
+    const render = (target && target.render) || {};
+    const viewport = (check && check.viewport && check.viewport.width ? check.viewport : null) || render.viewport || (target && target.viewport);
+    if (!viewport || !viewport.width || !viewport.height) throw new Error(`${level} ${(target || check).nodeId} has no viewport`);
+    if (level === 'component') {
+      const g = await galleryOf(target);
+      if (!g.mapped) return { skip: 'not mapped', detail: g.reason };
+      return { viewport, selectors: g.selectors, ...themed(g.url, render) };
+    }
+    const look = { theme: render.theme ?? (check && check.theme), query: render.query ?? (check && check.query), themeMode: render.themeMode, themeKey: render.themeKey };
+    let route = render.route || (target && target.route) || (check && check.route) || null;
+    const family = (target && (target.familyKey || target.nodeId)) || (check && check.nodeId);
+    if (!route && opts.url && (!captured || captured.family === family)) {
+      if (!captured) {
+        const nodeId = (target || check).nodeId;
+        const saved = (await call('PATCH', targetPath(nodeId), { body: { route: routeOf(opts.url, opts.baseUrl) } })).target;
+        captured = { family, route: (saved && saved.route) || routeOf(opts.url, opts.baseUrl) };
+        stdout.write(`${nodeId}  route  saved ${captured.route}\n`);
+      }
+      route = captured.route;
+    }
+    if (!route) return { skip: 'no route', detail: 'pass --url <full url> to set its route' };
+    return { viewport, selectors: [], ...themed(opts.baseUrl + (route.startsWith('/') ? route : `/${route}`), look) };
+  }
+
+  let browser = null;
   try {
-    for (const check of checks) {
-      let body;
+    for (const item of items) {
+      const { target } = item;
+      const nodeId = (target || item.check).nodeId;
+      if (runsAll && target) {
+        const blocker = (target.contains || []).find(id => failed.has(id));
+        const listed = target.status === 'waiting' && target.waitingOn && !passed.has(target.waitingOn.nodeId) ? target.waitingOn : null;
+        const on = blocker ? failed.get(blocker) : listed;
+        if (on) {
+          if (target.level === 'component') failed.set(target.nodeId, on);
+          note(target, nodeId, 'waiting', `Waiting on ${targetLabel(on)}`);
+          stdout.write(`${nodeId}  waiting  Waiting on ${targetLabel(on)}\n`);
+          continue;
+        }
+      }
+      let job;
       try {
-        body = { image: Buffer.from(await screenshot(browser, check, opts)).toString('base64'), ...meta };
+        job = await plan(item);
       } catch (err) {
-        body = { error: `could not render ${checkUrl(opts.baseUrl, check)}: ${err && err.message ? err.message : err}`.slice(0, 2000), ...meta };
+        note(target, nodeId, 'error', errorText(err));
+        stderr.write(`${nodeId}  error  ${asCheckError(err)}\n`);
+        continue;
+      }
+      if (job.skip) {
+        note(target, nodeId, job.skip, job.detail);
+        stdout.write(`${nodeId}  ${job.skip}  ${job.detail}\n`);
+        continue;
       }
       try {
+        const check = item.check || (await call('POST', `/v3/files/${fk}/screens/${encodeURIComponent(nodeId)}/checks`)).check;
+        let body;
+        try {
+          if (!browser) browser = await pw[opts.browser].launch();
+          body = { image: Buffer.from(await screenshot(browser, job, opts)).toString('base64'), ...meta };
+        } catch (err) {
+          body = { error: `could not render ${job.url}: ${errorText(err)}`.slice(0, 2000), ...meta };
+        }
         const done = (await call('POST', `/v3/files/${fk}/checks/${encodeURIComponent(check.checkId)}/result`, { body })).check;
-        counts[done.status === 'passed' || done.status === 'mismatch' ? done.status : 'error']++;
+        const status = done.status === 'passed' || done.status === 'mismatch' ? done.status : 'error';
+        if (target && target.level === 'component') {
+          if (status === 'mismatch') failed.set(target.nodeId, target);
+          if (status === 'passed') passed.add(target.nodeId);
+        }
+        note(target, nodeId, status, status === 'error' ? done.error : `score ${percent(done.score)} / limit ${percent(done.threshold)}`);
         stdout.write(`${checkLine(done)}\n`);
       } catch (err) {
-        counts.error++;
-        stderr.write(`${check.nodeId}  error  ${asCheckError(err)}\n`);
+        note(target, nodeId, 'error', asCheckError(err));
+        stderr.write(`${nodeId}  error  ${asCheckError(err)}\n`);
       }
     }
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
   }
-  stdout.write(`${plural(checks.length, 'check')}: ${counts.passed} passed, ${counts.mismatch} mismatch, ${plural(counts.error, 'error')}\n`);
+  if (summary.length > 1 || runsAll) stdout.write(`\n${table(['target', 'name', 'level', 'result', 'detail'], summary)}`);
+  const extra = ['waiting', 'not mapped', 'no route'].filter(k => counts[k]).map(k => `, ${counts[k]} ${k}`).join('');
+  stdout.write(`${plural(items.length, 'check')}: ${counts.passed} passed, ${counts.mismatch} mismatch, ${plural(counts.error, 'error')}${extra}\n`);
   if (counts.error) return 2;
   return counts.mismatch ? 1 : 0;
 }
@@ -778,4 +1049,4 @@ if (require.main === module) {
   run(process.argv.slice(2)).then(code => { process.exitCode = code; });
 }
 
-module.exports = { parseCheckArgs, loadPlaywright, checkUrl, gitHead, envVar, warnLegacyEnv, retrySeconds, parseArgs, buildRequest, buildUrl, execute, perform, run, normalizeNodeId, usage, commandHelp, CliError, CLIENT, COMMANDS };
+module.exports = { parseCheckArgs, loadPlaywright, checkUrl, fillTemplate, findStory, resolveComponent, themed, gitHead, envVar, warnLegacyEnv, retrySeconds, parseArgs, buildRequest, buildUrl, execute, perform, run, normalizeNodeId, usage, commandHelp, CliError, CLIENT, COMMANDS };

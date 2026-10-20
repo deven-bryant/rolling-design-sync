@@ -115,9 +115,10 @@ checklist. They return every match from the cursor on, so `--all` is not needed.
 
 ## Render checks: `rds-agent check`
 
-Hand-written beside the generated commands: screenshots screens of the built
-app and submits them as render check results (the API compares them with the
-screens' Figma references). The only command that needs more than Node:
+Hand-written beside the generated commands: screenshots check targets of the
+built app — screens at their route, components through the app's gallery — and
+submits them as render check results (the API compares them with their Figma
+references). The only command that needs more than Node:
 [Playwright](https://playwright.dev), an optional peer dependency loaded only by
 `check`, from the current project or the CLI's own folder:
 
@@ -126,47 +127,80 @@ npm i -D playwright && npx playwright install chromium
 ```
 
 ```bash
+rds-agent check --file-key AbC123 --base-url http://localhost:3000 --ready     # end of every pass
+rds-agent check --file-key AbC123 --base-url http://localhost:3000 --all       # nightly CI
 rds-agent check --file-key AbC123 --base-url http://localhost:3000 --requested
 rds-agent check --file-key AbC123 --base-url http://localhost:3000 --screen 2-1
+rds-agent check --file-key AbC123 --list-unmapped
 ```
 
-1. `--requested` runs every requested check of the file
-   (`checks ls --status requested`); `--screen <nodeId>` requests a check of
-   that screen first (`checks request`), then runs it.
-2. Each check carries its screen's settings: `route`, `viewport`, `theme`,
-   `query`.
-3. Playwright opens `base-url + route (+ query)` in a fresh context at the
-   viewport size (device scale 1), `reducedMotion: 'reduce'`, `colorScheme`
-   from a `dark` / `light` theme and the clock frozen at
+1. Which targets: `--ready` the ones the API lists as ready
+   (`targets ls --status ready`), `--all` every target (`targets ls`), both in
+   the API's check order (components, children before composites, then
+   screens); `--requested` every requested check (`checks ls --status
+   requested`); `--screen <nodeId>` requests a check of that target first
+   (`checks request`), then runs it.
+2. **Waiting** (`--ready` / `--all`): after a component mismatches, the targets
+   that contain it are skipped and reported *Waiting on <component>*; a target
+   the API lists as waiting runs once its component passes in the same run.
+   *Not mapped* components never block.
+3. Where each renders:
+   - **Screens:** `base-url + route (+ query)`. A screen whose family has no
+     route is *No route* — pass `--url <full url>` to render it there; the
+     route is saved for its family (`targets set --route`) and used from then
+     on.
+   - **Components:** with the file's `gallery.storybookUrl` (or `--storybook`),
+     the story tagged `figma:<component key>` (or `figma-node:<nodeId>`) in
+     `<storybook>/index.json`, opened at `iframe.html?id=<id>&viewMode=story`
+     and shot at `#storybook-root` (its `[data-rds-target]` when present);
+     else `gallery.urlTemplate` filled in (`{key}`, `{nodeId}`, `{set}`,
+     `{variant}`, `{prop.<Name>}`, each URL-encoded), shot at its
+     `[data-rds-target]` element (else the viewport). Neither → *Not mapped*.
+     The resolution is stored with the target (`targets set --mapped --story-id --url`).
+   - **Theme** (file setting `themeMode`): `color-scheme` emulates
+     `prefers-color-scheme` for a `dark` / `light` theme; `query` adds
+     `?<themeKey>=<theme>`; `storage` sets localStorage `<themeKey>` and adds
+     the theme as a class on `<html>` before the page loads (init script).
+4. Playwright opens it in a fresh context at the target's viewport (the Figma
+   size; device scale 1), `reducedMotion: 'reduce'` and the clock frozen at
    2025-01-01T12:00:00Z (`page.clock`); it waits for network idle and
-   `document.fonts.ready`, then takes a viewport-sized PNG (not full page).
-4. It submits the PNG (`checks submit`) with the commit ref and source; a page
+   `document.fonts.ready`, then takes a PNG (viewport-sized, not full page).
+5. It submits the PNG (`checks submit`) with the commit ref and source; a page
    that fails to load is submitted as the check's `error`.
-5. It prints each result — status, score vs limit, differing regions — and a
-   total:
+6. It prints each result — status, score vs limit, differing regions — a
+   summary table and a total:
 
 ```text
-2:1  passed  score 0.2% <= limit 1%  0c3d…
-2:5  mismatch  score 4.5% > limit 1%  9a1e…
+1:4  passed  score 0% <= limit 1%  0c3d…
+2:1  mismatch  score 4.5% > limit 1%  9a1e…
   region 10,20 300x40 (1234 px)
-2 checks: 1 passed, 1 mismatch, 0 errors
+2:5  waiting  Waiting on Button (1:4)
+
+TARGET  NAME         LEVEL      RESULT    DETAIL
+1:4     Button       component  passed    score 0% / limit 1%
+…
+3 checks: 1 passed, 1 mismatch, 0 errors, 1 waiting
 ```
 
 | Flag | Description |
 |------|-------------|
 | `--file-key` | **Required.** The Figma file key. |
-| `--base-url` | **Required.** Where the built app runs. |
-| `--screen <nodeId>` / `--requested` | **One required.** Which checks to run. |
+| `--base-url` | **Required** (except `--list-unmapped`). Where the built app runs. |
+| `--ready` / `--all` / `--requested` / `--screen <nodeId>` / `--list-unmapped` | **One required.** What to run; `--list-unmapped` prints the component targets with no gallery entry and renders nothing. |
+| `--url <full url>` | A screen without a route renders here; saved as its family's route. |
+| `--storybook <url>` | Storybook to resolve stories in. Default: the file's `gallery.storybookUrl`. |
 | `--storage-state <file>` | Playwright storage state (cookies, local storage) for a signed-in app. |
 | `--browser` | `chromium` (default), `firefox` or `webkit`. |
 | `--timeout <ms>` | Per page: navigation, network idle and fonts. Default 30000. |
 | `--commit-ref` | Default: `git rev-parse HEAD` when run in a git repo. |
 | `--source` | Default: `$RDS_WORKER`, else `rds-agent check`. |
 
-Exit code `0` when every check passed (or none was requested), `1` on any
-render mismatch, `2` on any error (usage, API, missing Playwright, a page that
-did not render) — usable as a CI step. Setup, fixture data, masks and a GitHub
-Actions example: [docs/agents.md, "Render checks"](https://github.com/deven-bryant/rolling-design-sync/blob/main/docs/agents.md#render-checks).
+Exit code `0` when every check passed (or there was nothing to check; waiting,
+not-mapped and no-route targets alone don't fail), `1` on any render mismatch,
+`2` on any error (usage, API, missing Playwright, a Storybook index that can't
+be read, a page that did not render) — usable as a CI step. Setup, the gallery
+contract, fixture data, masks and GitHub Actions examples:
+[docs/agents.md, "Render checks"](https://github.com/deven-bryant/rolling-design-sync/blob/main/docs/agents.md#render-checks).
 
 ## Errors
 
