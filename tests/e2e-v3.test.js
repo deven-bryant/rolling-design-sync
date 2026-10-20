@@ -788,7 +788,7 @@ test('v3 fresh sync: the default listing is compact — changedProps, no added v
     upsert('2:1', 'TEXT', 'Body', { characters: long, fontSize: 14 }, [ROOT]),
     { ...upsert('2:2', 'INSTANCE', 'Button', { fills: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0 } }] }, [ROOT]), mainComponentId: '9:1' },
   ];
-  await batch(fileKey, { fileName: 'E2E Fresh', rootNodeId: ROOT, upserts: rows });
+  await batch(fileKey, { fileName: 'E2E Fresh', rootNodeId: ROOT, checks: false, upserts: rows });
 
   const page = await list(fileKey);
   assert.deepEqual(page.nodes.map(n => n.nodeId), [ROOT, '2:1', '2:2']);
@@ -1475,6 +1475,8 @@ test('v3 render checks: a screen gets a reference, a mismatch makes a render not
   const fileKey = newFileKey();
   await seed(fileKey);
   const route = suffix => `/v3/files/${fileKey}${suffix}`;
+  // A manual screen on its own: turn the scope's automatic targets off.
+  assert.equal((await ok(call('PATCH', route(`/scopes/${ROOT}`), { body: { checks: false } }))).checks, false);
   assert.equal((await call('PUT', route('/screens/2:1'), { headers: viewer, body: { route: '/card' } })).status, 403);
   const screen = (await ok(call('PUT', route('/screens/2:1'), { body: { route: '/card', viewport: { width: 200, height: 200 } } }))).screen;
   assert.equal(screen.status, 'building', 'the card still has design changes');
@@ -1494,7 +1496,7 @@ test('v3 render checks: a screen gets a reference, a mismatch makes a render not
   assert.equal(heat.headers.get('content-type'), 'image/png');
   assert.equal(heat.headers.get('x-content-type-options'), 'nosniff');
   const noted = await node(fileKey, '2:1');
-  assert.deepEqual(noted.screen, { status: 'mismatch', stale: false, score: bad.score });
+  assert.deepEqual(noted.screen, { status: 'mismatch', stale: false, score: bad.score, excluded: false });
   const renderNote = noted.notes.find(n => n.source === 'render_check');
   assert.ok(renderNote, 'a render note on the screen root');
   assert.deepEqual(renderNote.attachments.map(a => a.kind).sort(), ['built', 'heatmap', 'reference']);
