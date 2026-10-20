@@ -686,11 +686,11 @@ async function loadPlaywright({ cwd = process.cwd(), name = 'playwright', browse
   }
 }
 
-/** `query` (with or without a leading `?`) appended to `url`'s search parameters. */
+/** `query` (with or without a leading `?`) appended to `url`'s query string as given. */
 function withQuery(url, query) {
   const u = new URL(url);
   const q = String(query || '').replace(/^\?/, '');
-  if (q) for (const [k, v] of new URLSearchParams(q)) u.searchParams.append(k, v);
+  if (q) u.search = u.search ? `${u.search}&${q}` : `?${q}`;
   return u.toString();
 }
 
@@ -755,7 +755,7 @@ async function resolveComponent(render, { baseUrl, storybook, storybookIndex }) 
   }
   if (gallery.urlTemplate) {
     const path = fillTemplate(gallery.urlTemplate, render);
-    if (path !== null) return { mapped: true, storyId: null, url: appUrl(baseUrl, path), selectors: [RDS_TARGET] };
+    if (path !== null) return { mapped: true, storyId: null, url: baseUrl || absoluteUrl(path) ? appUrl(baseUrl, path) : path, selectors: [RDS_TARGET] };
     if (!sbUrl) return { mapped: false, reason: `gallery.urlTemplate needs a value this variant lacks (${gallery.urlTemplate})` };
   }
   if (sbUrl) return { mapped: false, reason: `no story tagged figma:${render.key || '?'}${render.nodeId ? ` or figma-node:${render.nodeId}` : ''}` };
@@ -772,9 +772,7 @@ function themed(url, render) {
   const contextOptions = {};
   let initScript = null;
   if (theme && mode === 'query') {
-    const u = new URL(out);
-    u.searchParams.set(key, theme);
-    out = u.toString();
+    out = withQuery(out, `${encodeURIComponent(key)}=${encodeURIComponent(theme)}`);
   } else if (theme && mode === 'storage') {
     initScript = `(() => { const k = ${JSON.stringify(key)}, v = ${JSON.stringify(theme)};`
       + ' try { localStorage.setItem(k, v); } catch (_) {}'
@@ -864,12 +862,12 @@ async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cw
     }
     return indexes.get(root);
   };
-  /** Resolve a component's gallery entry and store it with the target when it changed. */
-  async function galleryOf(target) {
+  /** Resolve a component's gallery entry and store it with the target when it changed (`listOnly`: only not-mapped ones). */
+  async function galleryOf(target, { listOnly = false } = {}) {
     const render = { nodeId: target.nodeId, ...(target.render || {}) };
     const resolved = await resolveComponent(render, { baseUrl: opts.baseUrl, storybook: opts.storybook, storybookIndex });
     const stored = { mapped: resolved.mapped, storyId: resolved.mapped ? resolved.storyId : null, url: resolved.mapped ? resolved.url : null };
-    if (!sameGallery(render.cache || target.gallery, stored)) {
+    if ((!listOnly || !resolved.mapped) && !sameGallery(render.cache || target.gallery, stored)) {
       try { await call('PATCH', targetPath(target.nodeId), { body: { gallery: stored } }); } catch (err) {
         stderr.write(`${target.nodeId}  warning  could not store its gallery resolution: ${asCheckError(err)}\n`);
       }
@@ -882,7 +880,7 @@ async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cw
     let errors = 0;
     for (const t of await listTargets({ level: 'component' })) {
       try {
-        const g = await galleryOf(t);
+        const g = await galleryOf(t, { listOnly: true });
         if (!g.mapped) rows.push([t.nodeId, t.render && t.render.set, t.render && t.render.variant, t.render && t.render.key, g.reason]);
       } catch (err) {
         errors++;
