@@ -103,10 +103,49 @@ isolation, in tests and in the gallery.
   text).
 - **Each component ships** `Name.tsx`, `Name.test.tsx` (renders every variant,
   interaction, axe check), an `index.ts` export, and an entry in the dev-only
-  gallery route (`/ui/_gallery`) showing every variant next to its Figma name.
+  gallery route (`/ui/gallery`) showing every variant next to its Figma name.
 - **Figma link.** Each component folder has a `figma.ts` mapping the Figma
   component key(s) and variant names to props — the file a design-sync worker
   reads to reconcile a component, and the start of Code Connect later.
+
+### Gallery URLs
+
+Every gallery example also has its own URL, so render checks can screenshot the
+portal's components the way they screenshot any other app:
+
+```
+/ui/gallery?figma=<set or component name>&variant=<Figma variant string>
+```
+
+- **Only that example.** No gallery chrome (no heading, labels or padding): the
+  example renders at its natural size inside one `<div data-rds-target>`, the
+  screenshot target. Animations and transitions are switched off on that page so
+  the screenshot is deterministic.
+- **Matching.** `figma` must equal the example's set name exactly (surrounding
+  and repeated spaces aside). `variant` is compared property by property, so
+  property order and spacing don't matter: `State=Hover,Size=sm` and
+  `Size=sm, State=Hover` address the same example. A component without variants
+  (an icon such as `arrow-right`, `Vertical Divider`) is addressed with an empty
+  `variant`.
+- **Set names.** An example's set is its entry's `figma` (the Figma component
+  set or component, the name its `figma.ts` maps, e.g. `Buttons/Button`),
+  else the entry's `component`. An example that renders another set or whose
+  label isn't exactly the variant string (it carries a set prefix or a
+  description) declares `set` and/or `variant` itself, e.g. Badge's
+  `{ figma: '_Dot · Size=md, Outline=False', set: '_Dot', variant: 'Size=md, Outline=False' }`.
+  Descriptive labels (`Sizes (xs · sm · md · lg)`) are addressed by the label
+  itself as `variant`.
+- **Theme.** The portal's own theme mechanism (`ThemeProvider`): the target is
+  wrapped in `data-theme` set to the variant's `Color Mode` (`Light` / `Dark`,
+  treated as the theme rather than a property), else `&theme=light|dark`, else
+  the portal's theme — the saved choice, else `prefers-color-scheme`. Of an
+  example's theme copies in the gallery (labels ending ` · Dark` or
+  ` · Color Mode=Dark`), the one for that theme is rendered, without the
+  gallery's own theme wrapper.
+- **Unknown target.** A set or variant that matches nothing shows a plain
+  "404 — no gallery example" message.
+- Without `figma` the route shows the full gallery as before; `/ui/_gallery`
+  remains an alias. Like the gallery, these URLs exist in dev builds only.
 
 ## Building it through Rolling Design Sync
 

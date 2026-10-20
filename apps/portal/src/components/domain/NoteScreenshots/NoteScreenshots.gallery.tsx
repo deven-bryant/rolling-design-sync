@@ -11,6 +11,7 @@ const noop = () => undefined;
 
 export default {
   component: 'NoteScreenshots',
+  figma: 'Node Details - Notes Screenshots',
   examples: inBothThemes([
     { figma: 'Node Details - Notes Screenshots', render: () => <NoteScreenshots screenshots={shots} onAdd={noop} onRemove={noop} /> },
     { figma: 'Empty', render: () => <NoteScreenshots screenshots={[]} onAdd={noop} onRemove={noop} /> },

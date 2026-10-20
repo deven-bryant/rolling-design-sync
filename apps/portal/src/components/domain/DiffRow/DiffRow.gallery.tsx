@@ -22,6 +22,7 @@ const bothThemes = (examples: { figma: string; render: (mode: string) => ReturnT
 
 export default {
   component: 'DiffRow',
+  figma: 'Diff row',
   examples: bothThemes([
     { figma: 'Diff row (Show raw=True)', render: () => <DiffRow {...figmaDiffRow.defaults} className="w-108" /> },
     {

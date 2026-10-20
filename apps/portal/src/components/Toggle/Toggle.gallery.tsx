@@ -23,10 +23,10 @@ export default {
       figma: 'Type=Default, Pressed=True, Size=md, Text=False, State=Default',
       render: () => <Toggle size="md" defaultSelected aria-label="Dark mode" />,
     },
-    { figma: '_Toggle base: Type=Default, Pressed=True, Size=sm, State=Default', render: () => <ToggleBase pressed /> },
-    { figma: '_Toggle base: Type=Default, Pressed=False, Size=md, State=Default', render: () => <ToggleBase size="md" /> },
+    { figma: '_Toggle base: Type=Default, Pressed=True, Size=sm, State=Default', set: '_Toggle base', variant: 'Type=Default, Pressed=True, Size=sm, State=Default', render: () => <ToggleBase pressed /> },
+    { figma: '_Toggle base: Type=Default, Pressed=False, Size=md, State=Default', set: '_Toggle base', variant: 'Type=Default, Pressed=False, Size=md, State=Default', render: () => <ToggleBase size="md" /> },
     {
-      figma: '_Toggle base: Type=Default, Pressed=True, Size=md, State=Default',
+      figma: '_Toggle base: Type=Default, Pressed=True, Size=md, State=Default', set: '_Toggle base', variant: 'Type=Default, Pressed=True, Size=md, State=Default',
       render: () => <ToggleBase size="md" pressed />,
     },
   ]),

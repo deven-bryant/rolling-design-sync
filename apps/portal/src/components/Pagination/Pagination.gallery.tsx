@@ -21,7 +21,7 @@ export default {
       render: theme => <Pagination label={named('Cursor pagination', theme)} page={2} hasNext onPageChange={noop} />,
     },
     {
-      figma: '_Pagination number base · Shape=Square, State=Default / State=Hover/active',
+      figma: '_Pagination number base · Shape=Square, State=Default / State=Hover/active', set: '_Pagination number base', variant: 'Shape=Square, State=Default / State=Hover/active',
       render: theme => <Pagination label={named('Page numbers', theme)} page={2} pageCount={3} onPageChange={noop} />,
     },
   ]),

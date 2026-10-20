@@ -8,9 +8,12 @@ const themes = [
 ] as const;
 
 /** Each example once per theme: `Color Mode` is the `data-theme` it renders under, never a prop. */
-const bothThemes = (examples: { figma: string; render: (mode: string) => ReturnType<GalleryExample['render']> }[]) =>
+const bothThemes = (
+  examples: (Omit<GalleryExample, 'render'> & { render: (mode: string) => ReturnType<GalleryExample['render']> })[],
+) =>
   themes.flatMap(([mode, theme]) =>
-    examples.map(({ figma, render }): GalleryExample => ({
+    examples.map(({ figma, render, ...example }): GalleryExample => ({
+      ...example,
       figma: `${figma} · Color Mode=${mode}`,
       render: () => (
         <div data-theme={theme} className="bg-primary">
@@ -37,7 +40,7 @@ export default {
       ),
     },
     {
-      figma: '_Breadcrumb button base · Current=False / Current=True / Icon=True',
+      figma: '_Breadcrumb button base · Current=False / Current=True / Icon=True', set: '_Breadcrumb button base', variant: 'Current=False / Current=True / Icon=True',
       render: mode => (
         <Breadcrumbs label={`Breadcrumb buttons (${mode})`}>
           <Breadcrumbs.Item home href="#home">

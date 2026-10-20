@@ -13,14 +13,12 @@ const toNodes = ({ fileKey = '' }: { fileKey?: string }) => filePath(fileKey, 'n
 export const routes: RouteObject[] = [
   { path: 'sign-in', element: <SignInPage /> },
   ...(import.meta.env.DEV
-    ? [
-        {
-          path: '_gallery',
-          lazy: async () => ({
-            Component: (await import('./GalleryPage')).GalleryPage,
-          }),
-        },
-      ]
+    ? ['gallery', '_gallery'].map(path => ({
+        path,
+        lazy: async () => ({
+          Component: (await import('./GalleryPage')).GalleryRoute,
+        }),
+      }))
     : []),
   {
     element: <Layout />,

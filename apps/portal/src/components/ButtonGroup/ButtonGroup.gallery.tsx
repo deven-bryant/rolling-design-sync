@@ -3,6 +3,7 @@ import { ButtonGroup } from '.';
 
 export default {
   component: 'ButtonGroup',
+  figma: 'Button group',
   examples: inBothThemes([
     {
       figma: 'Icon=False',
@@ -15,7 +16,7 @@ export default {
       ),
     },
     {
-      figma: '_Button group base · Current=False, State=Default (40px min height)',
+      figma: '_Button group base · Current=False, State=Default (40px min height)', set: '_Button group base', variant: 'Current=False, State=Default (40px min height)',
       render: () => (
         <ButtonGroup aria-label="Single item">
           <ButtonGroup.Item id="text">Text</ButtonGroup.Item>
@@ -23,7 +24,7 @@ export default {
       ),
     },
     {
-      figma: '_Button group base · Current=True · State=Disabled',
+      figma: '_Button group base · Current=True · State=Disabled', set: '_Button group base', variant: 'Current=True · State=Disabled',
       render: () => (
         <ButtonGroup aria-label="View" defaultSelectedKeys={['day']}>
           <ButtonGroup.Item id="day">Day</ButtonGroup.Item>

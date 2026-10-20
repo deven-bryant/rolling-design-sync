@@ -46,6 +46,6 @@ export default {
         </TextField>
       ),
     },
-    { figma: 'Help icon: Open=False, Supporting text=False, Tooltip=Top no arrow', render: () => <HelpIcon label="Help" /> },
+    { figma: 'Help icon: Open=False, Supporting text=False, Tooltip=Top no arrow', set: 'Help icon', variant: 'Open=False, Supporting text=False, Tooltip=Top no arrow', render: () => <HelpIcon label="Help" /> },
   ]),
 } satisfies GalleryEntry;

@@ -39,6 +39,7 @@ const bothThemes = (examples: { figma: string; render: (mode: string) => ReturnT
 
 export default {
   component: 'AgentCell',
+  figma: 'Agent cell',
   examples: bothThemes([
     { figma: 'Agent cell (Avatar=True)', render: () => <InTable avatar /> },
     { figma: 'Agent cell (Avatar=False)', render: () => <InTable avatar={false} /> },

@@ -3,9 +3,10 @@ import { Menu } from './Menu';
 
 export default {
   component: 'Menu',
+  figma: 'Dropdown',
   examples: inBothThemes([
     {
-      figma: 'Dropdown · Type=Icon, Open=False',
+      figma: 'Dropdown · Type=Icon, Open=False', set: 'Dropdown', variant: 'Type=Icon, Open=False',
       render: () => (
         <Menu label="Card actions">
           <Menu.Item id="view">View</Menu.Item>
@@ -14,7 +15,7 @@ export default {
       ),
     },
     {
-      figma: '_Dropdown menu item · Type=Menu item / Type=Account, Current=False / Current=True',
+      figma: '_Dropdown menu item · Type=Menu item / Type=Account, Current=False / Current=True', set: '_Dropdown menu item', variant: 'Type=Menu item / Type=Account, Current=False / Current=True',
       render: () => (
         <Menu label="Account" selectionMode="single" defaultSelectedKeys={['olivia']}>
           <Menu.Section aria-label="Actions">

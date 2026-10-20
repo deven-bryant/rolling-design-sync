@@ -29,9 +29,10 @@ function Example({ divider }: { divider: FeedDivider }) {
 
 export default {
   component: 'FeedItem',
+  figma: 'Activity feed',
   examples: inBothThemes([
-    { figma: 'Activity feed: Divider=Connector (Supporting item=File · Text · False, Connector=True · last False)', render: () => <Example divider="connector" /> },
-    { figma: 'Activity feed: Divider=False (Connector=False)', render: () => <Example divider="none" /> },
-    { figma: 'File type icon: File type=Document / PDF, Type=Default', render: () => <FileTypeIcon type="pdf" /> },
+    { figma: 'Activity feed: Divider=Connector (Supporting item=File · Text · False, Connector=True · last False)', set: 'Activity feed', variant: 'Divider=Connector (Supporting item=File · Text · False, Connector=True · last False)', render: () => <Example divider="connector" /> },
+    { figma: 'Activity feed: Divider=False (Connector=False)', set: 'Activity feed', variant: 'Divider=False (Connector=False)', render: () => <Example divider="none" /> },
+    { figma: 'File type icon: File type=Document / PDF, Type=Default', set: 'File type icon', variant: 'File type=Document / PDF, Type=Default', render: () => <FileTypeIcon type="pdf" /> },
   ]),
 } satisfies GalleryEntry;

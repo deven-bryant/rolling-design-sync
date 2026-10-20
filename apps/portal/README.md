@@ -19,7 +19,7 @@ npm run dev                 # in apps/portal: http://localhost:5173/ui/
 The dev server proxies `/v3` and `/health` to the API at `RDS_PORTAL_API`
 (default `http://localhost:8787`), so the portal and API share an origin and the
 session cookie works as in production. Sign in at `/ui/sign-in` with a viewer
-or agent token. The component gallery is at `/ui/_gallery` (dev builds only).
+or agent token. The component gallery is at `/ui/gallery` (dev builds only).
 
 | Script | Does |
 |---|---|
@@ -45,10 +45,14 @@ stage, so `docker compose up -d` serves it at `http://localhost:8787/ui`.
 
 ## Gallery
 
-`/ui/_gallery` lists every `*.gallery.tsx` in `src/` (collected with
+`/ui/gallery` lists every `*.gallery.tsx` in `src/` (collected with
 `import.meta.glob`, so a new file shows up without registering it), each example
 labelled with the Figma name it implements. It exists in dev builds only; use it
 to check a component against the design file before it is used in a page.
+
+`/ui/gallery?figma=<set>&variant=<variant>` renders one example alone inside a
+`data-rds-target` wrapper, for render checks; see `docs/ui-portal.md`
+"Gallery URLs" for matching, set names and theme.
 
 ## Layout
 

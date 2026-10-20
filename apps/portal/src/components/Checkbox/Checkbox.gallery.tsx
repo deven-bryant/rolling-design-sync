@@ -32,15 +32,15 @@ export default {
       render: () => <Checkbox supportingText="Clear nodes once CI is green.">Auto-clear</Checkbox>,
     },
     {
-      figma: '_Checkbox base: Checked=False, Size=sm, Type=Radio',
+      figma: '_Checkbox base: Checked=False, Size=sm, Type=Radio', set: '_Checkbox base', variant: 'Checked=False, Size=sm, Type=Radio',
       render: () => <CheckboxBase size="sm" type="radio" />,
     },
     {
-      figma: '_Checkbox base: Checked=True, Size=sm, Type=Radio',
+      figma: '_Checkbox base: Checked=True, Size=sm, Type=Radio', set: '_Checkbox base', variant: 'Checked=True, Size=sm, Type=Radio',
       render: () => <CheckboxBase size="sm" type="radio" checked />,
     },
     {
-      figma: '_Checkbox base: Checked=False, Size=md, Type=Checkbox',
+      figma: '_Checkbox base: Checked=False, Size=md, Type=Checkbox', set: '_Checkbox base', variant: 'Checked=False, Size=md, Type=Checkbox',
       render: () => <CheckboxBase size="md" type="checkbox" />,
     },
   ]),

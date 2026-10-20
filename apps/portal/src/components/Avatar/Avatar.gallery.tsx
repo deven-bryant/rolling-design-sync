@@ -39,7 +39,7 @@ export default {
       render: () => <Avatar size="md" alt="Unknown user" placeholder />,
     },
     {
-      figma: 'Avatar label group · Size=md, Status icon=Online indicator',
+      figma: 'Avatar label group · Size=md, Status icon=Online indicator', set: 'Avatar label group', variant: 'Size=md, Status icon=Online indicator',
       render: () => <AvatarLabelGroup src={photo} status="online" label="Olivia Rhye" supportingText="olivia@untitledui.com" />,
     },
   ]),

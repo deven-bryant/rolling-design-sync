@@ -5,7 +5,7 @@ import { iconNames } from './figma';
 export default {
   component: 'Icon',
   examples: inBothThemes([
-    ...iconNames.map(name => ({ figma: name, render: () => <Icon name={name} className="text-fg-secondary" /> })),
+    ...iconNames.map(name => ({ figma: name, set: name, variant: '', render: () => <Icon name={name} className="text-fg-secondary" /> })),
     {
       figma: 'Sizes (xs · sm · md · lg)',
       render: () => (

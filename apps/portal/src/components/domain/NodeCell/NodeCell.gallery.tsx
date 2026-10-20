@@ -54,6 +54,7 @@ const bothThemes = (examples: { figma: string; render: (mode: string) => ReturnT
 
 export default {
   component: 'NodeCell',
+  figma: 'Node cell',
   examples: bothThemes([
     { figma: 'Node cell (Chevron=True)', render: () => <NodeCell {...figmaNodeCell.defaults} className="w-72" /> },
     { figma: 'Node cell (Chevron=False)', render: () => <NodeCell name="Team View" meta="FRAME · 1:95540" className="w-72" /> },
