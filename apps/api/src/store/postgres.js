@@ -41,7 +41,7 @@ const mapScreen = r => r && ({
   theme: r.theme ?? null, query: r.query ?? null, masks: r.masks ?? [], threshold: Number(r.threshold),
   referenceId: r.reference_id ?? null, referenceVersion: r.reference_version ?? null,
   level: r.level ?? 'screen', source: r.source ?? 'manual', familyKey: r.family_key ?? null, gallery: r.gallery ?? null,
-  maskNodeIds: r.mask_node_ids ?? [], nodeMapId: r.node_map_id ?? null,
+  maskNodeIds: r.mask_node_ids ?? [], nodeMapId: r.node_map_id ?? null, excluded: r.excluded === true,
   createdBy: r.created_by, updatedBy: r.updated_by, createdAt: iso(r.created_at), updatedAt: iso(r.updated_at),
 });
 const num = v => (v === null || v === undefined ? null : Number(v));
@@ -52,7 +52,9 @@ const mapCheck = r => r && ({
   builtId: r.built_id ?? null, heatmapId: r.heatmap_id ?? null, referenceId: r.reference_id ?? null, error: r.error ?? null,
   attribution: r.attribution ?? [],
 });
-const mapScopeKind = r => r && ({ fileKey: r.file_key, nodeId: r.node_id, kind: r.kind, updatedBy: r.updated_by, updatedAt: iso(r.updated_at) });
+const mapScopeChecks = r => r && ({
+  fileKey: r.file_key, nodeId: r.node_id, checks: typeof r.checks === 'boolean' ? r.checks : r.kind !== 'none', updatedBy: r.updated_by, updatedAt: iso(r.updated_at),
+});
 const mapFamily = r => r && ({ fileKey: r.file_key, familyKey: r.family_key, route: r.route, updatedBy: r.updated_by, updatedAt: iso(r.updated_at) });
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const mapEvent = r => r && ({
@@ -1187,17 +1189,24 @@ class PostgresStore {
     return mapScreen(row) || null;
   }
 
-  async setScopeKind(fileKey, nodeId, { kind, by, at }) {
+  async setScopeChecks(fileKey, nodeId, { checks, by, at }) {
     const { rows: [row] } = await this.query(
-      `insert into scope_setting (file_key, node_id, kind, updated_by, updated_at) values ($1, $2, $3, $4, $5)
-       on conflict (file_key, node_id) do update set kind = excluded.kind, updated_by = excluded.updated_by, updated_at = excluded.updated_at
-       returning *`, [fileKey, nodeId, kind, by, at]);
-    return mapScopeKind(row);
+      `insert into scope_setting (file_key, node_id, checks, updated_by, updated_at) values ($1, $2, $3, $4, $5)
+       on conflict (file_key, node_id) do update set checks = excluded.checks, updated_by = excluded.updated_by, updated_at = excluded.updated_at
+       returning *`, [fileKey, nodeId, checks, by, at]);
+    return mapScopeChecks(row);
   }
 
-  async listScopeKinds(fileKey) {
+  async listScopeChecks(fileKey) {
     const { rows } = await this.query('select * from scope_setting where file_key = $1 order by node_id collate "C"', [fileKey]);
-    return rows.map(mapScopeKind);
+    return rows.map(mapScopeChecks);
+  }
+
+  async setTargetExcluded(fileKey, nodeId, { excluded, by, at }) {
+    const { rows: [row] } = await this.query(
+      'update screen set excluded = $3, updated_by = $4, updated_at = $5 where file_key = $1 and node_id = $2 returning *',
+      [fileKey, nodeId, excluded, by, at]);
+    return mapScreen(row) || null;
   }
 
   async setFamilyRoute(fileKey, familyKey, { route, by, at }) {

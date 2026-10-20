@@ -2,19 +2,23 @@
 
 /*
  * Check targets (docs/api-v3-design.md, "Check targets"): which nodes are
- * render-checked and how. A `screens` scope makes its top-level FRAME /
- * COMPONENT / INSTANCE nodes and the variants of its top-level COMPONENT_SETs
- * screen targets; a `components` scope makes every main COMPONENT a component
- * target. Auto targets are `screen` rows with `source: auto`, kept in step by
- * `reconcileTargets` after syncs, scope-kind and settings changes. Screen
- * variants that differ only in mapped variant properties form a family that
+ * render-checked and how. Every synced scope has one switch, `checks`
+ * (default true; `scope_setting`). A checked scope makes its top-level FRAME /
+ * COMPONENT / INSTANCE nodes, the variants of its top-level COMPONENT_SETs and
+ * every main COMPONENT inside it check targets (the union, each node once).
+ * Auto targets are `screen` rows with `source: auto`, kept in step by
+ * `reconcileTargets` after syncs, scope switches and settings changes.
+ * Variants that differ only in mapped variant properties form a family that
  * shares one route.
  */
 const { fileSettings } = require('./nodeService');
+const core = require('@rolling-design-sync/core');
 const { pathNodeIds } = require('./ltree');
 
+/** Legacy scope kinds (rev9b drafts): `screens` / `components` = checked, `none` = not. */
 const SCOPE_KINDS = Object.freeze(['screens', 'components', 'none']);
-const SCREEN_NODE_TYPES = ['FRAME', 'COMPONENT', 'INSTANCE'];
+const checksOfKind = kind => kind !== 'none';
+const TOP_LEVEL_TYPES = ['FRAME', 'COMPONENT', 'INSTANCE'];
 const MAX_SIDE = 8192;
 const AUTO_ACTOR = 'auto-targets';
 
@@ -76,38 +80,50 @@ const viewportOf = node => {
 };
 
 /**
- * The auto targets the file's scopes declare, by node id (first scope wins).
+ * The scopes whose targets are detected: every synced scope (not the tokens
+ * scope) unless its switch is off.
  * @param {import('./store/types').Store} store
- * @returns {Promise<Map<string, { nodeId: string, level: 'screen' | 'component', scopeId: string, familyKey: string | null, theme: string | null, query: string | null, viewport: { width: number, height: number } }>>}
+ * @returns {Promise<string[]>}
  */
-async function detectTargets(store, fileKey, settings, kinds) {
+async function checkedScopes(store, fileKey) {
+  const off = new Set((await store.listScopeChecks(fileKey)).filter(c => !c.checks).map(c => c.nodeId));
+  return (await store.listScopes(fileKey)).map(s => s.nodeId).filter(id => !core.isTokenNodeId(id) && !off.has(id)).sort(cmp);
+}
+
+/**
+ * The auto targets of the file's checked scopes, by node id (first scope wins).
+ * `level` is deprecated: `component` for a main component found only below
+ * the top level, else `screen`.
+ * @param {import('./store/types').Store} store
+ * @param {string[]} scopeIds
+ * @returns {Promise<Map<string, { nodeId: string, level: 'screen' | 'component', scopeId: string, familyKey: string, theme: string | null, query: string | null, viewport: { width: number, height: number } }>>}
+ */
+async function detectTargets(store, fileKey, settings, scopeIds) {
   const out = new Map();
   const mappings = settings.variantMappings || {};
-  for (const k of kinds) {
-    if (k.kind === 'none') continue;
-    const root = await store.getNode(fileKey, k.nodeId);
+  for (const scopeId of scopeIds) {
+    const root = await store.getNode(fileKey, scopeId);
     if (!root || root.deletedAt) continue;
     const subtree = (await store.listNodeSubtree(fileKey, root.nodeId, { includeDeleted: false })).filter(n => !n.library);
-    /** @param {any} node @param {'screen' | 'component'} level @param {string | null} setId */
-    const add = (node, level, setId) => {
+    const byId = new Map(subtree.map(n => [n.nodeId, n]));
+    /** @param {any} node @param {'screen' | 'component'} level */
+    const add = (node, level) => {
       if (out.has(node.nodeId)) return;
-      const props = setId || level === 'component' ? variantProps(node) : {};
+      const parent = node.parentId ? byId.get(node.parentId) : null;
+      const setId = node.nodeType === 'COMPONENT' && parent && parent.nodeType === 'COMPONENT_SET' ? parent.nodeId : null;
+      const props = node.nodeType === 'COMPONENT' ? variantProps(node) : {};
       const { theme, query } = mappedRendering(props, mappings);
       out.set(node.nodeId, {
-        nodeId: node.nodeId, level, scopeId: root.nodeId, theme, query, viewport: viewportOf(node),
-        familyKey: level === 'screen' ? familyKeyOf(node, setId, props, mappings) : null,
+        nodeId: node.nodeId, level, scopeId: root.nodeId, theme, query, viewport: viewportOf(node), familyKey: familyKeyOf(node, setId, props, mappings),
       });
     };
-    if (k.kind === 'screens') {
-      for (const child of subtree.filter(n => n.parentId === root.nodeId)) {
-        if (SCREEN_NODE_TYPES.includes(child.nodeType || '')) add(child, 'screen', null);
-        else if (child.nodeType === 'COMPONENT_SET') {
-          for (const v of subtree.filter(n => n.parentId === child.nodeId && n.nodeType === 'COMPONENT')) add(v, 'screen', child.nodeId);
-        }
+    for (const child of subtree.filter(n => n.parentId === root.nodeId)) {
+      if (TOP_LEVEL_TYPES.includes(child.nodeType || '')) add(child, 'screen');
+      else if (child.nodeType === 'COMPONENT_SET') {
+        for (const v of subtree.filter(n => n.parentId === child.nodeId && n.nodeType === 'COMPONENT')) add(v, 'screen');
       }
-    } else {
-      for (const n of subtree.filter(x => x.nodeType === 'COMPONENT' && !x.isInstance)) add(n, 'component', null);
     }
+    for (const n of subtree.filter(x => x.nodeType === 'COMPONENT' && !x.isInstance)) add(n, 'component');
   }
   return out;
 }
@@ -116,10 +132,11 @@ const sameAuto = (s, d) => s.level === d.level && s.familyKey === d.familyKey &&
   && s.viewport.width === d.viewport.width && s.viewport.height === d.viewport.height;
 
 /**
- * Brings the file's auto targets in line with its scope kinds and settings:
- * creates and updates detected ones, removes the rest (with their checks and
- * images). Manual screens are never touched. Returns the removed attachment
- * rows, whose blobs the caller deletes after the transaction.
+ * Brings the file's auto targets in line with its scope switches and
+ * settings: creates and updates detected ones, removes the rest (with their
+ * checks and images). Manual screens are never touched; `excluded` survives.
+ * Returns the removed attachment rows, whose blobs the caller deletes after
+ * the transaction.
  * @param {import('./store/types').Store} store
  * @param {string} fileKey
  * @param {{ at: string }} options
@@ -130,7 +147,7 @@ async function reconcileTargets(store, fileKey, { at }) {
     const [file] = await tx.listFiles({ fileKey });
     if (!file) return;
     const settings = fileSettings(file);
-    const wanted = settings.autoTargets ? await detectTargets(tx, fileKey, settings, await tx.listScopeKinds(fileKey)) : new Map();
+    const wanted = settings.autoTargets ? await detectTargets(tx, fileKey, settings, await checkedScopes(tx, fileKey)) : new Map();
     const existing = new Map((await tx.listScreens(fileKey)).map(s => [s.nodeId, s]));
     for (const d of wanted.values()) {
       const s = existing.get(d.nodeId);
@@ -257,6 +274,6 @@ function normaliseNodeMap(raw) {
 }
 
 module.exports = {
-  SCOPE_KINDS, AUTO_ACTOR, NODE_MAP_MAX_ENTRIES, NODE_MAP_MAX_BYTES, MAX_ATTRIBUTED_PER_REGION,
+  SCOPE_KINDS, checksOfKind, checkedScopes, AUTO_ACTOR, NODE_MAP_MAX_ENTRIES, NODE_MAP_MAX_BYTES, MAX_ATTRIBUTED_PER_REGION,
   variantProps, mappedRendering, detectTargets, reconcileTargets, removeTarget, nodeMasks, attribute, commonParent, normaliseNodeMap, area,
 };

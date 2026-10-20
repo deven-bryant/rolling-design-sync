@@ -788,7 +788,7 @@ test('v3 fresh sync: the default listing is compact — changedProps, no added v
     upsert('2:1', 'TEXT', 'Body', { characters: long, fontSize: 14 }, [ROOT]),
     { ...upsert('2:2', 'INSTANCE', 'Button', { fills: [{ type: 'SOLID', color: { r: 1, g: 0, b: 0 } }] }, [ROOT]), mainComponentId: '9:1' },
   ];
-  await batch(fileKey, { fileName: 'E2E Fresh', rootNodeId: ROOT, upserts: rows });
+  await batch(fileKey, { fileName: 'E2E Fresh', rootNodeId: ROOT, checks: false, upserts: rows });
 
   const page = await list(fileKey);
   assert.deepEqual(page.nodes.map(n => n.nodeId), [ROOT, '2:1', '2:2']);
@@ -1475,6 +1475,8 @@ test('v3 render checks: a screen gets a reference, a mismatch makes a render not
   const fileKey = newFileKey();
   await seed(fileKey);
   const route = suffix => `/v3/files/${fileKey}${suffix}`;
+  // A manual screen on its own: turn the scope's automatic targets off.
+  assert.equal((await ok(call('PATCH', route(`/scopes/${ROOT}`), { body: { checks: false } }))).checks, false);
   assert.equal((await call('PUT', route('/screens/2:1'), { headers: viewer, body: { route: '/card' } })).status, 403);
   const screen = (await ok(call('PUT', route('/screens/2:1'), { body: { route: '/card', viewport: { width: 200, height: 200 } } }))).screen;
   assert.equal(screen.status, 'building', 'the card still has design changes');
@@ -1494,7 +1496,7 @@ test('v3 render checks: a screen gets a reference, a mismatch makes a render not
   assert.equal(heat.headers.get('content-type'), 'image/png');
   assert.equal(heat.headers.get('x-content-type-options'), 'nosniff');
   const noted = await node(fileKey, '2:1');
-  assert.deepEqual(noted.screen, { status: 'mismatch', stale: false, score: bad.score });
+  assert.deepEqual(noted.screen, { status: 'mismatch', stale: false, score: bad.score, excluded: false });
   const renderNote = noted.notes.find(n => n.source === 'render_check');
   assert.ok(renderNote, 'a render note on the screen root');
   assert.deepEqual(renderNote.attachments.map(a => a.kind).sort(), ['built', 'heatmap', 'reference']);
@@ -1518,7 +1520,7 @@ test('v3 render checks: a screen gets a reference, a mismatch makes a render not
   assert.ok(ERRORS_MD.includes('<a id="images-disabled"></a>'));
 });
 
-test('v3 check targets: a declared scope gets auto targets, the ready list comes back in check order, a mismatch lands on the right node', async () => {
+test('v3 check targets: checked scopes get auto targets, the ready list comes back in containment order, exclude and containing=, a mismatch lands on the right node', async () => {
   const sharp = require('sharp');
   const png = async (box = null) => {
     let img = sharp({ create: { width: 200, height: 100, channels: 3, background: { r: 255, g: 255, b: 255 } } });
@@ -1531,7 +1533,7 @@ test('v3 check targets: a declared scope gets auto targets, the ready list comes
     nodeId, nodeType, name, parentId: ancestors[ancestors.length - 1] || null, path: ancestors, attrs, contentHash: core.contentHash(attrs), ...extra,
   });
   await batch(fileKey, {
-    fileName: 'E2E Targets', rootNodeId: '1:1', scopeKind: 'screens', markImplemented: true,
+    fileName: 'E2E Targets', rootNodeId: '1:1', checks: true, markImplemented: true,
     upserts: [
       up('1:1', 'SECTION', 'Screens', { width: 1000 }),
       up('2:1', 'FRAME', 'Home', { width: 200, height: 100 }, ['1:1']),
@@ -1540,15 +1542,19 @@ test('v3 check targets: a declared scope gets auto targets, the ready list comes
     ],
   });
   await batch(fileKey, {
-    rootNodeId: '5:1', scopeKind: 'components', markImplemented: true,
+    rootNodeId: '5:1', scopeKind: 'components', markImplemented: true, // legacy kind: on
     upserts: [up('5:1', 'SECTION', 'Components', { width: 500 }), up('6:1', 'COMPONENT', 'Badge', { width: 40, height: 20 }, ['5:1'])],
   });
   const scopes = (await ok(call('GET', route('/scopes')))).scopes;
-  assert.deepEqual(Object.fromEntries(scopes.map(s => [s.nodeId, s.kind])), { '1:1': 'screens', '5:1': 'components' });
+  assert.deepEqual(Object.fromEntries(scopes.map(s => [s.nodeId, s.checks])), { '1:1': true, '5:1': true });
 
   const ready = (await ok(call('GET', route('/targets'), { query: { status: 'ready' } }))).targets;
-  assert.deepEqual(ready.map(t => [t.nodeId, t.level, t.source]), [['6:1', 'component', 'auto'], ['2:1', 'screen', 'auto']], 'components first');
+  assert.deepEqual(ready.map(t => [t.nodeId, t.source]), [['6:1', 'auto'], ['2:1', 'auto']], 'contained targets first');
   assert.deepEqual(ready[1].contains, ['6:1']);
+  const holders = (await ok(call('GET', route('/targets'), { query: { containing: '6:1' } }))).targets;
+  assert.deepEqual(holders.map(t => [t.nodeId, t.renderNotes.open]), [['6:1', 0], ['2:1', 0]]);
+  assert.equal((await ok(call('PATCH', route('/targets/6:1'), { body: { excluded: true } }))).target.excluded, true);
+  assert.deepEqual((await ok(call('GET', route('/targets'), { query: { status: 'ready' } }))).targets.map(t => t.nodeId), ['2:1'], 'excluded targets leave the ready list');
   const needed = (await ok(call('GET', route('/screens/references-needed'), { headers: plugin }))).screens;
   sameSet(needed.map(s => s.nodeId), ['2:1', '6:1']);
   const v = needed.find(s => s.nodeId === '2:1').designVersion;

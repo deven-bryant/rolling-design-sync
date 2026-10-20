@@ -136,27 +136,26 @@ rds-agent check --file-key AbC123 --list-unmapped
 
 1. Which targets: `--ready` the ones the API lists as ready
    (`targets ls --status ready`), `--all` every target (`targets ls`), both in
-   the API's check order (components, children before composites, then
-   screens); `--requested` every requested check (`checks ls --status
+   the API's check order (contained targets first), excluded targets skipped; `--requested` every requested check (`checks ls --status
    requested`); `--screen <nodeId>` requests a check of that target first
    (`checks request`), then runs it.
-2. **Waiting** (`--ready` / `--all`): after a component mismatches, the targets
-   that contain it are skipped and reported *Waiting on <component>*; a target
-   the API lists as waiting runs once its component passes in the same run.
-   *Not mapped* components never block.
-3. Where each renders:
-   - **Screens:** `base-url + route (+ query)`. A screen whose family has no
-     route is *No route* — pass `--url <full url>` to render it there; the
-     route is saved for its family (`targets set --route`) and used from then
-     on.
-   - **Components:** with the file's `gallery.storybookUrl` (or `--storybook`),
+2. **Waiting** (`--ready` / `--all`): after a target mismatches, the targets
+   that contain it are skipped and reported *Waiting on <target>*; a target
+   the API lists as waiting runs once the one it waits on passes in the same
+   run. *Not mapped* targets never block.
+3. Where each renders — gallery first, then the route, else *Not mapped*:
+   - **Gallery:** with the file's `gallery.storybookUrl` (or `--storybook`),
      the story tagged `figma:<component key>` (or `figma-node:<nodeId>`) in
      `<storybook>/index.json`, opened at `iframe.html?id=<id>&viewMode=story`
      and shot at `#storybook-root` (its `[data-rds-target]` when present);
      else `gallery.urlTemplate` filled in (`{key}`, `{nodeId}`, `{set}`,
      `{variant}`, `{prop.<Name>}`, each URL-encoded), shot at its
-     `[data-rds-target]` element (else the viewport). Neither → *Not mapped*.
+     `[data-rds-target]` element (else the viewport).
      The resolution is stored with the target (`targets set --mapped --story-id --url`).
+   - **Route:** no gallery entry → `base-url + route (+ query)`. A target
+     whose family has no route either is *Not mapped* — pass `--url <full url>`
+     to render it there; the route is saved for its family
+     (`targets set --route`) and used from then on.
    - **Theme** (file setting `themeMode`): `color-scheme` emulates
      `prefers-color-scheme` for a `dark` / `light` theme; `query` adds
      `?<themeKey>=<theme>`; `storage` sets localStorage `<themeKey>` and adds
@@ -176,8 +175,8 @@ rds-agent check --file-key AbC123 --list-unmapped
   region 10,20 300x40 (1234 px)
 2:5  waiting  Waiting on Button (1:4)
 
-TARGET  NAME         LEVEL      RESULT    DETAIL
-1:4     Button       component  passed    score 0% / limit 1%
+TARGET  NAME         RESULT    DETAIL
+1:4     Button       passed    score 0% / limit 1%
 …
 3 checks: 1 passed, 1 mismatch, 0 errors, 1 waiting
 ```
@@ -186,8 +185,8 @@ TARGET  NAME         LEVEL      RESULT    DETAIL
 |------|-------------|
 | `--file-key` | **Required.** The Figma file key. |
 | `--base-url` | **Required** (except `--list-unmapped`). Where the built app runs. |
-| `--ready` / `--all` / `--requested` / `--screen <nodeId>` / `--list-unmapped` | **One required.** What to run; `--list-unmapped` prints the component targets with no gallery entry and renders nothing. |
-| `--url <full url>` | A screen without a route renders here; saved as its family's route. |
+| `--ready` / `--all` / `--requested` / `--screen <nodeId>` / `--list-unmapped` | **One required.** What to run; `--list-unmapped` prints the targets with no gallery entry and no route, and renders nothing. |
+| `--url <full url>` | A target with no gallery entry and no route renders here; saved as its family's route. |
 | `--storybook <url>` | Storybook to resolve stories in. Default: the file's `gallery.storybookUrl`. |
 | `--storage-state <file>` | Playwright storage state (cookies, local storage) for a signed-in app. |
 | `--browser` | `chromium` (default), `firefox` or `webkit`. |
@@ -257,7 +256,7 @@ Generated from the API's OpenAPI document (API 3.0.0) — one command per `x-rds
 | [`targets ls`](#rds-agent-targets-ls) | `GET /v3/files/{fileKey}/targets` | List check targets |
 | [`targets set`](#rds-agent-targets-set) | `PATCH /v3/files/{fileKey}/targets/{nodeId}` | Change a check target |
 | [`targets checks`](#rds-agent-targets-checks) | `GET /v3/files/{fileKey}/targets/{nodeId}/checks` | Check history of a target |
-| [`scopes kind`](#rds-agent-scopes-kind) | `PATCH /v3/files/{fileKey}/scopes/{nodeId}` | Set a scope's kind |
+| [`scopes checks`](#rds-agent-scopes-checks) | `PATCH /v3/files/{fileKey}/scopes/{nodeId}` | Turn a scope's checks on or off |
 | [`summary`](#rds-agent-summary) | `GET /v3/files/{fileKey}/summary` | Summarize changes |
 | [`trends`](#rds-agent-trends) | `GET /v3/insights/trends` | Weekly trends |
 | [`work`](#rds-agent-work) | `GET /v3/files/{fileKey}/work` | List work items |
@@ -283,7 +282,7 @@ One tracked file's node counts and last sync time: a quick check of how much is 
 
 `PATCH /v3/files/{fileKey}`
 
-Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. `storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled. Render checks: `autoTargets` (default true) detects check targets from scope kinds (set_scope_kind); `variantMappings`, `themeMode` / `themeKey` and `gallery` say how targets render; `checkRetention` (default 5) results are kept per target. `gallery` and `variantMappings` are replaced whole. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
+Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: "library"` reference items. `storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled. Render checks: `autoTargets` (default true) detects check targets in checked scopes (set_scope_checks); `variantMappings`, `themeMode` / `themeKey` and `gallery` say how targets render; `checkRetention` (default 5) results are kept per target. `gallery` and `variantMappings` are replaced whole. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.
 
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
@@ -291,7 +290,7 @@ Changes a tracked file's settings; returns the file with every setting (defaults
 | `--url` | string | query `url` | A Figma link (figma.com/design/<fileKey>/…?node-id=1-2). Supplies the path parameters given as '-'; on routes with `under`, its node-id is the default `under`. |
 | `--track-library-components` | boolean | body `settings.trackLibraryComponents` | Default true. false: library (remote) components are not tracked — the plugin does not scan or upload library mains, and stored library nodes are left out of listings, summaries, counts, work-item progress and trends (not deleted; `library=include` still lists them). Instances of library components stay tracked. |
 | `--store-images` | boolean | body `settings.storeImages` | Default true. false: the API stores no images for the file — note screenshots, screen reference images and render-check results are refused with images_disabled (images already stored are kept). |
-| `--auto-targets` | boolean | body `settings.autoTargets` | Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed). |
+| `--auto-targets` | boolean | body `settings.autoTargets` | Default true. Detect check targets in every checked scope (its `checks` switch, on by default): its top-level FRAME / COMPONENT / INSTANCE nodes, each variant of a top-level COMPONENT_SET and every main COMPONENT in it. false: only screens set up with set_screen (auto targets and their checks are removed). |
 | `--variant-mappings` | object | body `settings.variantMappings` | How variant properties reach the app, by property name, e.g. `{ "Color Mode": { "as": "theme", "values": { "Light": "light", "Dark": "dark" } } }`. `as: "theme"` renders the variant in that theme; `as: "query"` adds `?<key>=<value>` (`key` defaults to the property name). Values not listed pass through as-is. Screen variants that differ only in mapped properties share one route (a family). Default {}. |
 | `--theme-mode` | color-scheme\|query\|storage | body `settings.themeMode` | How a target's theme reaches the app: `color-scheme` (default; the renderer emulates `prefers-color-scheme`), `query` (`?<themeKey>=<theme>`) or `storage` (localStorage `<themeKey>` set before the page loads). |
 | `--theme-key` | string | body `settings.themeKey` | The query parameter (`themeMode: query`) or localStorage key (`themeMode: storage`) carrying the theme. Default `theme`. |
@@ -630,25 +629,26 @@ Submits the built screenshot (PNG, base64, rendered at the screen's viewport) fo
 
 `GET /v3/files/{fileKey}/targets`
 
-Every render-check target — screens and components, set up with set_screen or detected from scope kinds (`autoTargets`) — in check order: components first, children before the composites that contain them, then screens. Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing component inside; `waiting`: a contained component's latest result is a mismatch) and `render`, everything a renderer needs (route + theme/query for screens; gallery settings + the variant's key, set, variant string and props for components; the Figma size as viewport). Run them with `rds-agent check --ready`.
+Every render-check target — set up with set_screen or detected in checked scopes (`autoTargets`: top-level frames / components / instances, the variants of top-level component sets and every main component) — in check order by containment: a target that contains other targets (nested, or as instances) comes after them, then document order. Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing target inside; `waiting`: a contained target's latest result is a mismatch; excluded targets never match a status filter) and `render`, everything a renderer needs (gallery settings + the key, set, variant string and props; the route + theme/query when set; the Figma size as viewport). `containing=<nodeId>` lists the targets that contain that node (itself included), each with `renderNotes`. Run them with `rds-agent check --ready`.
 
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
-| `--level` | screen\|component | query `level` | Only screens or only components. |
 | `--status` | building\|ready\|waiting\|requested\|passed\|mismatch\|error | query `status` | `ready`: the targets to check now. |
 | `--under` | string | query `under` | Only targets at or under this node id (e.g. a section). |
+| `--containing` | string | query `containing` | Only targets containing this node (at or above it, or placing an instance of a main component it is in); adds `renderNotes`. |
 
 ### rds-agent targets set
 
 `PATCH /v3/files/{fileKey}/targets/{nodeId}` — arguments: `<nodeId>`
 
-Changes how a check target renders. `route` on a screen sets its route — for an auto screen, the route of its whole family (variants that differ only in mapped properties); `rds-agent check --url` calls this the first time it checks a screen without one. Components take no route (they render through the gallery). `gallery` stores the CLI's gallery resolution for a component (`mapped: false` = no gallery entry: shown as not mapped, never blocks). `maskNodeIds` masks nodes via the node map; `threshold` is the max % of differing pixels. Agent tokens and agent sessions only.
+Changes a check target. `route` sets where it renders when the gallery has no entry for it — for an auto target, the route of its whole family (variants that differ only in mapped properties); `rds-agent check --url` calls this the first time it checks a target without one. `gallery` stores the CLI's gallery resolution (`mapped: false` = no gallery entry; with no route either it is Not mapped and never blocks). `excluded: true` excludes it from checks (skipped by the ready list and `--all`, never blocks; keeps its history; re-detection keeps the flag), false includes it again. `maskNodeIds` masks nodes via the node map; `threshold` is the max % of differing pixels. Agent tokens and agent sessions only.
 
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
-| `--route` | string | body `route` | Screens: the app route, starting with `/`. |
+| `--route` | string | body `route` | The app route, starting with `/`. |
+| `--excluded` | boolean | body `excluded` | true: exclude it from checks; false: include it again. |
 | `--mask-node-ids` | string,… | body `maskNodeIds` | Nodes the comparison ignores, by id (their rectangles come from the node map the plugin uploads with the reference). |
 | `--threshold` | number | body `threshold` | Max % of differing pixels that still passes (default 1). |
 | `--mapped` | boolean | body `gallery.mapped` | false: no gallery entry or story for this variant. |
@@ -666,16 +666,17 @@ A check target's render checks, latest first, each with its status, score, commi
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
 | `--limit` | integer | query `limit` | Default 100. |
 
-### rds-agent scopes kind
+### rds-agent scopes checks
 
 `PATCH /v3/files/{fileKey}/scopes/{nodeId}` — arguments: `<nodeId>`
 
-Declares what a synced scope (a section) contains, for automatic check targets: `screens` (its top-level frames / components / instances and the variants of its top-level component sets are screen targets), `components` (every main component in it is a component target) or `none` (default: no targets). The Figma plugin sends it with the sync; this changes it from the API. Targets update at once (with `autoTargets` on). Agent tokens and agent sessions only.
+The one check switch of a synced scope (a section): `checks: true` (the default) makes its top-level frames / components / instances, the variants of its top-level component sets and every main component in it check targets; false removes them (and their checks). The Figma plugin sends it with each sync (*Check this section's screens and components*); this changes it from the API or the portal. Targets update at once (with `autoTargets` on). `kind` is the deprecated rev9b form (`screens` / `components` = true, `none` = false). Agent tokens and agent sessions only.
 
 | Flag | Type | Sent as | Description |
 |------|------|---------|-------------|
 | `--file-key` | string | path `fileKey` | **Required.** The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead. |
-| `--kind` | screens\|components\|none | body `kind` | **Required.** `screens`, `components` or `none`. |
+| `--checks` | boolean | body `checks` | true: check the scope's screens and components; false: no targets. |
+| `--kind` | screens\|components\|none | body `kind` | Deprecated: send checks. `screens` / `components` = true, `none` = false. |
 
 ### rds-agent summary
 

@@ -475,7 +475,7 @@ test('every generated command sends its method and path to buildApp and succeeds
     'targets ls': ['targets', 'ls', '--file-key', FK, '--status', 'ready'],
     'targets set': ['targets', 'set', '2-1', '--file-key', FK, '--route', '/card'],
     'targets checks': ['targets', 'checks', '2-1', '--file-key', FK],
-    'scopes kind': ['scopes', 'kind', '1-1', '--file-key', FK, '--kind', 'screens'],
+    'scopes checks': ['scopes', 'checks', '1-1', '--file-key', FK, '--checks=false'],
     'files ls': ['files', 'ls'],
     'files show': ['files', 'show', '--file-key', FK],
     'files settings': ['files', 'settings', '--file-key', FK, '--track-library-components=false'],

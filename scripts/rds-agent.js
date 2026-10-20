@@ -561,20 +561,20 @@ function checkHelp() {
     '       rds-agent check --file-key <key> --list-unmapped [--base-url <url>] [--storybook <url>]',
     '',
     'Screenshots check targets of the built app with Playwright and submits them as render check results;',
-    'the API compares them with their Figma references. Components render through the gallery (the file\'s',
-    'gallery.urlTemplate, or Storybook stories tagged figma:<component key>); screens at base-url + route.',
+    'the API compares them with their Figma references. Every target renders from the gallery first (the file\'s',
+    'gallery.urlTemplate, or Storybook stories tagged figma:<component key>), else at base-url + its route, else it is Not mapped.',
     'Playwright is an optional peer dependency: npm i -D playwright && npx playwright install chromium',
     '',
     'Flags:',
     ...pad([
       ['  --file-key <string>', '(required) The Figma file key.'],
-      ['  --base-url <url>', '(required, except with --list-unmapped) Where the built app runs (e.g. http://localhost:3000); screens open at base-url + route (+ query).'],
-      ['  --ready', 'Check every target the API lists as ready, in its order (components, children first, then screens). End each pass with this.'],
-      ['  --all', 'Check every target (e.g. nightly CI, for regressions in clean nodes).'],
+      ['  --base-url <url>', '(required, except with --list-unmapped) Where the built app runs (e.g. http://localhost:3000); targets without a gallery entry open at base-url + route (+ query).'],
+      ['  --ready', 'Check every target the API lists as ready, in its order (contained targets first). End each pass with this.'],
+      ['  --all', 'Check every target not excluded (e.g. nightly CI, for regressions in clean nodes).'],
       ['  --requested', 'Run every requested check of the file.'],
       ['  --screen <nodeId>', 'Request a check of this target, then run it.'],
-      ['  --list-unmapped', 'Print the component targets with no gallery entry or story; renders nothing.'],
-      ['  --url <url>', 'The full app URL of a screen without a route; saved as its (family\'s) route.'],
+      ['  --list-unmapped', 'Print the targets with no gallery entry or story and no route; renders nothing.'],
+      ['  --url <url>', 'The full app URL of a target with no gallery entry and no route; saved as its (family\'s) route.'],
       ['  --storybook <url>', '(default: the file\'s gallery.storybookUrl) Storybook to resolve component stories in.'],
       ['  --storage-state <file>', 'Playwright storage state (cookies, local storage) for a signed-in app.'],
       ['  --browser <chromium|firefox|webkit>', '(default "chromium")'],
@@ -583,8 +583,8 @@ function checkHelp() {
       ['  --source <string>', `(default $RDS_WORKER, else "${CHECK_SOURCE}") What rendered the screenshots.`],
     ]),
     '',
-    'With --ready / --all, a target containing a component that just mismatched is skipped (Waiting on <component>);',
-    'components with no gallery entry are Not mapped and never block; a screen with no route is No route.',
+    'With --ready / --all, a target containing a target that just mismatched is skipped (Waiting on <target>);',
+    'targets with no gallery entry and no route are Not mapped and never block; excluded targets are skipped.',
     '',
     'Exit codes: 0 every check passed (or there was nothing to check), 1 a render mismatch, 2 an error.',
   ].join('\n');
@@ -737,7 +737,7 @@ function findStory(index, { key, nodeId }) {
 }
 
 /**
- * How one component target renders: `{ mapped: true, url, storyId?, selectors }` or
+ * How a target renders through the gallery: `{ mapped: true, url, storyId?, selectors }` or
  * `{ mapped: false, reason }`. Storybook (when configured) first, then the URL template.
  */
 async function resolveComponent(render, { baseUrl, storybook, storybookIndex }) {
@@ -862,7 +862,7 @@ async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cw
     }
     return indexes.get(root);
   };
-  /** Resolve a component's gallery entry and store it with the target when it changed (`listOnly`: only not-mapped ones). */
+  /** Resolve a target's gallery entry and store it with the target when it changed (`listOnly`: only not-mapped ones). */
   async function galleryOf(target, { listOnly = false } = {}) {
     const render = { nodeId: target.nodeId, ...(target.render || {}) };
     const resolved = await resolveComponent(render, { baseUrl: opts.baseUrl, storybook: opts.storybook, storybookIndex });
@@ -878,16 +878,16 @@ async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cw
   if (opts.mode === 'list-unmapped') {
     const rows = [];
     let errors = 0;
-    for (const t of await listTargets({ level: 'component' })) {
+    for (const t of (await listTargets()).filter(x => !x.excluded)) {
       try {
         const g = await galleryOf(t, { listOnly: true });
-        if (!g.mapped) rows.push([t.nodeId, t.render && t.render.set, t.render && t.render.variant, t.render && t.render.key, g.reason]);
+        if (!g.mapped && !(t.render && t.render.route) && !t.route) rows.push([t.nodeId, t.render && t.render.set, t.render && t.render.variant, t.render && t.render.key, `${g.reason}; no route`]);
       } catch (err) {
         errors++;
         stderr.write(`${t.nodeId}  error  ${asCheckError(err)}\n`);
       }
     }
-    stdout.write(rows.length ? table(['component', 'set', 'variant', 'key', 'reason'], rows) : 'every component target is mapped\n');
+    stdout.write(rows.length ? table(['target', 'set', 'variant', 'key', 'reason'], rows) : 'every target is mapped\n');
     return errors ? 2 : 0;
   }
 
@@ -896,7 +896,7 @@ async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cw
   let runsAll = false;
   if (opts.mode === 'ready' || opts.mode === 'all') {
     runsAll = true;
-    items = (await listTargets(opts.mode === 'ready' ? { status: 'ready' } : {})).map(target => ({ target }));
+    items = (await listTargets(opts.mode === 'ready' ? { status: 'ready' } : {})).filter(target => !target.excluded).map(target => ({ target }));
   } else {
     let checks;
     if (opts.screen) checks = [(await call('POST', `/v3/files/${fk}/screens/${encodeURIComponent(opts.screen)}/checks`)).check];
@@ -913,16 +913,16 @@ async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cw
   const commitRef = opts.commitRef || gitHead(cwd);
   const source = opts.source || envVar(env, 'WORKER') || CHECK_SOURCE;
   const meta = { ...(commitRef ? { commitRef } : {}), source };
-  const counts = { passed: 0, mismatch: 0, error: 0, waiting: 0, 'not mapped': 0, 'no route': 0 };
+  const counts = { passed: 0, mismatch: 0, error: 0, waiting: 0, 'not mapped': 0 };
   const summary = [];
-  /** Component targets that mismatched (or wait on one) in this run → the component to name. */
+  /** Targets that mismatched (or wait on one) in this run → the target to name. */
   const failed = new Map();
   const passed = new Set();
   /** --url: the family whose route it captured. */
   let captured = null;
   const note = (target, nodeId, status, detail) => {
     counts[status]++;
-    summary.push([nodeId, target && target.name, target ? target.level : 'screen', status, detail]);
+    summary.push([nodeId, target && target.name, status, detail]);
   };
 
   /**
@@ -931,16 +931,18 @@ async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cw
    * @returns {Promise<any>}
    */
   async function plan({ target, check }) {
-    const level = target ? target.level : 'screen';
     const render = (target && target.render) || {};
     const viewport = (check && check.viewport && check.viewport.width ? check.viewport : null) || render.viewport || (target && target.viewport);
-    if (!viewport || !viewport.width || !viewport.height) throw new Error(`${level} ${(target || check).nodeId} has no viewport`);
-    if (level === 'component') {
-      const g = await galleryOf(target);
-      if (!g.mapped) return { skip: 'not mapped', detail: g.reason };
-      return { viewport, selectors: g.selectors, ...themed(g.url, render) };
-    }
+    if (!viewport || !viewport.width || !viewport.height) throw new Error(`target ${(target || check).nodeId} has no viewport`);
     const look = { theme: render.theme ?? (check && check.theme), query: render.query ?? (check && check.query), themeMode: render.themeMode, themeKey: render.themeKey };
+    // Gallery first, then the route, else Not mapped.
+    let gallery = null;
+    const configured = !!(opts.storybook || (render.gallery && (render.gallery.urlTemplate || render.gallery.storybookUrl)));
+    const known = render.route || (target && target.route) || (check && check.route);
+    if (target && (configured || !known)) {
+      gallery = await galleryOf(target);
+      if (gallery.mapped) return { viewport, selectors: gallery.selectors, ...themed(gallery.url, render) };
+    }
     let route = render.route || (target && target.route) || (check && check.route) || null;
     const family = (target && (target.familyKey || target.nodeId)) || (check && check.nodeId);
     if (!route && opts.url && (!captured || captured.family === family)) {
@@ -952,7 +954,7 @@ async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cw
       }
       route = captured.route;
     }
-    if (!route) return { skip: 'no route', detail: 'pass --url <full url> to set its route' };
+    if (!route) return { skip: 'not mapped', detail: `${gallery ? `${gallery.reason}; ` : ''}no route (pass --url <full url> to set it)` };
     return { viewport, selectors: [], ...themed(opts.baseUrl + (route.startsWith('/') ? route : `/${route}`), look) };
   }
 
@@ -966,7 +968,7 @@ async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cw
         const listed = target.status === 'waiting' && target.waitingOn && !passed.has(target.waitingOn.nodeId) ? target.waitingOn : null;
         const on = blocker ? failed.get(blocker) : listed;
         if (on) {
-          if (target.level === 'component') failed.set(target.nodeId, on);
+          failed.set(target.nodeId, on);
           note(target, nodeId, 'waiting', `Waiting on ${targetLabel(on)}`);
           stdout.write(`${nodeId}  waiting  Waiting on ${targetLabel(on)}\n`);
           continue;
@@ -996,7 +998,7 @@ async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cw
         }
         const done = (await call('POST', `/v3/files/${fk}/checks/${encodeURIComponent(check.checkId)}/result`, { body })).check;
         const status = done.status === 'passed' || done.status === 'mismatch' ? done.status : 'error';
-        if (target && target.level === 'component') {
+        if (target) {
           if (status === 'mismatch') failed.set(target.nodeId, target);
           if (status === 'passed') passed.add(target.nodeId);
         }
@@ -1010,8 +1012,8 @@ async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cw
   } finally {
     if (browser) await browser.close();
   }
-  if (summary.length > 1 || runsAll) stdout.write(`\n${table(['target', 'name', 'level', 'result', 'detail'], summary)}`);
-  const extra = ['waiting', 'not mapped', 'no route'].filter(k => counts[k]).map(k => `, ${counts[k]} ${k}`).join('');
+  if (summary.length > 1 || runsAll) stdout.write(`\n${table(['target', 'name', 'result', 'detail'], summary)}`);
+  const extra = ['waiting', 'not mapped'].filter(k => counts[k]).map(k => `, ${counts[k]} ${k}`).join('');
   stdout.write(`${plural(items.length, 'check')}: ${counts.passed} passed, ${counts.mismatch} mismatch, ${plural(counts.error, 'error')}${extra}\n`);
   if (counts.error) return 2;
   return counts.mismatch ? 1 : 0;

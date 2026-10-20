@@ -195,7 +195,7 @@ async function batch(app, body) {
 }
 
 async function seed(app, store) {
-  await batch(app, { fileKey: FK, fileName: 'Insights', rootNodeId: '1:1', upserts: TREE_V1(), markImplemented: true });
+  await batch(app, { fileKey: FK, fileName: 'Insights', rootNodeId: '1:1', checks: false, upserts: TREE_V1(), markImplemented: true });
   await batch(app, { fileKey: FK, rootNodeId: '1:1', upserts: TREE_V2() });
   await store.updateNode(FK, '2:2', { blockedAt: new Date().toISOString(), blockedBy: 'agent-7', blockedReason: 'Copy not final' });
 }
@@ -693,8 +693,8 @@ const EXPANDED = [
 ];
 
 async function seedExpand(app) {
-  await batch(app, { fileKey: XK, fileName: 'Expand', rootNodeId: '1:1', upserts: EXPAND_SCREENS(1), markImplemented: true });
-  await batch(app, { fileKey: XK, rootNodeId: '9:0', upserts: EXPAND_COMPONENTS(1), markImplemented: true });
+  await batch(app, { fileKey: XK, fileName: 'Expand', rootNodeId: '1:1', checks: false, upserts: EXPAND_SCREENS(1), markImplemented: true });
+  await batch(app, { fileKey: XK, rootNodeId: '9:0', checks: false, upserts: EXPAND_COMPONENTS(1), markImplemented: true });
   await batch(app, { fileKey: XK, rootNodeId: '1:1', upserts: EXPAND_SCREENS(2) });
   await batch(app, { fileKey: XK, rootNodeId: '9:0', upserts: EXPAND_COMPONENTS(2) });
 }
@@ -1027,7 +1027,7 @@ const at = ms => new Date(ms).toISOString();
 async function openTrends(kind, env = {}) {
   const { store, cleanup } = await STORES[kind]();
   const app = buildApp({ store, config: loadConfig({ RDS_PLUGIN_TOKENS: PLUGIN_TOKEN, RDS_AGENT_TOKENS: AGENT_TOKEN, RDS_VIEWER_TOKENS: VIEWER_TOKEN, ...env }) });
-  await batch(app, { fileKey: FK, fileName: 'Insights', rootNodeId: '1:1', upserts: TREE_V1(), markImplemented: true });
+  await batch(app, { fileKey: FK, fileName: 'Insights', rootNodeId: '1:1', checks: false, upserts: TREE_V1(), markImplemented: true });
   await batch(app, { fileKey: TFK, fileName: 'Trends', rootNodeId: '1:1', upserts: TREE_V1(), markImplemented: true });
   app.nodeService.now = () => new Date(TRENDS_NOW);
   return { app, store, close: async () => { await app.close(); await cleanup(); } };

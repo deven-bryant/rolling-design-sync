@@ -241,32 +241,17 @@ test('the result reports check-target references and the export phase counts tar
   }
 });
 
-test('Contains shows the kind saved on the section, explains an undeclared one, and saves a change at once', () => {
+test('the check switch is on by default, shows the value saved on the section, and saves a change at once', () => {
   const u = ui();
-  assert.ok(['screens', 'components', 'none'].every(k => !u.$('kind-' + k).checked));
-  assert.match(u.$('kind-note').textContent, /^Not declared yet: asked on the first sync\./);
-  u.receive({ type: 'scope', id: '1:1', name: 'Screens', nodeType: 'SECTION', scopeKind: 'components' });
-  assert.deepEqual(['screens', 'components', 'none'].map(k => u.$('kind-' + k).checked), [false, true, false]);
-  assert.match(u.$('kind-note').textContent, /^Saved on the section and sent with each sync\./);
+  assert.equal(u.$('scope-checks').checked, true);
+  assert.ok(HTML.includes('Saved on the section and sent with each sync. Its top-level frames and main components become check targets, rendered from the app\'s gallery or their page. Uncheck to skip this section; exclude a single frame in the portal.'));
+  u.receive({ type: 'scope', id: '1:1', name: 'Screens', nodeType: 'SECTION', checks: false });
+  assert.equal(u.$('scope-checks').checked, false);
+  u.receive({ type: 'scope', id: '1:2', name: 'Other', nodeType: 'SECTION', checks: true });
+  assert.equal(u.$('scope-checks').checked, true);
   u.posted.length = 0;
-  u.$('kind-screens').checked = true; u.$('kind-screens').onchange();
-  assert.deepEqual(JSON.parse(JSON.stringify(u.posted)), [{ type: 'set-scope-kind', kind: 'screens' }]);
-});
-test('the first-sync Contains prompt pre-selects Neither; Save answers with the choice, Cancel and Escape with cancel', () => {
-  const u = ui();
-  u.receive({ type: 'busy', value: true }, { type: 'confirm-scope-kind', id: 7, name: 'Checkout', scopeId: '1:1' });
-  assert.equal(u.$('kind-prompt').hidden, false);
-  assert.equal(u.$('kind-prompt-title').textContent, 'What does “Checkout” contain?');
-  assert.deepEqual(['screens', 'components', 'none'].map(k => u.$('kind-prompt-' + k).checked), [false, false, true]);
-  assert.equal(u.$('busy').textContent, 'Paused: choose what this section contains.');
-  u.posted.length = 0;
-  u.$('kind-prompt-none').checked = false; u.$('kind-prompt-components').checked = true; u.$('kind-prompt-save').onclick();
-  assert.deepEqual(JSON.parse(JSON.stringify(u.posted)), [{ type: 'scope-kind-choice', id: 7, kind: 'components' }]);
-  assert.equal(u.$('kind-prompt').hidden, true);
-  u.receive({ type: 'confirm-scope-kind', id: 8, name: 'Checkout', scopeId: '1:1' }); u.posted.length = 0;
-  u.$('kind-prompt-cancel').onclick();
-  assert.deepEqual(JSON.parse(JSON.stringify(u.posted)), [{ type: 'scope-kind-choice', id: 8, kind: 'cancel' }]);
-  u.receive({ type: 'confirm-scope-kind', id: 9, name: 'Checkout', scopeId: '1:1' }); u.posted.length = 0;
-  u.$('kind-prompt').onkeydown({ key: 'Escape', preventDefault() {} });
-  assert.deepEqual(JSON.parse(JSON.stringify(u.posted)), [{ type: 'scope-kind-choice', id: 9, kind: 'cancel' }]);
+  u.$('scope-checks').checked = false; u.$('scope-checks').onchange();
+  assert.deepEqual(JSON.parse(JSON.stringify(u.posted)), [{ type: 'set-scope-checks', checks: false }]);
+  u.receive({ type: 'busy', value: true });
+  assert.equal(u.$('scope-checks').disabled, true);
 });

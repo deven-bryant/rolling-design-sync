@@ -240,21 +240,23 @@ a deleted variable). A collection goes only once every stored token in it is
 deleted, and an older server without the token map gets no token deletions. The result shows a **tokens** stat and *"Tokens: 48 tracked,
 1 changed, 0 new."*; the already-built prompt still counts layers only.
 
-**Contains (scope kind).** The panel shows *Contains: Screens · Components ·
-Neither* for the selected section. The choice is saved on the section as shared
-plugin data (`setSharedPluginData('rds', 'scopeKind', …)`), so it travels with
-the file and every collaborator sees it; it can be changed any time, and a
-change is saved at once. A section with no saved kind (its first sync, or the
-first sync after updating the plugin) asks once before scanning, with
-*Neither* pre-selected; Cancel uploads nothing. The kind (`screens`,
-`components` or `none`) is sent as `scopeKind` with every sync batch — with no
-layer changes, one empty batch carries a newly declared or changed kind. Screens
-makes each top-level frame / variant an automatic check target; Components
-makes each main component one. An older API that refuses `scopeKind` gets the
-batches without it and the sync shows one `[scope]` warning.
+**Check this section's screens and components.** One checkbox per section,
+checked by default. It is saved on the section as shared plugin data
+(`setSharedPluginData('rds', 'checks', 'true' | 'false')`), so it travels with
+the file and every collaborator sees it; a change is saved at once. A section
+with nothing saved shows checked; one saved by an earlier plugin build as a
+kind (`scopeKind`) migrates — `none` unchecked, `screens` / `components`
+checked — and the next sync saves it under `checks`. There is no first-sync
+prompt. The value is sent as `checks` with every sync batch — with no layer
+changes, one empty batch carries a new or changed value. Checked, the
+section's top-level frames, the variants of its top-level component sets and
+every main component in it become check targets, rendered from the app's
+gallery or their page; unchecked, it has none. A single frame is excluded in
+the portal. An older API that refuses `checks` gets the batches without it
+and the sync shows one `[scope]` warning.
 
 **Check-target references.** Check targets — screens set up for render checks
-by an agent, plus the automatic targets of declared sections — need a Figma
+by an agent, plus the automatic targets of checked sections — need a Figma
 reference image to compare the built app with. After the layer and token
 passes, every sync asks the API which targets under the synced scope need one
 (`GET …/screens/references-needed?under=<scope>` — missing, or made for an
@@ -305,7 +307,7 @@ and shared-component impact in the running app.
 | --- | --- |
 | `../../packages/core/index.js` | Pure normalization / diff / link helpers (shared with the API) |
 | `src/core.js` | Re-export of `@rolling-design-sync/core` for the plugin tests |
-| `src/plugin.js` | Figma traversal, dependency resolution, snapshot capture, hash delta + batched upload, scope kind (shared plugin data), check-target reference export with node maps, UI actions |
+| `src/plugin.js` | Figma traversal, dependency resolution, snapshot capture, hash delta + batched upload, scope check switch (shared plugin data), check-target reference export with node maps, UI actions |
 | `ui.html` | Plugin interface (Settings, scope, progress, sync result) |
 | `code.js` | Ready-to-run bundle used by Figma |
 | `build.js` | Dependency-free source bundler (`packages/core` + `src/plugin.js`) |

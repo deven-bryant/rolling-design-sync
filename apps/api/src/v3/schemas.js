@@ -109,6 +109,7 @@ const screenState = {
     status: { type: 'string', enum: SCREEN_STATUSES },
     stale: { type: 'boolean' },
     score: { type: ['number', 'null'] },
+    excluded: { type: 'boolean', description: 'Excluded from checks (update_check_target `excluded`).' },
   },
 };
 
@@ -126,7 +127,7 @@ const fileSettings = {
     },
     autoTargets: {
       type: 'boolean',
-      description: 'Default true. Detect check targets from each scope\'s kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed).',
+      description: 'Default true. Detect check targets in every checked scope (its `checks` switch, on by default): its top-level FRAME / COMPONENT / INSTANCE nodes, each variant of a top-level COMPONENT_SET and every main COMPONENT in it. false: only screens set up with set_screen (auto targets and their checks are removed).',
     },
     variantMappings: {
       type: 'object',
@@ -270,7 +271,7 @@ const scope = {
     lastSyncAt: { type: 'string' },
     lastSyncCounts: { type: 'object', additionalProperties: true },
     counts,
-    kind: { type: 'string', enum: ['screens', 'components', 'none'], description: 'What the scope contains, for automatic check targets (declared in the Figma plugin or with set_scope_kind); `none` when never declared.' },
+    checks: { type: 'boolean', description: 'The scope\'s check switch (the Figma plugin\'s *Check this section\'s screens and components*, or set_scope_checks): true (the default) = its screens and components are check targets. Always false for the tokens scope.' },
   },
 };
 

@@ -89,11 +89,12 @@ export interface Screen {
   fileKey: string; nodeId: string; route: string | null; viewport: { width: number; height: number }; theme: string | null; query: string | null;
   masks: ScreenMask[]; threshold: number; referenceId: string | null; referenceVersion: string | null;
   level: 'screen' | 'component'; source: 'manual' | 'auto'; familyKey: string | null; gallery: Record<string, any> | null;
-  maskNodeIds: string[]; nodeMapId: string | null;
+  maskNodeIds: string[]; nodeMapId: string | null; excluded: boolean;
   createdBy: string; updatedBy: string; createdAt: string; updatedAt: string;
 }
 
-export interface ScopeKind { fileKey: string; nodeId: string; kind: 'screens' | 'components' | 'none'; updatedBy: string; updatedAt: string }
+/** A scope's check switch (`scope_setting`); scopes without a row are checked. */
+export interface ScopeChecks { fileKey: string; nodeId: string; checks: boolean; updatedBy: string; updatedAt: string }
 
 export interface TargetFamily { fileKey: string; familyKey: string; route: string; updatedBy: string; updatedAt: string }
 
@@ -237,8 +238,10 @@ export interface Store {
   listScreens(fileKey: string): Promise<Screen[]>;
   deleteScreen(fileKey: string, nodeId: string): Promise<Screen | null>;
   setScreenReference(fileKey: string, nodeId: string, ref: { referenceId: string; referenceVersion: string; nodeMapId?: string | null; at: string }): Promise<Screen | null>;
-  setScopeKind(fileKey: string, nodeId: string, kind: { kind: ScopeKind['kind']; by: string; at: string }): Promise<ScopeKind>;
-  listScopeKinds(fileKey: string): Promise<ScopeKind[]>;
+  setScopeChecks(fileKey: string, nodeId: string, setting: { checks: boolean; by: string; at: string }): Promise<ScopeChecks>;
+  listScopeChecks(fileKey: string): Promise<ScopeChecks[]>;
+  /** Sets a target's `excluded` flag (re-detection never resets it); null when it is not a target. */
+  setTargetExcluded(fileKey: string, nodeId: string, flag: { excluded: boolean; by: string; at: string }): Promise<Screen | null>;
   setFamilyRoute(fileKey: string, familyKey: string, family: { route: string; by: string; at: string }): Promise<TargetFamily>;
   listFamilies(fileKey: string): Promise<TargetFamily[]>;
   insertCheck(check: { fileKey: string; nodeId: string; designVersion: string; requestedBy: string; at: string }): Promise<RenderCheck>;

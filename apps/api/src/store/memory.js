@@ -728,6 +728,7 @@ class MemoryStore {
       referenceId: prior ? prior.referenceId : null, referenceVersion: prior ? prior.referenceVersion : null,
       level: screen.level || 'screen', source: screen.source || 'manual', familyKey: screen.familyKey ?? null,
       gallery: clone(screen.gallery ?? null), maskNodeIds: clone(screen.maskNodeIds || []), nodeMapId: prior ? prior.nodeMapId : null,
+      excluded: prior ? prior.excluded === true : false,
       createdBy: prior ? prior.createdBy : screen.by, updatedBy: screen.by, createdAt: prior ? prior.createdAt : screen.at, updatedAt: screen.at,
     };
     this.screens.set(key, row);
@@ -758,14 +759,21 @@ class MemoryStore {
     return clone(s);
   }
 
-  async setScopeKind(fileKey, nodeId, { kind, by, at }) {
-    const row = { fileKey, nodeId, kind, updatedBy: by, updatedAt: at };
+  async setScopeChecks(fileKey, nodeId, { checks, by, at }) {
+    const row = { fileKey, nodeId, checks: checks === true, updatedBy: by, updatedAt: at };
     this.scopeKinds.set(`${fileKey}\u0000${nodeId}`, row);
     return clone(row);
   }
 
-  async listScopeKinds(fileKey) {
+  async listScopeChecks(fileKey) {
     return Array.from(this.scopeKinds.values()).filter(k => k.fileKey === fileKey).sort((a, b) => cmp(a.nodeId, b.nodeId)).map(clone);
+  }
+
+  async setTargetExcluded(fileKey, nodeId, { excluded, by, at }) {
+    const s = this.screens.get(`${fileKey}\u0000${nodeId}`);
+    if (!s) return null;
+    Object.assign(s, { excluded: excluded === true, updatedBy: by, updatedAt: at });
+    return clone(s);
   }
 
   async setFamilyRoute(fileKey, familyKey, { route, by, at }) {

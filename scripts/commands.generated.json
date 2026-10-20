@@ -37,7 +37,7 @@
     {
       "command": "files settings",
       "summary": "Change file settings",
-      "description": "Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: \"library\"` reference items. `storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled. Render checks: `autoTargets` (default true) detects check targets from scope kinds (set_scope_kind); `variantMappings`, `themeMode` / `themeKey` and `gallery` say how targets render; `checkRetention` (default 5) results are kept per target. `gallery` and `variantMappings` are replaced whole. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.",
+      "description": "Changes a tracked file's settings; returns the file with every setting (defaults filled in). Agent tokens and agent portal sessions only (viewers get wrong_token_class). `trackLibraryComponents` (default true): false stops tracking library (remote) components — the plugin stops scanning library mains at its next sync, and stored library nodes drop out of listings, summaries, counts, work-item progress and trends (nothing is deleted; true restores them). Instances of library components stay tracked; with `expand=instances` their mains appear as `kind: \"library\"` reference items. `storeImages` (default true): false refuses every image upload for the file (note screenshots, screen references, render-check results) with images_disabled. Render checks: `autoTargets` (default true) detects check targets in checked scopes (set_scope_checks); `variantMappings`, `themeMode` / `themeKey` and `gallery` say how targets render; `checkRetention` (default 5) results are kept per target. `gallery` and `variantMappings` are replaced whole. Unknown settings are invalid_parameter. Emits `file.settings_changed` (`data.settings`) when a setting changes; its actor is the body's `worker` when given, `portal:<label>` on a session-authenticated call, else the token label.",
       "method": "PATCH",
       "path": "/v3/files/{fileKey}",
       "flags": [
@@ -78,7 +78,7 @@
           "name": "autoTargets",
           "object": "settings",
           "type": "boolean",
-          "description": "Default true. Detect check targets from each scope's kind: a `screens` scope makes every top-level FRAME / COMPONENT / INSTANCE and each variant of a top-level COMPONENT_SET a screen target; a `components` scope makes every main COMPONENT a component target. false: only screens set up with set_screen (auto targets and their checks are removed)."
+          "description": "Default true. Detect check targets in every checked scope (its `checks` switch, on by default): its top-level FRAME / COMPONENT / INSTANCE nodes, each variant of a top-level COMPONENT_SET and every main COMPONENT in it. false: only screens set up with set_screen (auto targets and their checks are removed)."
         },
         {
           "flag": "variant-mappings",
@@ -1417,7 +1417,7 @@
     {
       "command": "targets ls",
       "summary": "List check targets",
-      "description": "Every render-check target — screens and components, set up with set_screen or detected from scope kinds (`autoTargets`) — in check order: components first, children before the composites that contain them, then screens. Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing component inside; `waiting`: a contained component's latest result is a mismatch) and `render`, everything a renderer needs (route + theme/query for screens; gallery settings + the variant's key, set, variant string and props for components; the Figma size as viewport). Run them with `rds-agent check --ready`.",
+      "description": "Every render-check target — set up with set_screen or detected in checked scopes (`autoTargets`: top-level frames / components / instances, the variants of top-level component sets and every main component) — in check order by containment: a target that contains other targets (nested, or as instances) comes after them, then document order. Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing target inside; `waiting`: a contained target's latest result is a mismatch; excluded targets never match a status filter) and `render`, everything a renderer needs (gallery settings + the key, set, variant string and props; the route + theme/query when set; the Figma size as viewport). `containing=<nodeId>` lists the targets that contain that node (itself included), each with `renderNotes`. Run them with `rds-agent check --ready`.",
       "method": "GET",
       "path": "/v3/files/{fileKey}/targets",
       "flags": [
@@ -1428,17 +1428,6 @@
           "type": "string",
           "required": true,
           "description": "The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead."
-        },
-        {
-          "flag": "level",
-          "in": "query",
-          "name": "level",
-          "type": "string",
-          "enum": [
-            "screen",
-            "component"
-          ],
-          "description": "Only screens or only components."
         },
         {
           "flag": "status",
@@ -1462,13 +1451,20 @@
           "name": "under",
           "type": "string",
           "description": "Only targets at or under this node id (e.g. a section)."
+        },
+        {
+          "flag": "containing",
+          "in": "query",
+          "name": "containing",
+          "type": "string",
+          "description": "Only targets containing this node (at or above it, or placing an instance of a main component it is in); adds `renderNotes`."
         }
       ]
     },
     {
       "command": "targets set",
       "summary": "Change a check target",
-      "description": "Changes how a check target renders. `route` on a screen sets its route — for an auto screen, the route of its whole family (variants that differ only in mapped properties); `rds-agent check --url` calls this the first time it checks a screen without one. Components take no route (they render through the gallery). `gallery` stores the CLI's gallery resolution for a component (`mapped: false` = no gallery entry: shown as not mapped, never blocks). `maskNodeIds` masks nodes via the node map; `threshold` is the max % of differing pixels. Agent tokens and agent sessions only.",
+      "description": "Changes a check target. `route` sets where it renders when the gallery has no entry for it — for an auto target, the route of its whole family (variants that differ only in mapped properties); `rds-agent check --url` calls this the first time it checks a target without one. `gallery` stores the CLI's gallery resolution (`mapped: false` = no gallery entry; with no route either it is Not mapped and never blocks). `excluded: true` excludes it from checks (skipped by the ready list and `--all`, never blocks; keeps its history; re-detection keeps the flag), false includes it again. `maskNodeIds` masks nodes via the node map; `threshold` is the max % of differing pixels. Agent tokens and agent sessions only.",
       "method": "PATCH",
       "path": "/v3/files/{fileKey}/targets/{nodeId}",
       "positionals": [
@@ -1491,7 +1487,14 @@
           "in": "body",
           "name": "route",
           "type": "string",
-          "description": "Screens: the app route, starting with `/`."
+          "description": "The app route, starting with `/`."
+        },
+        {
+          "flag": "excluded",
+          "in": "body",
+          "name": "excluded",
+          "type": "boolean",
+          "description": "true: exclude it from checks; false: include it again."
         },
         {
           "flag": "mask-node-ids",
@@ -1570,9 +1573,9 @@
       ]
     },
     {
-      "command": "scopes kind",
-      "summary": "Set a scope's kind",
-      "description": "Declares what a synced scope (a section) contains, for automatic check targets: `screens` (its top-level frames / components / instances and the variants of its top-level component sets are screen targets), `components` (every main component in it is a component target) or `none` (default: no targets). The Figma plugin sends it with the sync; this changes it from the API. Targets update at once (with `autoTargets` on). Agent tokens and agent sessions only.",
+      "command": "scopes checks",
+      "summary": "Turn a scope's checks on or off",
+      "description": "The one check switch of a synced scope (a section): `checks: true` (the default) makes its top-level frames / components / instances, the variants of its top-level component sets and every main component in it check targets; false removes them (and their checks). The Figma plugin sends it with each sync (*Check this section's screens and components*); this changes it from the API or the portal. Targets update at once (with `autoTargets` on). `kind` is the deprecated rev9b form (`screens` / `components` = true, `none` = false). Agent tokens and agent sessions only.",
       "method": "PATCH",
       "path": "/v3/files/{fileKey}/scopes/{nodeId}",
       "positionals": [
@@ -1591,6 +1594,13 @@
           "description": "The Figma file key, e.g. `AbCdEf123456` from figma.com/design/<fileKey>/… — not a URL. Pass '-' to take it from `url` instead."
         },
         {
+          "flag": "checks",
+          "in": "body",
+          "name": "checks",
+          "type": "boolean",
+          "description": "true: check the scope's screens and components; false: no targets."
+        },
+        {
           "flag": "kind",
           "in": "body",
           "name": "kind",
@@ -1600,8 +1610,7 @@
             "components",
             "none"
           ],
-          "required": true,
-          "description": "`screens`, `components` or `none`."
+          "description": "Deprecated: send checks. `screens` / `components` = true, `none` = false."
         }
       ],
       "body": true

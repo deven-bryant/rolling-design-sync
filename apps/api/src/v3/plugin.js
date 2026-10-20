@@ -5,13 +5,14 @@
  * hashes, sync and exists over NodeSyncService, on v3 addressing, plugin
  * tokens only. No `x-rds-mcp` / `x-rds-cli` annotations: agents never see these routes.
  */
+const core = require('@rolling-design-sync/core');
 const { bearer, roleOf, PLUGIN, AGENT, VIEWER } = require('../auth');
 const { HttpError } = require('../errors');
 const { EXISTS_MAX_IDS } = require('../nodeService');
 const { problem } = require('./problem');
 const { rejectUnknownKeys } = require('./actions');
 const { deleteBlobs } = require('./attachments');
-const { SCOPE_KINDS, reconcileTargets } = require('../checkTargets');
+const { SCOPE_KINDS, checksOfKind, reconcileTargets } = require('../checkTargets');
 const address = require('./address');
 const schemas = require('./schemas');
 
@@ -91,7 +92,8 @@ const sync = {
       fileKey: { type: 'string', description: 'Optional; must equal the path\'s file key when sent.' },
       fileName: nullable('string', { description: 'The Figma file\'s name.' }),
       rootNodeId: nullable('string', { description: 'The synced scope root (1:2 or 1-2).' }),
-      scopeKind: { type: 'string', enum: SCOPE_KINDS, description: 'What the scope contains, as declared in Figma (needs `rootNodeId`): `screens`, `components` or `none`. Stored for the scope and used for automatic check targets; omitted = unchanged (older plugins send nothing; undeclared scopes are `none`).' },
+      checks: { type: 'boolean', description: 'The scope\'s check switch, saved on the section in Figma (needs `rootNodeId`): true checks its top-level frames / components / instances, the variants of its top-level component sets and every main component in it; false = no check targets. Stored for the scope; omitted = unchanged (older plugins send nothing; scopes never set are checked).' },
+      scopeKind: { type: 'string', enum: SCOPE_KINDS, deprecated: true, description: 'Deprecated: send checks. `screens` / `components` = true, `none` = false (needs `rootNodeId`).' },
       markImplemented: { type: 'boolean', default: false, description: 'First-scan baseline: insert never-seen nodes as implemented.' },
       upserts: { type: 'array', items: upsert, default: [] },
       deletedNodeIds: { ...nodeIds('Nodes that vanished from the scope; tombstoned.'), default: [] },
@@ -218,9 +220,10 @@ function registerPluginRoutes(app, { config, nodes, blobs = null }) {
     const { fileKey } = fileOf(request);
     const body = request.body || {};
     const rootNodeId = typeof body.rootNodeId === 'string' ? address.normalizeNodeId(body.rootNodeId) : body.rootNodeId;
-    const { scopeKind, ...batch } = /** @type {any} */ (body);
-    if (scopeKind !== undefined && !rootNodeId) {
-      throw problem('invalid_body', 'scopeKind needs rootNodeId: it is stored for the synced scope.', { hint: 'Send rootNodeId with scopeKind, or drop scopeKind.' });
+    const { scopeKind, checks: sentChecks, ...batch } = /** @type {any} */ (body);
+    const checks = sentChecks !== undefined ? sentChecks : scopeKind !== undefined ? checksOfKind(scopeKind) : undefined;
+    if (checks !== undefined && !rootNodeId) {
+      throw problem('invalid_body', `${sentChecks !== undefined ? 'checks' : 'scopeKind'} needs rootNodeId: it is stored for the synced scope.`, { hint: 'Send rootNodeId with checks, or drop checks.' });
     }
     const result = await service(() => nodes.batchUpsert({
       ...batch,
@@ -231,11 +234,11 @@ function registerPluginRoutes(app, { config, nodes, blobs = null }) {
     }));
     if (rootNodeId) {
       const at = nodes.now().toISOString();
-      const kinds = await nodes.store.listScopeKinds(fileKey);
-      if (scopeKind !== undefined && !kinds.some(k => k.nodeId === rootNodeId && k.kind === scopeKind)) {
-        await nodes.store.setScopeKind(fileKey, rootNodeId, { kind: scopeKind, by: 'plugin', at });
+      const stored = await nodes.store.listScopeChecks(fileKey);
+      if (checks !== undefined && !stored.some(k => k.nodeId === rootNodeId && k.checks === checks)) {
+        await nodes.store.setScopeChecks(fileKey, rootNodeId, { checks, by: 'plugin', at });
       }
-      if (scopeKind !== undefined || kinds.length) {
+      if (!core.isTokenNodeId(rootNodeId)) {
         const removed = await reconcileTargets(nodes.store, fileKey, { at });
         if (blobs) await deleteBlobs(blobs, removed, request.log);
       }

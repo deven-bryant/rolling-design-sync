@@ -24,6 +24,7 @@ const rejectUnknownKeys = (...args) => require('./actions').rejectUnknownKeys(..
 const { attachmentOut, assertImagesEnabled, prepareImage, putImage, deleteBlobs } = require('./attachments');
 const { fileSettings } = require('../nodeService');
 const targets = require('../checkTargets');
+const { pathNodeIds } = require('../ltree');
 
 const SCREEN_TYPES = ['FRAME', 'COMPONENT'];
 /** Checks kept per target when the file sets no `checkRetention`. */
@@ -82,8 +83,9 @@ const screen = {
     stale: { type: 'boolean', description: 'The last result is for an older design version.' },
     score: nullable('number'),
     lastCheck,
-    level: { type: 'string', enum: TARGET_LEVELS, description: '`screen` (rendered at a route) or `component` (rendered through the gallery).' },
-    source: { type: 'string', enum: ['manual', 'auto'], description: '`manual`: set up with set_screen; `auto`: detected from its scope\'s kind.' },
+    level: { type: 'string', enum: TARGET_LEVELS, deprecated: true, description: 'Deprecated (targets have no levels; every target renders from the gallery first, then its route). `component` for a main component below its scope\'s top level, else `screen`.' },
+    source: { type: 'string', enum: ['manual', 'auto'], description: '`manual`: set up with set_screen; `auto`: detected in a checked scope.' },
+    excluded: { type: 'boolean', description: 'Excluded from checks (update_check_target `excluded`): skipped by the ready list and `rds-agent check --all`, never blocks other targets; keeps its history.' },
     familyKey: nullable('string', { description: 'Screen variants that differ only in mapped variant properties share this key and their route.' }),
     maskNodeIds: { type: 'array', items: { type: 'string' }, description: 'Nodes masked out of the comparison (their node-map rectangles).' },
     updatedBy: { type: 'string' },
@@ -203,14 +205,14 @@ const submitResult = {
 };
 const referencesNeeded = {
   summary: 'Targets needing a reference (plugin)',
-  description: 'Check targets under `under` — set-up screens and, with `autoTargets`, the screen and component targets detected from scope kinds — whose reference image is missing or for an older design version: export each at 1x and upload it with its node map. Plugin tokens only.',
+  description: 'Check targets under `under` — set-up screens and, with `autoTargets`, the targets detected in checked scopes — whose reference image is missing or for an older design version: export each at 1x and upload it with its node map. Plugin tokens only.',
   tags: ['plugin'], security: [{ pluginToken: [] }],
   params: { type: 'object', required: ['fileKey'], properties: { fileKey: fileKeyParam } },
   querystring: { type: 'object', properties: { under: underQuery } },
   response: {
     200: {
       type: 'object',
-      properties: { screens: { type: 'array', items: { type: 'object', properties: { nodeId: { type: 'string' }, designVersion: { type: 'string' }, level: { type: 'string', enum: TARGET_LEVELS } } } } },
+      properties: { screens: { type: 'array', items: { type: 'object', properties: { nodeId: { type: 'string' }, designVersion: { type: 'string' }, level: { type: 'string', enum: TARGET_LEVELS, deprecated: true } } } } },
     },
     ...errors(),
   },
@@ -252,8 +254,9 @@ const target = {
     type: nullable('string'),
     level: screen.properties.level,
     source: screen.properties.source,
+    excluded: screen.properties.excluded,
     familyKey: screen.properties.familyKey,
-    route: nullable('string', { description: 'Screens: the app route (an auto screen takes its family\'s; null until set_target_route or `rds-agent check --url` sets it). Components: null.' }),
+    route: nullable('string', { description: 'The app route it renders at when the gallery has no entry for it (an auto target takes its family\'s; null until update_check_target or `rds-agent check --url` sets it).' }),
     theme: nullable('string', { description: 'From a mapped variant property (`as: theme`) or set_screen.' }),
     query: nullable('string', { description: 'Query string (no leading `?`) from mapped variant properties or set_screen.' }),
     viewport: screen.properties.viewport,
@@ -266,19 +269,26 @@ const target = {
     nodeMap: nullable('object', { description: 'The node map uploaded with the reference (JSON attachment).', properties: schemas.attachment.properties }),
     status: {
       type: 'string', enum: TARGET_STATUSES,
-      description: 'building: nodes under it are dirty; ready: built and no result for its current design (check it); waiting: would be ready, but a component it contains last failed (`waitingOn`); requested; passed; mismatch; error.',
+      description: 'building: nodes under it are dirty; ready: built and no result for its current design (check it); waiting: would be ready, but a target it contains last failed (`waitingOn`); requested; passed; mismatch; error. Excluded targets keep their status but never match a `status` filter.',
     },
     stale: screen.properties.stale,
     score: nullable('number'),
-    waitingOn: { ...targetRef, description: 'status waiting: the contained component target whose latest result is a mismatch.' },
-    notMapped: { type: 'boolean', description: 'Component targets the CLI found no gallery entry for (`gallery.mapped: false`); they never block other targets.' },
-    contains: { type: 'array', items: { type: 'string' }, description: 'Component targets inside this one (nested, or placed as instances).' },
+    waitingOn: { ...targetRef, description: 'status waiting: the contained target whose latest result is a mismatch.' },
+    notMapped: { type: 'boolean', description: 'No gallery entry (the CLI stored `gallery.mapped: false`) and no route: shown as Not mapped, never blocks other targets.' },
+    contains: { type: 'array', items: { type: 'string' }, description: 'Other targets inside this one (nested, or placed as instances); it is checked after them.' },
     lastCheck,
     render: {
       type: 'object', additionalProperties: true,
-      description: 'What a renderer needs. Screens: `route`, `theme`, `query`, `themeMode`, `themeKey`, `viewport`. Components: `gallery` ({ urlTemplate, storybookUrl } from file settings), `key` (component key), `nodeId`, `set` (set or component name), `variant` (Figma variant string, e.g. `Size=sm, State=Hover`), `props`, `theme`, `query`, `themeMode`, `themeKey`, `viewport` (the Figma size), `cache` (the stored gallery resolution).',
+      description: 'What a renderer needs — gallery first, then the route: `gallery` ({ urlTemplate, storybookUrl } from file settings), `key` (component key; null for frames), `nodeId`, `set` (set or node name), `variant` (Figma variant string, e.g. `Size=sm, State=Hover`), `props`, `cache` (the stored gallery resolution), `route` (null when not set), `theme`, `query`, `themeMode`, `themeKey`, `viewport` (the Figma size).',
     },
-    gallery: nullable('object', { additionalProperties: true, description: 'Components: the gallery resolution the CLI stored with update_check_target (e.g. `{ "mapped": true, "storyId": "…" }`).' }),
+    gallery: nullable('object', { additionalProperties: true, description: 'The gallery resolution the CLI stored with update_check_target (e.g. `{ "mapped": true, "storyId": "…" }`).' }),
+    renderNotes: {
+      type: 'object', description: 'With `containing` only: the open render-check notes in the target (on it or any node under it).',
+      properties: {
+        open: { type: 'integer' },
+        latest: nullable('object', { properties: { noteId: { type: 'string' }, nodeId: { type: 'string' }, body: { type: 'string' }, createdAt: { type: 'string' } } }),
+      },
+    },
     updatedBy: { type: 'string' },
     updatedAt: { type: 'string' },
   },
@@ -286,9 +296,9 @@ const target = {
 const listTargets = {
   summary: 'List check targets',
   description: [
-    'Every render-check target — screens and components, set up with set_screen or detected from scope kinds (`autoTargets`) — in check order: components first, children before the composites that contain them, then screens.',
-    'Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing component inside; `waiting`: a contained component\'s latest result is a mismatch) and `render`, everything a renderer needs (route + theme/query for screens; gallery settings + the variant\'s key, set, variant string and props for components; the Figma size as viewport).',
-    'Run them with `rds-agent check --ready`.',
+    'Every render-check target — set up with set_screen or detected in checked scopes (`autoTargets`: top-level frames / components / instances, the variants of top-level component sets and every main component) — in check order by containment: a target that contains other targets (nested, or as instances) comes after them, then document order.',
+    'Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing target inside; `waiting`: a contained target\'s latest result is a mismatch; excluded targets never match a status filter) and `render`, everything a renderer needs (gallery settings + the key, set, variant string and props; the route + theme/query when set; the Figma size as viewport).',
+    '`containing=<nodeId>` lists the targets that contain that node (itself included), each with `renderNotes`. Run them with `rds-agent check --ready`.',
   ].join(' '),
   tags, security,
   ...agentOp('list_check_targets', 'targets ls'),
@@ -296,9 +306,9 @@ const listTargets = {
   querystring: {
     type: 'object',
     properties: {
-      level: { type: 'string', enum: TARGET_LEVELS, description: 'Only screens or only components.' },
       status: { type: 'string', enum: TARGET_STATUSES, description: '`ready`: the targets to check now.' },
       under: { type: 'string', description: 'Only targets at or under this node id (e.g. a section).' },
+      containing: { type: 'string', description: 'Only targets containing this node (at or above it, or placing an instance of a main component it is in); adds `renderNotes`.' },
     },
   },
   response: { 200: { type: 'object', properties: { fileKey: { type: 'string' }, targets: { type: 'array', items: target } } }, ...errors() },
@@ -306,8 +316,8 @@ const listTargets = {
 const updateTarget = {
   summary: 'Change a check target',
   description: [
-    'Changes how a check target renders. `route` on a screen sets its route — for an auto screen, the route of its whole family (variants that differ only in mapped properties); `rds-agent check --url` calls this the first time it checks a screen without one. Components take no route (they render through the gallery).',
-    '`gallery` stores the CLI\'s gallery resolution for a component (`mapped: false` = no gallery entry: shown as not mapped, never blocks). `maskNodeIds` masks nodes via the node map; `threshold` is the max % of differing pixels. Agent tokens and agent sessions only.',
+    'Changes a check target. `route` sets where it renders when the gallery has no entry for it — for an auto target, the route of its whole family (variants that differ only in mapped properties); `rds-agent check --url` calls this the first time it checks a target without one.',
+    '`gallery` stores the CLI\'s gallery resolution (`mapped: false` = no gallery entry; with no route either it is Not mapped and never blocks). `excluded: true` excludes it from checks (skipped by the ready list and `--all`, never blocks; keeps its history; re-detection keeps the flag), false includes it again. `maskNodeIds` masks nodes via the node map; `threshold` is the max % of differing pixels. Agent tokens and agent sessions only.',
   ].join(' '),
   tags, security,
   ...agentOp('update_check_target', 'targets set'),
@@ -315,11 +325,12 @@ const updateTarget = {
   body: {
     type: 'object',
     properties: {
-      route: { type: 'string', minLength: 1, maxLength: 2000, description: 'Screens: the app route, starting with `/`.' },
+      route: { type: 'string', minLength: 1, maxLength: 2000, description: 'The app route, starting with `/`.' },
+      excluded: { type: 'boolean', description: 'true: exclude it from checks; false: include it again.' },
       maskNodeIds: putScreen.body.properties.maskNodeIds,
       threshold: putScreen.body.properties.threshold,
       gallery: {
-        type: 'object', additionalProperties: false, description: 'Components: the gallery resolution (replaces the stored one).',
+        type: 'object', additionalProperties: false, description: 'The gallery resolution (replaces the stored one).',
         properties: {
           mapped: { type: 'boolean', description: 'false: no gallery entry or story for this variant.' },
           storyId: nullable('string', { maxLength: 500, description: 'The Storybook story id it resolved to.' }),
@@ -339,18 +350,24 @@ const targetChecks = {
   querystring: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 500, description: 'Default 100.' } } },
   response: { 200: { type: 'object', properties: { fileKey: { type: 'string' }, nodeId: { type: 'string' }, checks: { type: 'array', items: check } } }, ...errors() },
 };
-const setScopeKind = {
-  summary: 'Set a scope\'s kind',
-  description: 'Declares what a synced scope (a section) contains, for automatic check targets: `screens` (its top-level frames / components / instances and the variants of its top-level component sets are screen targets), `components` (every main component in it is a component target) or `none` (default: no targets). The Figma plugin sends it with the sync; this changes it from the API. Targets update at once (with `autoTargets` on). Agent tokens and agent sessions only.',
+const setScopeChecks = {
+  summary: 'Turn a scope\'s checks on or off',
+  description: 'The one check switch of a synced scope (a section): `checks: true` (the default) makes its top-level frames / components / instances, the variants of its top-level component sets and every main component in it check targets; false removes them (and their checks). The Figma plugin sends it with each sync (*Check this section\'s screens and components*); this changes it from the API or the portal. Targets update at once (with `autoTargets` on). `kind` is the deprecated rev9b form (`screens` / `components` = true, `none` = false). Agent tokens and agent sessions only.',
   tags, security,
-  ...agentOp('set_scope_kind', 'scopes kind'),
+  ...agentOp('set_scope_checks', 'scopes checks'),
   params: screenParams,
-  body: { type: 'object', required: ['kind'], properties: { kind: { type: 'string', enum: targets.SCOPE_KINDS, description: '`screens`, `components` or `none`.' } } },
+  body: {
+    type: 'object',
+    properties: {
+      checks: { type: 'boolean', description: 'true: check the scope\'s screens and components; false: no targets.' },
+      kind: { type: 'string', enum: targets.SCOPE_KINDS, deprecated: true, description: 'Deprecated: send checks. `screens` / `components` = true, `none` = false.' },
+    },
+  },
   response: {
     200: {
       type: 'object',
       properties: {
-        fileKey: { type: 'string' }, nodeId: { type: 'string' }, kind: { type: 'string', enum: targets.SCOPE_KINDS },
+        fileKey: { type: 'string' }, nodeId: { type: 'string' }, checks: { type: 'boolean' },
         targets: { type: 'integer', description: 'Auto targets now detected in the scope.' },
       },
     },
@@ -400,7 +417,7 @@ async function withScreens(store, fileKey, rows) {
   const latest = new Map((await store.latestChecks(fileKey, hit.map(n => n.nodeId))).map(c => [c.nodeId, c]));
   for (const n of hit) {
     const st = await screenState(store, /** @type {any} */ (screens.get(n.nodeId)), latest.get(n.nodeId) || null);
-    n.screen = { status: st.status, stale: st.stale, score: st.score };
+    n.screen = { status: st.status, stale: st.stale, score: st.score, excluded: screens.get(n.nodeId).excluded === true };
   }
   return rows;
 }
@@ -414,7 +431,7 @@ const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
  * @param {Map<string, import('../store/types').TargetFamily> | null} [families]
  */
 async function routeOf(store, s, families = null) {
-  if (!s || s.level === 'component') return null;
+  if (!s) return null;
   if (s.source === 'manual') return s.route;
   const fam = families || new Map((await store.listFamilies(s.fileKey)).map(f => [f.familyKey, f]));
   const f = fam.get(s.familyKey || s.nodeId);
@@ -423,7 +440,7 @@ async function routeOf(store, s, families = null) {
 
 /**
  * Every target of the file with its computed state, containment, waiting
- * status and check order (components by containment depth, then screens).
+ * status and check order (contained targets first, then document order).
  * @param {import('../store/types').Store} store
  * @param {string} fileKey
  */
@@ -433,35 +450,34 @@ async function evaluateTargets(store, fileKey) {
   const all = await store.listScreens(fileKey);
   const latest = new Map((await store.latestChecks(fileKey, all.map(s => s.nodeId))).map(c => [c.nodeId, c]));
   const families = new Map((await store.listFamilies(fileKey)).map(f => [f.familyKey, f]));
-  const components = all.filter(s => s.level === 'component');
   const info = new Map();
   for (const s of all) {
     const subtree = await store.listNodeSubtree(fileKey, s.nodeId, { includeDeleted: false });
     const ids = new Set(subtree.map(n => n.nodeId));
     const mains = new Set(subtree.filter(n => n.isInstance && n.mainComponentId).map(n => n.mainComponentId));
-    const contains = components.filter(c => c.nodeId !== s.nodeId && (ids.has(c.nodeId) || mains.has(c.nodeId))).map(c => c.nodeId);
+    const contains = all.filter(c => c.nodeId !== s.nodeId && (ids.has(c.nodeId) || mains.has(c.nodeId))).map(c => c.nodeId);
     const root = subtree.find(n => n.nodeId === s.nodeId) || null;
     const last = latest.get(s.nodeId) || null;
-    info.set(s.nodeId, { s, root, ids, contains, last, st: await screenState(store, s, last) });
+    info.set(s.nodeId, { s, root, ids, mains, contains, last, st: await screenState(store, s, last), route: await routeOf(store, s, families) });
   }
-  const notMapped = s => s.level === 'component' && !!s.gallery && s.gallery.mapped === false;
+  const notMapped = i => !!i.s.gallery && i.s.gallery.mapped === false && !i.route;
   const depth = new Map();
   const depthOf = (id, seen = new Set()) => {
     if (depth.has(id)) return depth.get(id);
     if (seen.has(id)) return 0;
     seen.add(id);
     const kids = info.get(id).contains;
-    const d = kids.length ? 1 + Math.max(...kids.map(k => depthOf(k, seen))) : 0;
+    const d = kids.length ? 1 + Math.max(...kids.map(k => depthOf(k, new Set(seen)))) : 0;
     depth.set(id, d);
     return d;
   };
-  /** The first failing component inside `id`, searched through nested components. */
-  const blockerOf = (id, seen = new Set()) => {
+  /** The first failing target inside `id`, searched through nested targets; excluded and not-mapped ones never block. */
+  const blockerOf = (id, seen = new Set([id])) => {
     for (const k of info.get(id).contains) {
       if (seen.has(k)) continue;
       seen.add(k);
       const c = info.get(k);
-      if (notMapped(c.s)) continue;
+      if (notMapped(c) || c.s.excluded) continue;
       if (c.last && c.last.status === 'mismatch') return c;
       const deeper = blockerOf(k, seen);
       if (deeper) return deeper;
@@ -470,34 +486,50 @@ async function evaluateTargets(store, fileKey) {
   };
   for (const [id, i] of info) {
     i.depth = depthOf(id);
-    i.notMapped = notMapped(i.s);
+    i.notMapped = notMapped(i);
+    i.excluded = i.s.excluded === true;
     i.status = i.st.status;
     i.waitingOn = null;
     if (i.status === 'ready') {
       const b = blockerOf(id);
       if (b) { i.status = 'waiting'; i.waitingOn = { nodeId: b.s.nodeId, name: b.root ? b.root.name ?? null : null }; }
     }
-    i.route = await routeOf(store, i.s, families);
   }
-  const order = Array.from(info.values()).sort((a, b) => (a.s.level === b.s.level ? 0 : a.s.level === 'component' ? -1 : 1)
-    || (a.s.level === 'component' ? a.depth - b.depth : 0)
+  const order = Array.from(info.values()).sort((a, b) => a.depth - b.depth
     || cmp((a.root && a.root.orderKey) || '', (b.root && b.root.orderKey) || '') || cmp(a.s.nodeId, b.s.nodeId));
   return { settings, order, info };
 }
 
-/** What a renderer needs for target `i` (an evaluateTargets entry). */
+/**
+ * The targets containing `node` (itself included): at or above it, placing an
+ * instance of a main component it is in, or containing such a target.
+ * @param {Map<string, any>} info evaluateTargets().info
+ * @param {any} node a stored node
+ * @returns {Set<string>}
+ */
+function containingTargets(info, node) {
+  const above = new Set([...pathNodeIds(node.path), node.nodeId]);
+  const out = new Set();
+  for (const [id, i] of info) if (i.ids.has(node.nodeId) || [...i.mains].some(m => above.has(m))) out.add(id);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [id, i] of info) if (!out.has(id) && i.contains.some(k => out.has(k))) { out.add(id); grew = true; }
+  }
+  return out;
+}
+
+/** What a renderer needs for target `i` (an evaluateTargets entry): gallery info first, then the route. */
 async function renderInfo(store, i, settings) {
   const { s, root } = i;
-  const common = { theme: s.theme, query: s.query, themeMode: settings.themeMode, themeKey: settings.themeKey, viewport: s.viewport };
-  if (s.level === 'screen') return { route: i.route, ...common };
   const attrs = (root && root.attrs) || {};
   const ref = attrs.componentReference && typeof attrs.componentReference === 'object' ? attrs.componentReference : {};
   const parent = root && root.parentId ? await store.getNode(s.fileKey, root.parentId) : null;
-  const inSet = !!parent && parent.nodeType === 'COMPONENT_SET';
+  const inSet = !!parent && parent.nodeType === 'COMPONENT_SET' && !!root && root.nodeType === 'COMPONENT';
   return {
     gallery: settings.gallery, key: typeof ref.key === 'string' ? ref.key : null, nodeId: s.nodeId,
     set: (ref.set && ref.set.name) || (inSet ? parent.name : null) || (root ? root.name : null),
-    variant: inSet && root ? root.name : '', props: targets.variantProps(root || {}), ...common, cache: s.gallery,
+    variant: inSet && root ? root.name : '', props: root && root.nodeType === 'COMPONENT' ? targets.variantProps(root) : {}, cache: s.gallery,
+    route: i.route, theme: s.theme, query: s.query, themeMode: settings.themeMode, themeKey: settings.themeKey, viewport: s.viewport,
   };
 }
 
@@ -563,7 +595,7 @@ function registerScreenRoutes(app, { store, blobs, now, bus = null, config = {} 
       nodeId: s.nodeId, name: node ? node.name ?? null : null, route: await routeOf(store, s), viewport: s.viewport, theme: s.theme, query: s.query,
       masks: s.masks, threshold: s.threshold, designVersion: st.designVersion, referenceVersion: s.referenceVersion, reference: ref,
       status: st.status, stale: st.stale, score: st.score, lastCheck: lastCheckOut(last),
-      level: s.level, source: s.source, familyKey: s.familyKey, maskNodeIds: s.maskNodeIds, updatedBy: s.updatedBy, updatedAt: s.updatedAt,
+      level: s.level, source: s.source, excluded: s.excluded === true, familyKey: s.familyKey, maskNodeIds: s.maskNodeIds, updatedBy: s.updatedBy, updatedAt: s.updatedAt,
     };
   }
 
@@ -813,24 +845,36 @@ function registerScreenRoutes(app, { store, blobs, now, bus = null, config = {} 
     const images = await attachments(s.fileKey, [s.referenceId, s.nodeMapId]);
     return {
       nodeId: s.nodeId, name: i.root ? i.root.name ?? null : null, type: i.root ? i.root.nodeType ?? null : null, level: s.level, source: s.source,
-      familyKey: s.familyKey, route: i.route, theme: s.theme, query: s.query, viewport: s.viewport, masks: s.masks, maskNodeIds: s.maskNodeIds,
+      excluded: i.excluded, familyKey: s.familyKey, route: i.route, theme: s.theme, query: s.query, viewport: s.viewport, masks: s.masks, maskNodeIds: s.maskNodeIds,
       threshold: s.threshold, designVersion: st.designVersion, referenceVersion: s.referenceVersion, reference: images.get(s.referenceId) || null,
       nodeMap: images.get(s.nodeMapId) || null, status: i.status, stale: st.stale, score: st.score, waitingOn: i.waitingOn, notMapped: i.notMapped,
       contains: i.contains, lastCheck: lastCheckOut(i.last), render: await renderInfo(store, i, settings), gallery: s.gallery,
-      updatedBy: s.updatedBy, updatedAt: s.updatedAt,
+      updatedBy: s.updatedBy, updatedAt: s.updatedAt, ...(i.renderNotes ? { renderNotes: i.renderNotes } : {}),
     };
+  }
+
+  /** Open render-check notes in each of `list`'s targets: `{ open, latest }`. */
+  async function renderNotesOf(fileKey, list) {
+    const ids = [...new Set(list.flatMap(i => [...i.ids]))];
+    const open = (await store.listNotes(fileKey, ids, { status: 'open' })).filter(n => n.source === 'render_check')
+      .sort((a, b) => cmp(b.createdAt, a.createdAt) || cmp(b.noteId, a.noteId));
+    for (const i of list) {
+      const mine = open.filter(n => i.ids.has(n.nodeId));
+      const l = mine[0];
+      i.renderNotes = { open: mine.length, latest: l ? { noteId: l.noteId, nodeId: l.nodeId, body: l.body, createdAt: l.createdAt } : null };
+    }
   }
 
   app.get('/files/:fileKey/targets', { schema: listTargets }, async (/** @type {any} */ request) => {
     const fileKey = await file(request);
-    const { level, status, under } = request.query;
+    const { status, under, containing } = request.query;
     const within = under ? new Set((await screensUnder(fileKey, under)).map(s => s.nodeId)) : null;
-    const { settings, order } = await evaluateTargets(store, fileKey);
+    const { settings, order, info } = await evaluateTargets(store, fileKey);
+    const holders = containing ? containingTargets(info, await storedNode(store, fileKey, containing)) : null;
+    const picked = order.filter(i => !(status && (i.excluded || i.status !== status)) && !(within && !within.has(i.s.nodeId)) && !(holders && !holders.has(i.s.nodeId)));
+    if (holders) await renderNotesOf(fileKey, picked);
     const out = [];
-    for (const i of order) {
-      if ((level && i.s.level !== level) || (status && i.status !== status) || (within && !within.has(i.s.nodeId))) continue;
-      out.push(await targetOut(i, settings));
-    }
+    for (const i of picked) out.push(await targetOut(i, settings));
     return { fileKey, targets: out };
   });
 
@@ -842,20 +886,14 @@ function registerScreenRoutes(app, { store, blobs, now, bus = null, config = {} 
     const at = now().toISOString();
     const nodeId = await store.transaction(async tx => {
       const { screen: s } = await storedScreen(tx, fileKey, request.params.nodeId);
-      if (body.route !== undefined) {
-        if (s.level === 'component') {
-          throw problem('invalid_parameter', `route: ${s.nodeId} is a component target; components render through the gallery.`, {
-            hint: 'Set the file\'s gallery (update_file_settings `gallery.urlTemplate` or `gallery.storybookUrl`) instead.',
-          });
-        }
-        if (!body.route.startsWith('/')) throw problem('invalid_parameter', 'route: must start with `/`.', { hint: 'Pass the app path, e.g. /settings.' });
-      }
+      if (body.route !== undefined && !body.route.startsWith('/')) throw problem('invalid_parameter', 'route: must start with `/`.', { hint: 'Pass the app path, e.g. /settings.' });
       const route = body.route !== undefined && s.source === 'manual' ? body.route : s.route;
       if (body.route !== undefined && s.source === 'auto') await tx.setFamilyRoute(fileKey, s.familyKey || s.nodeId, { route: body.route, by, at });
       await tx.upsertScreen({
         ...s, route, threshold: body.threshold ?? s.threshold, maskNodeIds: body.maskNodeIds ?? s.maskNodeIds,
         gallery: body.gallery !== undefined ? body.gallery : s.gallery, by, at,
       });
+      if (body.excluded !== undefined) await tx.setTargetExcluded(fileKey, s.nodeId, { excluded: body.excluded, by, at });
       return s.nodeId;
     });
     const { settings, info } = await evaluateTargets(store, fileKey);
@@ -871,14 +909,19 @@ function registerScreenRoutes(app, { store, blobs, now, bus = null, config = {} 
     return { fileKey, nodeId: node.nodeId, checks };
   });
 
-  app.patch('/files/:fileKey/scopes/:nodeId', { schema: setScopeKind }, async (/** @type {any} */ request) => {
-    rejectUnknownKeys('body', request.body, setScopeKind.body);
+  app.patch('/files/:fileKey/scopes/:nodeId', { schema: setScopeChecks }, async (/** @type {any} */ request) => {
+    rejectUnknownKeys('body', request.body, setScopeChecks.body);
+    const body = request.body || {};
+    if ((body.checks === undefined) === (body.kind === undefined)) {
+      throw problem('invalid_body', 'Send exactly one of checks or kind.', { hint: 'checks: true to check the scope\'s screens and components, false for none.' });
+    }
+    const checks = body.checks !== undefined ? body.checks : targets.checksOfKind(body.kind);
     const fileKey = await file(request);
     const node = await storedNode(store, fileKey, request.params.nodeId);
     const at = now().toISOString();
-    await store.setScopeKind(fileKey, node.nodeId, { kind: request.body.kind, by: writeActor(request), at });
+    await store.setScopeChecks(fileKey, node.nodeId, { checks, by: writeActor(request), at });
     await deleteBlobs(blobs, await targets.reconcileTargets(store, fileKey, { at }), request.log);
-    return { fileKey, nodeId: node.nodeId, kind: request.body.kind, targets: await autoTargetCount(store, fileKey, node.nodeId) };
+    return { fileKey, nodeId: node.nodeId, checks, targets: await autoTargetCount(store, fileKey, node.nodeId) };
   });
 }
 
