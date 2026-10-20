@@ -45,7 +45,11 @@ a node and releases a claim; and a claim, then a clear, made through the API
 add and poof the row's agent sprite without a reload; a viewer adds a note
 on a clean node, which turns it Requested, and an agent clear resolves it; and the sidebar
 navigation, the old file-tab links redirecting, the scope panel (selection,
-*View Nodes*, its remembered visibility) and the theme toggle. Each test seeds its own
+*View Nodes*, its remembered visibility) and the theme toggle; and automatic
+check targets: an agent edits a target's route, excludes it and includes it
+again, opens the target from a node inside it (*Render checks* → *Open*) and
+turns a section's checks off and on in File settings, while a viewer sees the
+target details read-only. Each test seeds its own
 file through `…/sync` with the plugin token (the instance tree from
 `e2e-v3.test.js`). CI runs it in the Postgres job and in `e2e-portal`, the
 hardened local-mode container signing in with its generated `tokens.json`.
