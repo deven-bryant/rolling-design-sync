@@ -99,8 +99,12 @@ than the path is `400 url_mismatch`; a URL pasted as the key is
 | `PATCH /v3/files/{fileKey}/notes/{noteId}` | `{body}` (author only, open notes) | `{fileKey, note, node}` |
 | `DELETE /v3/files/{fileKey}/notes/{noteId}` | — (author only, open notes) | `{fileKey, noteId, deleted: true, node}` |
 | `GET /v3/files/{fileKey}/attachments/{attachmentId}` | `size?` (`full` \| `thumb`) | the image bytes (`private`, `nosniff`, sandboxed); viewer or agent |
-| `GET /v3/files/{fileKey}/screens` | `under?` | `{fileKey, screens: [screen]}` — route, viewport, masks, threshold, design / reference version, status, last check |
-| `PUT /v3/files/{fileKey}/screens/{nodeId}` | `{route, viewport?, theme?, query?, masks?, threshold?}` (FRAME / COMPONENT) | `{fileKey, screen}` |
+| `GET /v3/files/{fileKey}/screens` | `under?` | `{fileKey, screens: [screen]}` — screen targets: route, viewport, masks, threshold, design / reference version, status, last check, `level`, `source` |
+| `PUT /v3/files/{fileKey}/screens/{nodeId}` | `{route, viewport?, theme?, query?, masks?, maskNodeIds?, threshold?}` (FRAME / COMPONENT) | `{fileKey, screen}` — a manual screen |
+| `GET /v3/files/{fileKey}/targets` | `level?` (`screen` \| `component`), `status?` (`ready`, `waiting`, …), `under?` | `{fileKey, targets: [target]}` in check order (components, children first, then screens), each with `status`, `waitingOn`, `contains` and `render` |
+| `PATCH /v3/files/{fileKey}/targets/{nodeId}` | `{route?, maskNodeIds?, threshold?, gallery?}` | `{fileKey, target}` — `route` on an auto screen sets its family's route |
+| `GET /v3/files/{fileKey}/targets/{nodeId}/checks` | `limit?` | `{fileKey, nodeId, checks: [check]}`, latest first, with image urls |
+| `PATCH /v3/files/{fileKey}/scopes/{nodeId}` | `{kind}` (`screens` \| `components` \| `none`) | `{fileKey, nodeId, kind, targets}` — auto targets detected in the scope |
 | `DELETE /v3/files/{fileKey}/screens/{nodeId}` | — | `{fileKey, nodeId, deleted}` — with its checks and images |
 | `POST /v3/files/{fileKey}/screens/{nodeId}/checks` | — (viewer or agent) | `{fileKey, check, created}` — the open request if there is one |
 | `GET /v3/files/{fileKey}/checks` | `status?`, `nodeId?`, `limit?` | `{fileKey, checks: [check]}`, newest first |

@@ -356,6 +356,9 @@ mode, then clear it like any node (`clear_nodes` with its `contentHash`).
    differing regions; look at its heatmap with `get_attachment` (an image), fix
    the screen, then `request_render_check` and run it again — a pass resolves
    the note. Notes from people may carry screenshots too (`get_attachment`).
+   With automatic targets, **end your pass with `rds-agent check --ready`**
+   (see [Render checks](#render-checks)): it checks every target your pass
+   finished, and any mismatch comes back as notes on the nodes to fix.
 
 Repeat until the listing is empty.
 
@@ -406,7 +409,43 @@ on the API. RDS never starts one: someone requests it (the portal, or
 `request_render_check` / `rds-agent checks request`) and an agent or a CI job
 runs it where the app runs, with `rds-agent check`.
 
-**Setup, once per screen.** Pick the frame (usually a direct child of a scope
+**Automatic targets.** Each synced section declares what it contains — the
+Figma plugin asks once (*Contains: Screens · Components · Neither*), or
+`set_scope_kind` / `node scripts/rds-agent.js scopes kind 1-2 --file-key AbC123 --kind screens`
+sets it. With the file setting `autoTargets` on (the default), a **screens**
+section makes every top-level frame / component / instance and each variant
+of a top-level component set a screen target, and a **components** section
+makes every main component a component target. The plugin uploads each
+changed target's reference with its node map; nothing to set up per frame.
+
+- **Screens** render at a route. Variants that differ only in **mapped**
+  properties (`variantMappings`, e.g. `{ "Color Mode": { "as": "theme",
+  "values": { "Light": "light", "Dark": "dark" } } }`) share one route; the
+  first `rds-agent check --url <full url>` of a screen without one saves it
+  for the whole family (`update_check_target { "route": "/files" }` does the
+  same). `themeMode` says how a theme reaches the app: `color-scheme`
+  (default), `query` (`?<themeKey>=dark`) or `storage` (localStorage).
+- **Components** render through the app's gallery: the file setting
+  `gallery.urlTemplate` (e.g. `/gallery?figma={set}&variant={variant}`) or
+  `gallery.storybookUrl` (stories tagged `figma:<component key>`).
+- **The ready list.** `list_check_targets { "status": "ready" }` /
+  `rds-agent targets ls --status ready` lists the targets your pass finished
+  (no dirty nodes under them, no result for their current design) in check
+  order — components first, children before the composites that contain
+  them, then screens — with everything needed to render each. A target
+  containing a component whose latest result is a mismatch is **waiting** on
+  it instead; components with no gallery entry are *not mapped* and never
+  block.
+- **End every pass with `rds-agent check --ready --base-url <app>`.** A
+  mismatch is traced through the node map to the deepest layer with its own
+  record (inside an instance, the main component's layer, so you fix it once);
+  an area spanning more than two layers goes to their nearest common parent.
+  Each gets a `render_check` note, and the target a summary note with the
+  heatmap. A later pass resolves the render notes under the target.
+- `list_target_checks` shows a target's history (latest first); each keeps
+  `checkRetention` results (default 5) plus its last pass.
+
+**Manual setup, once per screen** (rev9 screens, still supported). Pick the frame (usually a direct child of a scope
 section, e.g. `View=Files, Color Mode=Light`) and tell RDS where it renders:
 
 ```bash
