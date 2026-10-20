@@ -298,37 +298,45 @@ const DesignChecklist = (() => {
   const NODE_MAP_MAX_ENTRIES = 20000;
   const NODE_MAP_MAX_BYTES = 2 * 1024 * 1024;
   const NODE_ID_MAX = 400;
-  // What a scope contains (for automatic check targets), declared per section and saved on it as shared plugin data.
-  const SCOPE_KINDS = ['screens', 'components', 'none'];
-  const SCOPE_KIND_NAMESPACE = 'rds';
-  const SCOPE_KIND_KEY = 'scopeKind';
+  // Whether a section's screens and components are check targets: one switch, saved on the section as shared plugin
+  // data (`rds` / `checks`: 'true' | 'false'); unset = on. The rev9b draft's `scopeKind` migrates (none → off, else on).
+  const SCOPE_NAMESPACE = 'rds';
+  const CHECKS_KEY = 'checks';
+  const LEGACY_KIND_KEY = 'scopeKind';
   const SCOPE_WARNING = '[scope] ';
   const SCREEN_TYPES = ['FRAME', 'COMPONENT', 'INSTANCE'];
   const EXPORT_MAX_SIDE = 8192;
   const EXPORT_MAX_BYTES = 5 * 1024 * 1024;
   const blockingWarnings = warnings => warnings.filter(w => !w.startsWith(METADATA_WARNING) && !w.startsWith(MAIN_WARNING) && !w.startsWith(TOKEN_WARNING));
-  /* The scope kind saved on `node` (shared plugin data `rds` / `scopeKind`); null when undeclared or unreadable. */
-  function readScopeKind(node) {
+  /* The check switch saved on `node` (shared plugin data `rds` / `checks`, else the legacy `scopeKind`); true when unset or unreadable. */
+  function readScopeChecks(node) {
     try {
-      const kind = node && typeof node.getSharedPluginData === 'function' ? node.getSharedPluginData(SCOPE_KIND_NAMESPACE, SCOPE_KIND_KEY) : '';
-      return SCOPE_KINDS.includes(kind) ? kind : null;
-    } catch (_) { return null; }
+      const read = key => node && typeof node.getSharedPluginData === 'function' ? node.getSharedPluginData(SCOPE_NAMESPACE, key) : '';
+      const saved = read(CHECKS_KEY);
+      if (saved === 'true' || saved === 'false') return saved === 'true';
+      const kind = read(LEGACY_KIND_KEY);
+      return kind !== 'none';
+    } catch (_) { return true; }
   }
-  /* The kind last accepted by the API for `node` (private plugin data), so an unchanged kind needs no extra batch. */
-  function readScopeKindSent(node) {
-    try { return node && typeof node.getPluginData === 'function' ? node.getPluginData(SCOPE_KIND_KEY) : ''; } catch (_) { return ''; }
+  /* Whether `node` has the switch saved under the current key (else the next sync saves it, migrating the legacy kind). */
+  function hasScopeChecks(node) {
+    try { return ['true', 'false'].includes(node.getSharedPluginData(SCOPE_NAMESPACE, CHECKS_KEY)); } catch (_) { return false; }
   }
-  function writeScopeKindSent(node, kind) {
-    try { if (node && typeof node.setPluginData === 'function') node.setPluginData(SCOPE_KIND_KEY, kind || ''); } catch (_) { /* Only saves a batch. */ }
+  /* The value last accepted by the API for `node` (private plugin data), so an unchanged switch needs no extra batch. */
+  function readChecksSent(node) {
+    try { return node && typeof node.getPluginData === 'function' ? node.getPluginData(CHECKS_KEY) : ''; } catch (_) { return ''; }
+  }
+  function writeChecksSent(node, checks) {
+    try { if (node && typeof node.setPluginData === 'function') node.setPluginData(CHECKS_KEY, typeof checks === 'boolean' ? String(checks) : ''); } catch (_) { /* Only saves a batch. */ }
   }
   /* An API from before a body member refuses it by name ("unknown member 'nodeMap'"). */
   function refusesMember(e, member) {
     return !!(e && e.status === 400 && e.code === 'invalid_body' && typeof e.detail === 'string' && e.detail.includes("'" + member + "'"));
   }
-  function writeScopeKind(node, kind) {
-    if (!SCOPE_KINDS.includes(kind)) throw new Error('Choose what the section contains: Screens, Components or Neither.');
-    node.setSharedPluginData(SCOPE_KIND_NAMESPACE, SCOPE_KIND_KEY, kind);
-    return kind;
+  function writeScopeChecks(node, checks) {
+    if (typeof checks !== 'boolean') throw new Error('Check this section\'s screens and components: expected on or off.');
+    node.setSharedPluginData(SCOPE_NAMESPACE, CHECKS_KEY, String(checks));
+    return checks;
   }
   function componentSet(node) {
     try { return node.type === 'COMPONENT' && node.parent && node.parent.type === 'COMPONENT_SET' ? node.parent : null; }
@@ -824,9 +832,9 @@ const DesignChecklist = (() => {
      `options.markImplemented: true` asks the server to insert never-seen nodes as already implemented
      (first-scan baseline); it is sent on every batch of the run and `result.baselined` sums the counts.
      Every batch also carries `fileName` (`options.fileName`, the document name) and `rootNodeId` (the scope), and
-     the scope's declared `scopeKind` (`options.scopeKind`; with no changes it goes in one empty batch unless
-     `options.scopeKindChanged` is false). An API that
-     refuses `scopeKind` gets the batches without it and a non-blocking [scope] warning.
+     the scope's check switch `checks` (`options.checks`; with no changes it goes in one empty batch unless
+     `options.checksSent` already matches). An API that
+     refuses `checks` gets the batches without it and a non-blocking [scope] warning.
      The hashes response's `settings.trackLibraryComponents` (missing → true) decides whether remote mains are
      scanned. Without `markImplemented`, a plan that adds many never-seen layers (`manyNewLayers`) awaits
      `options.confirmNewLayers({ added, total })`: 'implemented' continues with `markImplemented`, 'new'
@@ -864,8 +872,8 @@ const DesignChecklist = (() => {
     const cancelMessage = 'Sync cancelled. Batches already uploaded were applied; run the sync again to finish.';
     const uploadOptions = { cancelled, cancelMessage, fileName: options.fileName, markImplemented,
       batchChars: options.batchChars, batchRecords: options.batchRecords, maxBatches: options.maxBatches };
-    const scope = await upload(http, config, snapshot.fileKey, { ...uploadOptions, rootNodeId: snapshot.scopeId, phase: 'Uploading', scopeKind: options.scopeKind,
-      scopeKindChanged: options.scopeKindSent === undefined || options.scopeKindSent !== options.scopeKind,
+    const scope = await upload(http, config, snapshot.fileKey, { ...uploadOptions, rootNodeId: snapshot.scopeId, phase: 'Uploading', checks: options.checks,
+      checksChanged: options.checksSent === undefined || options.checksSent !== String(options.checks),
       upserts: plan.upserts.concat(mains.upserts), deletedNodeIds: plan.deletedNodeIds,
       progress: (count, total) => progress('Uploading', count, total) });
     let tokens = null;
@@ -879,11 +887,11 @@ const DesignChecklist = (() => {
       if (cancelled()) throw new Error(cancelMessage);
       references = await syncReferences(options.api, http, config, snapshot.fileKey, snapshot.scopeId, { cancelled, cancelMessage, pause: options.pause, progress });
     }
-    const scopeKind = SCOPE_KINDS.includes(options.scopeKind) && !scope.result.scopeKindIgnored ? options.scopeKind : null;
-    if (scope.result.scopeKindIgnored) mains.warnings = mains.warnings.concat(SCOPE_WARNING + 'This API does not store what a section contains; update the server to enable automatic check targets.');
-    delete scope.result.scopeKindIgnored;
+    const checks = typeof options.checks === 'boolean' && !scope.result.checksIgnored ? options.checks : null;
+    if (scope.result.checksIgnored) mains.warnings = mains.warnings.concat(SCOPE_WARNING + 'This API does not store whether a section is checked; update the server to enable automatic check targets.');
+    delete scope.result.checksIgnored;
     return { fileKey: snapshot.fileKey, scopeId: snapshot.scopeId, markImplemented, trackLibraryComponents: trackLibrary, batches: scope.batches, ...plan.counts,
-      scopeKind, mains: mains.counts, mainWarnings: mains.warnings, tokens, references, result: scope.result };
+      checks, mains: mains.counts, mainWarnings: mains.warnings, tokens, references, result: scope.result };
   }
   const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   function base64(api, bytes) {
@@ -1029,15 +1037,15 @@ const DesignChecklist = (() => {
      `fileName`, `rootNodeId` and `markImplemented`; `result` sums the server's counts. */
   async function upload(http, config, fileKey, options) {
     const result = { fileKey, upserted: 0, dirty: 0, tombstoned: 0, skippedInstances: 0 };
-    // Sent on every batch; an API from before scope kinds refuses the member by name: resend without it.
-    let scopeKind = SCOPE_KINDS.includes(options.scopeKind) ? options.scopeKind : undefined;
+    // Sent on every batch; an API from before the switch refuses the member by name: resend without it.
+    let checks = typeof options.checks === 'boolean' ? options.checks : undefined;
     const send = async body => {
-      if (scopeKind === undefined) return request(http, config, filePath(fileKey, 'sync'), body);
-      try { return await request(http, config, filePath(fileKey, 'sync'), { ...body, scopeKind }); }
+      if (checks === undefined) return request(http, config, filePath(fileKey, 'sync'), body);
+      try { return await request(http, config, filePath(fileKey, 'sync'), { ...body, checks }); }
       catch (e) {
-        if (!refusesMember(e, 'scopeKind')) throw e;
+        if (!refusesMember(e, 'checks')) throw e;
         const response = await request(http, config, filePath(fileKey, 'sync'), body);
-        scopeKind = undefined; result.scopeKindIgnored = true;
+        checks = undefined; result.checksIgnored = true;
         return response;
       }
     };
@@ -1066,8 +1074,8 @@ const DesignChecklist = (() => {
       batch.push(upserts[i]); size += sizes[i];
     }
     await flush();
-    if (!batches && scopeKind !== undefined && options.scopeKindChanged !== false) {
-      // Nothing changed, but the declared kind still has to reach the server.
+    if (!batches && checks !== undefined && options.checksChanged !== false) {
+      // Nothing changed, but a new or changed switch still has to reach the server.
       if (options.cancelled()) throw new Error(options.cancelMessage);
       await send({ fileKey, fileName: options.fileName, rootNodeId: options.rootNodeId, upserts: [], deletedNodeIds: [], markImplemented: options.markImplemented });
       batches++;
@@ -1102,9 +1110,6 @@ const DesignChecklist = (() => {
     const confirmNewLayers = layers => new Promise(resolve => {
       const id = ++choiceId; choices.set(id, resolve); send({ type: 'confirm-new-layers', id, ...layers });
     });
-    const confirmScopeKind = () => new Promise(resolve => {
-      const id = ++choiceId; choices.set(id, resolve); send({ type: 'confirm-scope-kind', id, name: scope.name, scopeId: scope.id });
-    });
     const answer = (id, choice) => { const resolve = choices.get(id); if (resolve) { choices.delete(id); resolve(choice); } };
     async function loadSettings() {
       try {
@@ -1125,7 +1130,7 @@ const DesignChecklist = (() => {
       return s[0];
     }
     const progressMessage = (phase, count, total) => total === undefined ? { type: 'progress', phase, count } : { type: 'progress', phase, count, total };
-    const scopeState = () => ({ type: 'scope', id: scope.id, name: scope.name, nodeType: scope.type, scopeKind: readScopeKind(scope) });
+    const scopeState = () => ({ type: 'scope', id: scope.id, name: scope.name, nodeType: scope.type, checks: readScopeChecks(scope) });
     /* Scan, then re-scan until two consecutive passes match (at most VERIFY_RETRIES extra passes): values Figma
        loads lazily on first access (library styles and variables, remote mains, text metrics) settle after one. */
     async function stableCapture(key, mainNodes) {
@@ -1147,7 +1152,6 @@ const DesignChecklist = (() => {
     api.ui.onmessage = async msg => {
       if (msg.type === 'yield-ack') { const resolve = waiters.get(msg.id); if (resolve) { waiters.delete(msg.id); resolve(); } return; }
       if (msg.type === 'new-layers-choice') { answer(msg.id, msg.choice); return; }
-      if (msg.type === 'scope-kind-choice') { answer(msg.id, msg.kind); return; }
       if (msg.type === 'cancel') { cancelled = true; for (const id of Array.from(choices.keys())) answer(id, 'cancel'); return; }
       if (busy) { send({ type: 'error', message: 'An operation is already running.' }); return; }
       busy = true; cancelled = false; send({ type: 'busy', value: true });
@@ -1160,29 +1164,25 @@ const DesignChecklist = (() => {
           send({ type: 'notice', message: settings.baseUrl && settings.token ? 'Settings saved on this machine.' : 'Settings saved. Both the API base URL and upload token are required before uploading.' });
         } else if (msg.type === 'select') {
           scope = selected(); send(scopeState());
-        } else if (msg.type === 'set-scope-kind') {
+        } else if (msg.type === 'set-scope-checks') {
           if (!scope || scope.removed) throw new Error('Choose a section or frame first.');
-          writeScopeKind(scope, msg.kind); send(scopeState());
+          writeScopeChecks(scope, msg.checks); send(scopeState());
         } else if (msg.type === 'upload') {
           if (!scope || scope.removed) throw new Error('Choose a section or frame first.');
           const settings = validateSettings(msg.baseUrl !== undefined || msg.token !== undefined ? await saveSettings(msg) : await loadSettings());
           const key = C.fileKey(msg.fileUrl);
-          // Asked once per section (pre-selected Neither in the UI); saved on the section so it travels with the file.
-          let scopeKind = readScopeKind(scope);
-          if (!scopeKind) {
-            const choice = await confirmScopeKind();
-            if (!SCOPE_KINDS.includes(choice)) throw Object.assign(new Error('Sync cancelled. Nothing was uploaded.'), { notice: true });
-            scopeKind = writeScopeKind(scope, choice); send(scopeState());
-          }
+          // On unless unchecked; saved on the section (migrating a legacy kind) so it travels with the file.
+          const checks = readScopeChecks(scope);
+          if (!hasScopeChecks(scope)) { try { writeScopeChecks(scope, checks); } catch (_) { /* Sent anyway. */ } }
           send({ type: 'clear-result' });
           const mainNodes = new Map();
           const snapshot = await stableCapture(key, mainNodes);
           if (blockingWarnings(snapshot.warnings).length) throw new Error('Snapshot not uploaded because some properties could not be read: ' + blockingWarnings(snapshot.warnings).slice(0,3).join(' '));
-          const synced = await sync(http, settings, snapshot, { cancelled: () => cancelled, api, pause, mainNodes, fileName: api.root.name, confirmNewLayers, scopeKind,
-            scopeKindSent: readScopeKindSent(scope),
+          const synced = await sync(http, settings, snapshot, { cancelled: () => cancelled, api, pause, mainNodes, fileName: api.root.name, confirmNewLayers, checks,
+            checksSent: readChecksSent(scope),
             markImplemented: msg.markImplemented === true,
             progress: (phase, count, total) => send(progressMessage(phase, count, total)) });
-          if (synced.scopeKind) writeScopeKindSent(scope, synced.scopeKind);
+          if (typeof synced.checks === 'boolean') writeChecksSent(scope, synced.checks);
           send({ type: 'synced', ...synced, warnings: snapshot.warnings.concat(synced.mainWarnings, synced.tokens ? synced.tokens.warnings : [], synced.references ? synced.references.warnings : []) });
         } else {
           throw new Error('Unknown action: ' + msg.type);
@@ -1192,8 +1192,8 @@ const DesignChecklist = (() => {
     };
     try { scope = selected(); send(scopeState()); } catch (_) { send({ type: 'notice', message: 'Select a section or frame, then click Use selection.' }); }
   }
-  return { capture, planDelta, scanDifference, resolveMains, collectTokens, planTokens, sync, validateSettings, start, nodeMap, readScopeKind, NEW_LAYERS_MIN, NEW_LAYERS_SHARE,
-    BATCH_CHARS, BATCH_RECORDS, MAX_UPLOAD_BATCHES, BATCH_CHARS_MAX, VERIFY_RETRIES, EXPORT_MAX_SIDE, EXPORT_MAX_BYTES, NODE_MAP_MAX_ENTRIES, NODE_MAP_MAX_BYTES, SCOPE_KINDS };
+  return { capture, planDelta, scanDifference, resolveMains, collectTokens, planTokens, sync, validateSettings, start, nodeMap, readScopeChecks, NEW_LAYERS_MIN, NEW_LAYERS_SHARE,
+    BATCH_CHARS, BATCH_RECORDS, MAX_UPLOAD_BATCHES, BATCH_CHARS_MAX, VERIFY_RETRIES, EXPORT_MAX_SIDE, EXPORT_MAX_BYTES, NODE_MAP_MAX_ENTRIES, NODE_MAP_MAX_BYTES };
 })();
 if (typeof figma !== 'undefined') DesignChecklist.start(figma);
 if (typeof module !== 'undefined') module.exports = DesignChecklist;

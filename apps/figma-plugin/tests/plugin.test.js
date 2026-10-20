@@ -139,8 +139,8 @@ function problemBody(code,detail,hint){const [status,title,defaultHint]=PROBLEMS
    `tokensMap: false` = an older server whose `?under=tokens` returns the root hash under "tokens" instead of the token map.
    `screens`: the `{ nodeId, designVersion }` list …/screens/references-needed returns (omitted = an older server without
    the screen routes: 404); `refuseImages: true` answers every reference upload with images_disabled.
-   `legacy: true` = a server from before scope kinds and node maps: it refuses `scopeKind` and `nodeMap` (invalid_body).
-   `kinds` records the scopeKind stored per fileKey|rootNodeId. */
+   `legacy: true` = a server from before scope checks and node maps: it refuses `checks` and `nodeMap` (invalid_body).
+   `kinds` records the `checks` switch stored per fileKey|rootNodeId. */
 function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap,screens,refuseImages,legacy}={}) {
  const calls=[];const nodes=new Map();const kinds=new Map();// key fileKey|nodeId -> row
  const json=(status,body)=>({ok:status<300,status,json:async()=>body});
@@ -186,10 +186,10 @@ function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap,s
    const stale=present.filter(id=>nodes.get(rowKey(fileKey,id)).captureVersion<CAPTURE_VERSION);return json(200,{present,stale});}
   if(!body||!Array.isArray(body.upserts)||!Array.isArray(body.deletedNodeIds))return problem('invalid_body','Body must be { upserts, deletedNodeIds }.');
   if(body.markImplemented!==undefined&&typeof body.markImplemented!=='boolean')return problem('invalid_body','markImplemented must be a boolean.');
-  if(body.scopeKind!==undefined){
-   if(legacy)return problem('invalid_body',"body: unknown member 'scopeKind'.");
-   if(!['screens','components','none'].includes(body.scopeKind)||!body.rootNodeId)return problem('invalid_body','scopeKind must be screens, components or none, with rootNodeId.');
-   kinds.set(rowKey(fileKey,body.rootNodeId),body.scopeKind);}
+  if(body.checks!==undefined){
+   if(legacy)return problem('invalid_body',"body: unknown member 'checks'.");
+   if(typeof body.checks!=='boolean'||!body.rootNodeId)return problem('invalid_body','checks must be a boolean, with rootNodeId.');
+   kinds.set(rowKey(fileKey,body.rootNodeId),body.checks);}
   let upserted=0,dirty=0,skippedInstances=0,tombstoned=0,baselined=0;
   for(const up of body.upserts){
    if(typeof up.nodeId!=='string'||typeof up.contentHash!=='string')return problem('invalid_body','upsert.nodeId and contentHash are required.');
@@ -204,16 +204,14 @@ function mockServer({token='secret',agentToken='agent',fail,settings,tokensMap,s
  };
  return {fetch,calls,nodes,kinds};
 }
-/* `choice` answers the "already built?" prompt like the UI would ('new' unless a test sets r.choice);
-   `kind` answers the "Contains" prompt ('none', the UI's pre-selection, unless a test sets r.kind). */
+/* `choice` answers the "already built?" prompt like the UI would ('new' unless a test sets r.choice). */
 function runtime(f,server,stored) {
  const messages=[];const storage=new Map(Object.entries(stored||{}));
- const out={choice:'new',kind:'none'};
+ const out={choice:'new'};
  const api={...f.api,currentPage:{selection:[f.root]},showUI:()=>{},
   clientStorage:{getAsync:async k=>storage.get(k),setAsync:async(k,v)=>{storage.set(k,v);}},
   ui:{postMessage:m=>{messages.push(m);if(m.type==='yield')queueMicrotask(()=>api.ui.onmessage({type:'yield-ack',id:m.id}));
-   if(m.type==='confirm-new-layers'&&out.choice)queueMicrotask(()=>api.ui.onmessage({type:'new-layers-choice',id:m.id,choice:out.choice}));
-   if(m.type==='confirm-scope-kind'&&out.kind)queueMicrotask(()=>api.ui.onmessage({type:'scope-kind-choice',id:m.id,kind:out.kind}));}}};
+   if(m.type==='confirm-new-layers'&&out.choice)queueMicrotask(()=>api.ui.onmessage({type:'new-layers-choice',id:m.id,choice:out.choice}));}}};
  const ctx={figma:api,__html__:'',setTimeout,fetch:server.fetch,module:{exports:{}}};vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../code.js'),'utf8'),ctx);
  return Object.assign(out,{api,messages,storage,send:async m=>{messages.length=0;await api.ui.onmessage(m);return messages;}});
 }
@@ -729,7 +727,7 @@ test('runtime sends figma.root.name and the selected scope id with every batch',
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
  const batches=server.calls.filter(c=>c.path===SYNC);assert.equal(batches.length,1);
  assert.ok(batches.some(c=>c.body.upserts.some(u=>u.nodeId==='8:1')));
- assert.ok(batches.every(c=>C.stable(Object.keys(c.body).sort())===C.stable(BATCH_KEYS.concat('scopeKind').sort())&&c.body.fileName==='Design file'&&c.body.rootNodeId==='1:1'&&c.body.scopeKind==='none'));
+ assert.ok(batches.every(c=>C.stable(Object.keys(c.body).sort())===C.stable(BATCH_KEYS.concat('checks').sort())&&c.body.fileName==='Design file'&&c.body.rootNodeId==='1:1'&&c.body.checks===true));
  assert.ok(server.calls.filter(c=>c.path!==SYNC).every(c=>!c.body||(c.body.fileName===undefined&&c.body.rootNodeId===undefined)));
 });
 
@@ -1151,41 +1149,41 @@ test('screens: P.sync skips the reference pass without the Figma api or with ref
  out=await P.sync(server.fetch,CFG,snapshot,{api:f.api,tokens:false});assert.equal(out.references.updated,1);
 });
 
-/* ---- Scope kinds: what the section contains, saved as shared plugin data and sent with the sync. ---- */
-const kindOf=n=>n.getSharedPluginData('rds','scopeKind');
-test('scope kind: the first sync asks once, saves the answer on the section and sends it with every batch',async()=>{
- const f=fixture();const server=mockServer();const r=runtime(f,server,SETTINGS);r.kind='screens';
+/* ---- Scope checks: one switch per section, saved as shared plugin data and sent with the sync. ---- */
+const checksOf=n=>n.getSharedPluginData('rds','checks');
+test('scope checks: on by default with no prompt, saved on the section and sent with every batch; a change is saved at once',async()=>{
+ const f=fixture();const server=mockServer();const r=runtime(f,server,SETTINGS);
+ assert.ok(r.messages.some(m=>m.type==='scope'&&m.checks===true),'an unsaved section shows checked');
  await r.send({type:'upload',fileUrl:FILE});
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
- const asked=r.messages.filter(m=>m.type==='confirm-scope-kind');assert.equal(asked.length,1);
- assert.equal(asked[0].name,f.root.name);assert.equal(asked[0].scopeId,'1:1');
- assert.equal(kindOf(f.root),'screens');assert.ok(r.messages.some(m=>m.type==='scope'&&m.scopeKind==='screens'));
- const batches=server.calls.filter(c=>c.path===SYNC);assert.ok(batches.length>=1);assert.ok(batches.every(c=>c.body.scopeKind==='screens'));
- assert.equal(server.kinds.get('FILE|1:1'),'screens');assert.equal(r.messages.find(m=>m.type==='synced').scopeKind,'screens');
- // Declared: not asked again; nothing changed and the kind is already stored, so no batch is sent.
- server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});
- assert.equal(r.messages.filter(m=>m.type==='confirm-scope-kind').length,0);assert.equal(server.calls.filter(c=>c.path===SYNC).length,0);
- // Editable any time: saved on the section at once; the next sync sends it even with no layer changes.
- server.calls.length=0;await r.send({type:'set-scope-kind',kind:'components'});
- assert.equal(kindOf(f.root),'components');assert.ok(r.messages.some(m=>m.type==='scope'&&m.scopeKind==='components'));same(server.calls,[]);
+ assert.ok(!r.messages.some(m=>/confirm-scope/.test(m.type)),'no first-sync prompt');
+ assert.equal(checksOf(f.root),'true');
+ const batches=server.calls.filter(c=>c.path===SYNC);assert.ok(batches.length>=1);assert.ok(batches.every(c=>c.body.checks===true));
+ assert.equal(server.kinds.get('FILE|1:1'),true);assert.equal(r.messages.find(m=>m.type==='synced').checks,true);
+ // Unchanged and already stored: nothing to send.
+ server.calls.length=0;await r.send({type:'upload',fileUrl:FILE});assert.equal(server.calls.filter(c=>c.path===SYNC).length,0);
+ // Unchecked: saved on the section at once; the next sync sends it even with no layer changes.
+ server.calls.length=0;await r.send({type:'set-scope-checks',checks:false});
+ assert.equal(checksOf(f.root),'false');assert.ok(r.messages.some(m=>m.type==='scope'&&m.checks===false));same(server.calls,[]);
  await r.send({type:'upload',fileUrl:FILE});
  const sent=server.calls.filter(c=>c.path===SYNC);assert.equal(sent.length,1);
- same(sent[0].body.upserts,[]);same(sent[0].body.deletedNodeIds,[]);assert.equal(sent[0].body.scopeKind,'components');
- assert.equal(server.kinds.get('FILE|1:1'),'components');
- await r.send({type:'set-scope-kind',kind:'pages'});
- assert.ok(r.messages.some(m=>m.type==='error'));assert.equal(kindOf(f.root),'components');
+ same(sent[0].body.upserts,[]);same(sent[0].body.deletedNodeIds,[]);assert.equal(sent[0].body.checks,false);
+ assert.equal(server.kinds.get('FILE|1:1'),false);
+ await r.send({type:'set-scope-checks',checks:'yes'});
+ assert.ok(r.messages.some(m=>m.type==='error'));assert.equal(checksOf(f.root),'false');
 });
-test('scope kind: cancelling the first-sync prompt uploads nothing and leaves the section undeclared',async()=>{
- const f=fixture();const server=mockServer();const r=runtime(f,server,SETTINGS);r.kind='cancel';
- await r.send({type:'upload',fileUrl:FILE});
- same(server.calls,[]);assert.equal(kindOf(f.root),'');
- assert.equal(r.messages.find(m=>m.type==='notice').message,'Sync cancelled. Nothing was uploaded.');
-});
-test('scope kind: a kind already saved on the section (it travels with the file) is sent without asking',async()=>{
- const f=fixture();f.root.setSharedPluginData('rds','scopeKind','components');const server=mockServer();const r=runtime(f,server,SETTINGS);
- await r.send({type:'upload',fileUrl:FILE});
- assert.equal(r.messages.filter(m=>m.type==='confirm-scope-kind').length,0);
- assert.ok(server.calls.filter(c=>c.path===SYNC).every(c=>c.body.scopeKind==='components'));assert.equal(server.kinds.get('FILE|1:1'),'components');
+test('scope checks: a legacy scopeKind migrates (none → unchecked, screens / components → checked) and is saved under checks',async()=>{
+ for(const [kind,want] of [['none',false],['screens',true],['components',true]]){
+  const f=fixture();f.root.setSharedPluginData('rds','scopeKind',kind);
+  assert.equal(P.readScopeChecks(f.root),want,kind);
+  const server=mockServer();const r=runtime(f,server,SETTINGS);
+  assert.ok(r.messages.some(m=>m.type==='scope'&&m.checks===want));
+  await r.send({type:'upload',fileUrl:FILE});
+  assert.ok(server.calls.filter(c=>c.path===SYNC).every(c=>c.body.checks===want),kind);
+  assert.equal(checksOf(f.root),String(want));assert.equal(server.kinds.get('FILE|1:1'),want);
+ }
+ const f=fixture();f.root.setSharedPluginData('rds','scopeKind','none');f.root.setSharedPluginData('rds','checks','true');
+ assert.equal(P.readScopeChecks(f.root),true,'the current key wins');
 });
 /* An exportable target outside the scanned scope, with nested layers and Figma-style absolute boxes. */
 function mappedTarget(f){
@@ -1228,20 +1226,20 @@ test('node map: visible layers only, px-rounded boxes relative to the target, in
  const capped=P.nodeMap(big);assert.equal(capped.capped,true);assert.equal(capped.entries.length,P.NODE_MAP_MAX_ENTRIES);
  same(P.nodeMap(node('3:0','FRAME',{absoluteTransform:[[1,0,5.6],[0,1,7.2]],width:20.4,height:9.5})).entries,[{nodeId:'3:0',x:0,y:0,width:20,height:10,depth:0}]);
 });
-test('older server: a refused scopeKind is resent without it (one [scope] warning); a refused nodeMap falls back to image-only uploads',async()=>{
+test('older server: a refused checks is resent without it (one [scope] warning); a refused nodeMap falls back to image-only uploads',async()=>{
  const f=fixture();screenScene(f,[['1:5'],['1:6']]);
  const server=mockServer({legacy:true,screens:[{nodeId:'1:5',designVersion:'v-five'},{nodeId:'1:6',designVersion:'v-six'}]});const r=runtime(f,server,SETTINGS);
  await r.send({type:'upload',fileUrl:FILE});
  assert.ok(!r.messages.some(m=>m.type==='error'),JSON.stringify(r.messages.find(m=>m.type==='error')));
  const batches=server.calls.filter(c=>c.path===SYNC);
- assert.equal(batches[0].body.scopeKind,'none');assert.ok(batches.slice(1).length>=1&&batches.slice(1).every(c=>c.body.scopeKind===undefined));
- const done=r.messages.find(m=>m.type==='synced');assert.equal(done.scopeKind,null);
+ assert.equal(batches[0].body.checks,true);assert.ok(batches.slice(1).length>=1&&batches.slice(1).every(c=>c.body.checks===undefined));
+ const done=r.messages.find(m=>m.type==='synced');assert.equal(done.checks,null);
  assert.equal(done.warnings.filter(w=>w.startsWith('[scope] ')).length,1);
- assert.equal(f.root.getPluginData('scopeKind'),'');
+ assert.equal(f.root.getPluginData('checks'),'');
  const puts=refPuts(server);same(puts.map(c=>[c.path,Object.keys(c.body).sort().join()]),[[REF('1:5'),'designVersion,image,nodeMap'],[REF('1:5'),'designVersion,image'],[REF('1:6'),'designVersion,image']]);
  same(done.references,{needed:2,updated:2,skipped:0,warnings:[]});
 });
-test('a 400 that does not name scopeKind or nodeMap is not retried',async()=>{
+test('a 400 that does not name checks or nodeMap is not retried',async()=>{
  const f=fixture();screenScene(f,[['1:5']]);const server=mockServer({screens:[{nodeId:'1:5',designVersion:'v'}]});
  const fetch=server.fetch;server.fetch=async(url,init)=>{if(init.method!=='PUT')return fetch(url,init);server.calls.push({method:'PUT'});const body=problemBody('invalid_body','image: not a PNG.');return {ok:false,status:400,json:async()=>body};};
  const r=runtime(f,{fetch:(...a)=>server.fetch(...a)},SETTINGS);await r.send({type:'upload',fileUrl:FILE});
