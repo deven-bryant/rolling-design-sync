@@ -7,6 +7,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const DEFAULT_FILE_SETTINGS = Object.freeze({ trackLibraryComponents: true, storeImages: true, autoTargets: true, variantMappings: {}, themeMode: 'color-scheme', themeKey: 'theme', gallery: { urlTemplate: null, storybookUrl: null }, checkRetention: 5 });
 const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
@@ -854,7 +855,7 @@ test('v3 plugin routes: a full sync as the plugin runs it', async () => {
 
   // First scan: nothing stored yet, so the plugin baselines.
   assert.deepEqual(await ok(call('POST', `/v3/files/${fileKey}/exists`, { headers: client, body: { nodeIds: IDS.map(dashed) } })), { present: [], stale: [] });
-  assert.deepEqual(await ok(call('GET', `/v3/files/${fileKey}/hashes`, { headers: client, query: { under: dashed(ROOT) } })), { settings: { trackLibraryComponents: true, storeImages: true } });
+  assert.deepEqual(await ok(call('GET', `/v3/files/${fileKey}/hashes`, { headers: client, query: { under: dashed(ROOT) } })), { settings: { ...DEFAULT_FILE_SETTINGS, trackLibraryComponents: true } });
   const baseline = await ok(call('POST', '/v3/files/-/sync', {
     headers: client, query: url, body: { fileName: 'E2E File', rootNodeId: dashed(ROOT), upserts: BUILT.map(dashedUp), markImplemented: true },
   }));
@@ -1207,7 +1208,7 @@ test('v3 sync markImplemented: never-seen nodes are baselined clean; existing an
   const fileKey = newFileKey();
   const bad = await sync(fileKey, { upserts: BUILT, markImplemented: 'yes' });
   assertProblem(bad, 400, 'invalid_parameter');
-  assert.deepEqual(await hashesUnder(fileKey, ROOT), { settings: { trackLibraryComponents: true, storeImages: true } }, 'a rejected sync writes nothing');
+  assert.deepEqual(await hashesUnder(fileKey, ROOT), { settings: { ...DEFAULT_FILE_SETTINGS, trackLibraryComponents: true } }, 'a rejected sync writes nothing');
 
   // Existing dirty rows: 2:1 + 3:1 synced without the flag, then 3:1 tombstoned.
   await batch(fileKey, { upserts: BUILT.slice(1, 3) });
@@ -1364,16 +1365,16 @@ test('v3 library components: flagged at sync, the setting off hides them and lis
   assert.deepEqual(label.library, { key: 'E2ELIBKEY', resolved: false });
   assert.equal(label.figmaUrl, null);
   assert.equal((await ok(call('GET', '/v3/status', { headers: viewer }))).libraryLinks, false);
-  assert.deepEqual((await ok(files(fileKey))).settings, { trackLibraryComponents: true, storeImages: true });
+  assert.deepEqual((await ok(files(fileKey))).settings, { ...DEFAULT_FILE_SETTINGS, trackLibraryComponents: true });
   sameSet(await listIds(fileKey, {}), [ROOT, '2:1', '3:1', '9:1', '9:2']);
 
   const denied = await call('PATCH', `/v3/files/${fileKey}`, { headers: viewer, body: { settings: { trackLibraryComponents: false } } });
   assert.equal(denied.status, 403);
   assert.equal((await call('PATCH', `/v3/files/${fileKey}`, { body: { settings: { nope: true } } })).body.code, 'invalid_parameter');
   const off = await ok(call('PATCH', `/v3/files/${fileKey}`, { body: { settings: { trackLibraryComponents: false } } }));
-  assert.deepEqual(off.settings, { trackLibraryComponents: false, storeImages: true });
+  assert.deepEqual(off.settings, { ...DEFAULT_FILE_SETTINGS, trackLibraryComponents: false });
   assert.equal(off.counts.dirty, 3);
-  assert.deepEqual((await hashesUnder(fileKey, ROOT)).settings, { trackLibraryComponents: false, storeImages: true });
+  assert.deepEqual((await hashesUnder(fileKey, ROOT)).settings, { ...DEFAULT_FILE_SETTINGS, trackLibraryComponents: false });
 
   sameSet(await listIds(fileKey, {}), [ROOT, '2:1', '3:1']);
   sameSet(await listIds(fileKey, { library: 'only' }), ['9:1', '9:2']);
@@ -1385,7 +1386,7 @@ test('v3 library components: flagged at sync, the setting off hides them and lis
   assert.equal(ref.nodeIds, undefined);
   assert.equal(ref.placementsInScope, 1);
   const events = await ok(files(fileKey, '/events', { query: { types: 'file.settings_changed' } }));
-  assert.deepEqual(events.events.at(-1).data.settings, { trackLibraryComponents: false, storeImages: true });
+  assert.deepEqual(events.events.at(-1).data.settings, { ...DEFAULT_FILE_SETTINGS, trackLibraryComponents: false });
 });
 
 // --- design tokens ------------------------------------------------------------------
@@ -1515,4 +1516,60 @@ test('v3 render checks: a screen gets a reference, a mismatch makes a render not
   assert.equal(refused.status, 409);
   assert.equal(refused.body.code, 'images_disabled');
   assert.ok(ERRORS_MD.includes('<a id="images-disabled"></a>'));
+});
+
+test('v3 check targets: a declared scope gets auto targets, the ready list comes back in check order, a mismatch lands on the right node', async () => {
+  const sharp = require('sharp');
+  const png = async (box = null) => {
+    let img = sharp({ create: { width: 200, height: 100, channels: 3, background: { r: 255, g: 255, b: 255 } } });
+    if (box) img = img.composite([{ input: { create: { width: 10, height: 10, channels: 3, background: { r: 0, g: 0, b: 0 } } }, left: box.x, top: box.y }]);
+    return (await img.png().toBuffer()).toString('base64');
+  };
+  const fileKey = newFileKey();
+  const route = suffix => `/v3/files/${fileKey}${suffix}`;
+  const up = (nodeId, nodeType, name, attrs, ancestors = [], extra = {}) => ({
+    nodeId, nodeType, name, parentId: ancestors[ancestors.length - 1] || null, path: ancestors, attrs, contentHash: core.contentHash(attrs), ...extra,
+  });
+  await batch(fileKey, {
+    fileName: 'E2E Targets', rootNodeId: '1:1', scopeKind: 'screens', markImplemented: true,
+    upserts: [
+      up('1:1', 'SECTION', 'Screens', { width: 1000 }),
+      up('2:1', 'FRAME', 'Home', { width: 200, height: 100 }, ['1:1']),
+      up('3:1', 'TEXT', 'Title', { characters: 'Hi' }, ['1:1', '2:1']),
+      up('3:2', 'INSTANCE', 'Badge', { width: 40 }, ['1:1', '2:1'], { isInstance: true, mainComponentId: '6:1' }),
+    ],
+  });
+  await batch(fileKey, {
+    rootNodeId: '5:1', scopeKind: 'components', markImplemented: true,
+    upserts: [up('5:1', 'SECTION', 'Components', { width: 500 }), up('6:1', 'COMPONENT', 'Badge', { width: 40, height: 20 }, ['5:1'])],
+  });
+  const scopes = (await ok(call('GET', route('/scopes')))).scopes;
+  assert.deepEqual(Object.fromEntries(scopes.map(s => [s.nodeId, s.kind])), { '1:1': 'screens', '5:1': 'components' });
+
+  const ready = (await ok(call('GET', route('/targets'), { query: { status: 'ready' } }))).targets;
+  assert.deepEqual(ready.map(t => [t.nodeId, t.level, t.source]), [['6:1', 'component', 'auto'], ['2:1', 'screen', 'auto']], 'components first');
+  assert.deepEqual(ready[1].contains, ['6:1']);
+  const needed = (await ok(call('GET', route('/screens/references-needed'), { headers: plugin }))).screens;
+  sameSet(needed.map(s => s.nodeId), ['2:1', '6:1']);
+  const v = needed.find(s => s.nodeId === '2:1').designVersion;
+  await ok(call('PUT', route('/screens/2:1/reference'), {
+    headers: plugin,
+    body: {
+      designVersion: v, image: await png(),
+      nodeMap: [{ nodeId: '2:1', x: 0, y: 0, width: 200, height: 100, depth: 0 }, { nodeId: '3:1', x: 10, y: 10, width: 60, height: 20, depth: 1 }],
+    },
+  }));
+  const captured = (await ok(call('PATCH', route('/targets/2:1'), { body: { route: '/home', threshold: 0 } }))).target;
+  assert.equal(captured.render.route, '/home');
+
+  const req = (await ok(call('POST', route('/screens/2:1/checks')))).check;
+  assert.equal(req.route, '/home');
+  const bad = (await ok(call('POST', route(`/checks/${req.checkId}/result`), { body: { image: await png({ x: 20, y: 12 }) } }))).check;
+  assert.equal(bad.status, 'mismatch');
+  assert.deepEqual(bad.attribution.map(a => a.nodeId), ['3:1'], 'traced to the Title');
+  const title = await node(fileKey, '3:1');
+  assert.ok(title.notes.some(n => n.source === 'render_check'), 'a render note on the Title');
+  sameSet(await listIds(fileKey, { category: 'render' }), ['2:1', '3:1']);
+  const history = (await ok(call('GET', route('/targets/2:1/checks')))).checks;
+  assert.deepEqual(history.map(c => c.checkId), [req.checkId]);
 });
