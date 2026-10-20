@@ -104,7 +104,7 @@ function fakePlaywright({ elements = [] } = {}) {
 
 const runCheck = (argv, api, pw, out = sink(), err = sink()) => run(['check', ...argv], { env, fetchImpl: api.fetchImpl, stdout: out, stderr: err, playwright: pw.module, cwd: '/' });
 
-test('check --ready: lists ready targets and checks them in API order, components through the gallery then screens', async () => {
+test('check --ready: lists ready targets and checks them in API order, through the gallery, else at their route', async () => {
   const api = fakeApi({ targets: [component('1:1'), component('1:2', { contains: ['1:1'] }), screen('2:1'), screen('2:2', { status: 'passed' })] });
   const pw = fakePlaywright({ elements: ['[data-rds-target]'] });
   const out = sink();
@@ -122,7 +122,7 @@ test('check --ready: lists ready targets and checks them in API order, component
   assert.equal(result.body.image, ELEMENT_PNG.toString('base64'));
   const stored = api.calls.filter(c => c.method === 'PATCH').map(c => c.body);
   assert.deepEqual(stored[0], { gallery: { mapped: true, storyId: null, url: 'http://localhost:3000/gallery?figma=Button&variant=Size%3Dsm%2C%20State%3DHover' } });
-  assert.match(out.text(), /^TARGET +NAME +LEVEL +RESULT +DETAIL$/m);
+  assert.match(out.text(), /^TARGET +NAME +RESULT +DETAIL$/m);
   assert.match(out.text(), /^3 checks: 3 passed, 0 mismatch, 0 errors$/m);
 });
 
@@ -176,9 +176,9 @@ test('check: not-mapped components are reported, stored as mapped:false and neve
   const listed = sink();
   const pw = fakePlaywright();
   assert.equal(await runCheck(['--file-key', 'fk', '--list-unmapped'], cached, pw, listed), 0);
-  assert.deepEqual(cached.calls[0].query, { level: 'component' });
+  assert.deepEqual(cached.calls[0].query, {});
   assert.equal(cached.calls.filter(c => c.method === 'PATCH').length, 0, 'unchanged not-mapped and mapped resolutions are not stored');
-  assert.match(listed.text(), /^COMPONENT +SET +VARIANT +KEY +REASON$/m);
+  assert.match(listed.text(), /^TARGET +SET +VARIANT +KEY +REASON$/m);
   assert.match(listed.text(), /^1:1 +Button +Size=sm, State=Hover +key-1:1 +no gallery/m);
   assert.doesNotMatch(listed.text(), /^1:3/m);
   assert.equal(pw.log.launches, 0);
@@ -202,7 +202,7 @@ test('check: Storybook — resolves figma:<key> (or figma-node:<nodeId>) tags fr
   assert.deepEqual(pw.log.pages.map(p => p.url), [`${SB}/iframe.html?id=button--hover&viewMode=story`, `${SB}/iframe.html?id=card--default&viewMode=story`]);
   assert.deepEqual(pw.log.pages.map(p => p.shot), ['#storybook-root', '#storybook-root']);
   assert.deepEqual(api.calls.filter(c => c.method === 'PATCH').map(c => c.body.gallery.storyId), ['button--hover', 'card--default', null]);
-  assert.match(out.text(), /^1:3 {2}not mapped {2}no story tagged figma:key-1:3 or figma-node:1:3$/m);
+  assert.match(out.text(), /^1:3 {2}not mapped {2}no story tagged figma:key-1:3 or figma-node:1:3; no route/m);
 
   const flag = fakeApi({ storybook, targets: [component('1:1')] });
   const pw2 = fakePlaywright({ elements: ['#storybook-root [data-rds-target]', '#storybook-root'] });
@@ -245,7 +245,7 @@ test('check: theme modes — color-scheme emulation, query parameter, storage in
   assert.ok(classes.has('dark'));
 });
 
-test('check: a screen without a route is No route; --url renders it and saves the route for its family', async () => {
+test('check: a target with no gallery entry and no route is Not mapped; --url renders it and saves the route for its family', async () => {
   const targets = [
     screen('2:1', { route: null, familyKey: 'files' }, { route: null }),
     screen('2:2', { route: null, familyKey: 'files' }, { route: null, theme: 'dark', themeMode: 'query' }),
@@ -255,19 +255,40 @@ test('check: a screen without a route is No route; --url renders it and saves th
   const out = sink();
   assert.equal(await runCheck([...base, '--ready'], none, fakePlaywright(), out), 0);
   assert.deepEqual(none.submitted(), []);
-  assert.match(out.text(), /^2:1 {2}no route {2}pass --url/m);
-  assert.match(out.text(), /^3 checks: 0 passed, 0 mismatch, 0 errors, 3 no route$/m);
+  assert.match(out.text(), /^2:1 {2}not mapped {2}no gallery.*; no route \(pass --url/m);
+  assert.match(out.text(), /^3 checks: 0 passed, 0 mismatch, 0 errors, 3 not mapped$/m);
 
   const api = fakeApi({ targets });
   const pw = fakePlaywright();
   const out2 = sink();
   assert.equal(await runCheck([...base, '--ready', '--url', 'http://localhost:3000/files?tab=recent'], api, pw, out2), 0);
-  const patches = api.calls.filter(c => c.method === 'PATCH');
+  const patches = api.calls.filter(c => c.method === 'PATCH' && c.body.route);
   assert.deepEqual(patches.map(c => [decodeURIComponent(c.path), c.body]), [['/v3/files/fk/targets/2:1', { route: '/files?tab=recent' }]]);
   assert.deepEqual(api.submitted(), ['2:1', '2:2']);
   assert.deepEqual(pw.log.pages.map(p => p.url), ['http://localhost:3000/files?tab=recent', 'http://localhost:3000/files?tab=recent&theme=dark']);
   assert.match(out2.text(), /^2:1 {2}route {2}saved \/files\?tab=recent$/m);
-  assert.match(out2.text(), /^2:3 {2}no route/m);
+  assert.match(out2.text(), /^2:3 {2}not mapped/m);
+});
+
+test('check: every target tries the gallery first; any mismatch makes its containers wait; excluded targets are skipped', async () => {
+  const gallery = { gallery: { urlTemplate: '/gallery?node={nodeId}', storybookUrl: null } };
+  const api = fakeApi({
+    targets: [
+      screen('2:1', {}, gallery),
+      screen('2:2', { contains: ['2:1'] }),
+      screen('2:3', { excluded: true }),
+      component('1:1', { excluded: true }),
+    ],
+    results: { '2:1': { status: 'mismatch', score: 4 } },
+  });
+  const pw = fakePlaywright();
+  const out = sink();
+  assert.equal(await runCheck([...base, '--all'], api, pw, out), 1);
+  assert.deepEqual(api.submitted(), ['2:1']);
+  assert.deepEqual(pw.log.pages.map(p => p.url), ['http://localhost:3000/gallery?node=2%3A1'], 'a frame with a gallery entry renders there, not at its route');
+  assert.match(out.text(), /^2:2 {2}waiting {2}Waiting on Screen 2:1 \(2:1\)$/m);
+  assert.doesNotMatch(out.text(), /^2:3|^1:1/m);
+  assert.match(out.text(), /^2 checks: 0 passed, 1 mismatch, 0 errors, 1 waiting$/m);
 });
 
 test('check --screen: a component target renders through the gallery', async () => {
