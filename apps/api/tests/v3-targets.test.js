@@ -21,6 +21,7 @@ const { MemoryStore } = require('../src/store/memory');
 const { openLocalStore } = require('../src/store/pglite');
 const { MemoryBlobs } = require('../src/blobs/memory');
 const { attribute, commonParent, NODE_MAP_MAX_ENTRIES } = require('../src/checkTargets');
+const { pathNodeIds } = require('../src/ltree');
 
 const PLUGIN_TOKEN = 'plugin-secret';
 const AGENT_TOKEN = 'agent-secret';
@@ -456,3 +457,106 @@ test('attribute: leaves, main nodes, common parent, target fallback', () => {
   assert.deepEqual(at(0, 0, W, H), ['2:2'], 'a common parent outside the target falls back to it');
   assert.equal(commonParent([records.get('4:2'), records.get('4:3')]), '3:3');
 });
+
+/** `store` with every method call counted in `calls.n` (store-internal calls not included). */
+function counting(store) {
+  const calls = { n: 0 };
+  const proxy = new Proxy(store, {
+    get(target, prop) {
+      const v = Reflect.get(target, prop, target);
+      if (typeof v !== 'function') return v;
+      return (...args) => { calls.n++; return v.apply(target, args); };
+    },
+  });
+  return { proxy, calls };
+}
+
+/** 8:1 SECTION Many → `n` top-level FRAME targets 9:i, each with a TEXT 10:i and an INSTANCE 11:i of Icon (6:4). */
+function manyFrames(n) {
+  const M = ['8:1'];
+  const out = [up('8:1', 'SECTION', 'Many', { width: 4000 })];
+  for (let i = 1; i <= n; i++) {
+    out.push(up(`9:${i}`, 'FRAME', `Frame ${i}`, { width: 320, height: 200 + i }, M));
+    out.push(up(`10:${i}`, 'TEXT', `Text ${i}`, { characters: `t${i}` }, [...M, `9:${i}`]));
+    out.push(inst(`11:${i}`, 'Icon', '6:4', { width: 16 }, [...M, `9:${i}`]));
+  }
+  return out;
+}
+
+for (const kind of Object.keys(STORES)) {
+  test(`[${kind}] targets: store calls do not grow with the number of targets`, async t => {
+    const { store, cleanup } = await STORES[kind]();
+    const { proxy, calls } = counting(store);
+    const app = buildApp({
+      store: proxy, blobs: new MemoryBlobs(),
+      config: loadConfig({ RDS_PLUGIN_TOKENS: PLUGIN_TOKEN, RDS_AGENT_TOKENS: AGENT_TOKEN, RDS_VIEWER_TOKENS: VIEWER_TOKEN }),
+    });
+    t.after(async () => { await app.close(); await cleanup(); });
+    await sync(app, { fileName: 'Design File', rootNodeId: '1:1', upserts: SCREENS, markImplemented: true });
+    await sync(app, { rootNodeId: '5:1', upserts: COMPONENTS, markImplemented: true });
+    const cost = async url => {
+      const before = calls.n;
+      const res = ok(await call(app, 'GET', url));
+      return { calls: calls.n - before, size: (res.targets || res.nodes).length };
+    };
+    const measure = async () => ({
+      all: await cost('/targets'), containing: await cost('/targets?containing=6:4'), nodes: await cost('/nodes?state=all&limit=500'),
+    });
+
+    await sync(app, { rootNodeId: '8:1', upserts: manyFrames(3) });
+    const few = await measure();
+    await sync(app, { rootNodeId: '8:1', upserts: manyFrames(40) });
+    const many = await measure();
+    assert.equal(many.all.size - few.all.size, 37, 'the larger file has more targets');
+    assert.equal(many.containing.size - few.containing.size, 37, 'each new frame places an instance of 6:4');
+    assert.ok(many.nodes.size > few.nodes.size);
+    assert.deepEqual([many.all.calls, many.containing.calls, many.nodes.calls], [few.all.calls, few.containing.calls, few.nodes.calls], 'constant store calls');
+    assert.ok(many.containing.calls <= many.all.calls + 2, `containing= costs about a full listing (${many.containing.calls} vs ${many.all.calls})`);
+  });
+
+  test(`[${kind}] targets: containing= and design versions match per-target subtree evaluation`, async t => {
+    const { app, close } = await openApp(kind);
+    t.after(close);
+    await sync(app, { rootNodeId: '8:1', upserts: manyFrames(4) });
+    // A dirty edit and a deletion, so versions, states and live subtrees differ from the clean fixture.
+    await sync(app, { rootNodeId: '8:1', upserts: [up('10:2', 'TEXT', 'Text 2', { characters: 'edited' }, ['8:1', '9:2'])], deletedNodeIds: ['11:3'] });
+    const targets = await list(app);
+    const ids = targets.map(x => x.nodeId);
+
+    // Reference: one listNodeSubtree per target, as the endpoint used to do.
+    const source = /** @type {any} */ (app).store;
+    const subtrees = new Map();
+    for (const id of ids) subtrees.set(id, await source.listNodeSubtree(FK, id, { includeDeleted: false }));
+    const version = nodes => {
+      const hash = require('node:crypto').createHash('sha256');
+      for (const n of [...nodes].sort((a, b) => (a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0))) hash.update(`${n.nodeId}\u0000${n.contentHash || ''}\n`);
+      return hash.digest('hex').slice(0, 32);
+    };
+    for (const x of targets) assert.equal(x.designVersion, version(subtrees.get(x.nodeId)), `${x.nodeId} design version`);
+
+    const contains = new Map();
+    const mains = new Map();
+    for (const id of ids) {
+      const sub = subtrees.get(id);
+      const has = new Set(sub.map(n => n.nodeId));
+      mains.set(id, new Set(sub.filter(n => n.isInstance && n.mainComponentId).map(n => n.mainComponentId)));
+      contains.set(id, { has, inner: ids.filter(c => c !== id && (has.has(c) || mains.get(id).has(c))) });
+    }
+    const expected = node => {
+      const above = new Set([...pathNodeIds(node.path), node.nodeId]);
+      const out = new Set(ids.filter(id => contains.get(id).has.has(node.nodeId) || [...mains.get(id)].some(m => above.has(m))));
+      for (let grew = true; grew;) {
+        grew = false;
+        for (const id of ids) if (!out.has(id) && contains.get(id).inner.some(k => out.has(k))) { out.add(id); grew = true; }
+      }
+      return [...out].sort();
+    };
+    for (const x of targets) assert.deepEqual(x.contains, contains.get(x.nodeId).inner, `${x.nodeId} contains`);
+    const nodes = [...SCREENS, ...COMPONENTS, ...manyFrames(4)].filter(n => n.nodeId !== '11:3');
+    for (const n of nodes) {
+      const [row] = await source.getNodes(FK, [n.nodeId]);
+      const got = (await list(app, `?containing=${n.nodeId}`)).map(x => x.nodeId).sort();
+      assert.deepEqual(got, expected(row), `containing=${n.nodeId}`);
+    }
+  });
+}
