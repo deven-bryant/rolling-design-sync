@@ -265,7 +265,7 @@ export function HeatmapCrop({ src, width, height, region, caption = 'Cropped fro
   const top = -(r.y + r.height / 2 - side / 2) * scale;
   return (
     <figure ref={ref} {...rest} className={cx('flex flex-col items-end gap-md', className)}>
-      <div className="relative size-31 overflow-hidden rounded-md border border-secondary bg-secondary">
+      <div className="relative size-31 overflow-hidden rounded-md border border-secondary bg-checkerboard">
         <img
           src={src}
           alt={alt}

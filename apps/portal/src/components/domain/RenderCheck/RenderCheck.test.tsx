@@ -39,6 +39,39 @@ describe('RenderCheck', () => {
     await expectNoAxeViolations(container);
   });
 
+  it.each([
+    ['wide', 563, 90, 'min(100%, 1401px)'],
+    ['tall', 90, 563, 'min(100%, 36px)'],
+  ])('shows a %s image whole, framed to its aspect ratio on a light backdrop, regions over the image', async (_, width, height, frameWidth) => {
+    const image = (src: string) => ({ src, width, height });
+    const { container } = render(
+      <RenderCheck
+        status="mismatch"
+        designed={image('/ref')}
+        implemented={image('/built')}
+        heatmap={image('/heat')}
+        regions={[{ x: width / 4, y: height / 2, width: width / 2, height: height / 4 }]}
+      />,
+    );
+    const frame = screen.getByRole('button', { name: 'View Implemented' });
+    expect(frame.style.aspectRatio).toBe(`${width} / ${height}`);
+    expect(frame.style.width).toBe(frameWidth);
+    expect(frame.className).toContain('bg-checkerboard');
+    expect(frame.className).not.toContain('aspect-square');
+    expect(frame.querySelector('img')?.className).toContain('object-contain');
+    const region = frame.querySelector('[data-region]') as HTMLElement;
+    expect([region.style.left, region.style.top, region.style.width, region.style.height]).toEqual(['25%', '50%', '50%', '25%']);
+    await expectNoAxeViolations(container);
+  });
+
+  it('without the image size: a bounded frame, the image contained', () => {
+    render(<RenderCheck status="mismatch" designed={{ src: '/ref' }} />);
+    const frame = screen.getByRole('button', { name: 'View Designed' });
+    expect(frame.style.aspectRatio).toBe('');
+    expect(frame.className).toContain('h-40');
+    expect(frame.querySelector('img')?.className).toContain('object-contain');
+  });
+
   it('switches to the heatmap tab and opens the full image', async () => {
     const user = userEvent.setup();
     render(<RenderCheck status="mismatch" designed={img('/ref')} implemented={img('/built')} heatmap={img('/heat')} />);
