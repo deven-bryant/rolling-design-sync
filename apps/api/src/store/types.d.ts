@@ -42,6 +42,9 @@ export interface StoredNode {
   libraryRef?: { key: string | null; type: string | null; resolved: boolean; fileKey: string | null; nodeId: string | null };
 }
 
+/** The columns of a live node that check-target state needs (`listFileNodesForTargets`). */
+export type TargetNode = Pick<StoredNode, 'nodeId' | 'path' | 'parentId' | 'contentHash' | 'isInstance' | 'mainComponentId' | 'dirty' | 'changeType' | 'changeCategories'>;
+
 /** A node as the v3 reads see it: the row plus its claim label, expansion region and subtree counts. */
 export interface V3Node extends StoredNode {
   claimLabel?: string | null;
@@ -169,6 +172,8 @@ export interface Store {
   tombstoneNodes(fileKey: string, nodeIds: string[], deletedAt: string): Promise<StoredNode[]>;
   listNodeSubtree(fileKey: string, nodeId: string, options?: { dirty?: boolean; includeDeleted?: boolean }): Promise<StoredNode[]>;
   listChildren(fileKey: string, parentIds: string[]): Promise<StoredNode[]>;
+  /** Every live node of the file that has a path, with only the columns check-target state needs — one query. */
+  listFileNodesForTargets(fileKey: string): Promise<TargetNode[]>;
   rekeySubtrees(fileKey: string, moves: { nodeId: string; path: string; from: string; to: string }[]): Promise<number>;
   updateNode(fileKey: string, nodeId: string, patch: Record<string, any>): Promise<StoredNode | null>;
   markLibrarySubtrees(fileKey: string, rootIds: string[]): Promise<string[]>;
