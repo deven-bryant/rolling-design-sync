@@ -107,8 +107,24 @@ function renderDrawer(role: SessionRole, route = routes(), nodeId = '1:9') {
   return { api, ...utils };
 }
 
+const hangFetch = (match: (url: URL) => boolean) => {
+  const mocked = globalThis.fetch;
+  vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
+    match(new URL(String(input), 'http://portal.test')) ? new Promise<Response>(() => {}) : mocked(input, init),
+  );
+};
+
 describe('render check section', () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it('shows the shared spinner while the containing targets and the history load', async () => {
+    mockApi(routes());
+    hangFetch(url => url.searchParams.has('containing') || url.pathname === `/v3/files/${FILE}/events`);
+    renderWithClient(<NodeDrawer fileKey={FILE} nodeId="1:9" onClose={vi.fn()} role="viewer" />);
+    const dialog = within(await screen.findByRole('dialog'));
+    await waitFor(() => expect(dialog.getAllByRole('status').map(s => s.textContent)).toEqual(expect.arrayContaining(['Loading render checks…', 'Loading history…'])));
+    await expectNoAxeViolations(document.body);
+  });
 
   it('shows the last result: KV metadata, side-by-side images with regions, score and the heatmap', async () => {
     const user = userEvent.setup();

@@ -6,6 +6,7 @@ import { Button, ButtonUtility } from '../../components/Button';
 import { Drawer } from '../../components/Drawer';
 import { Input } from '../../components/Input';
 import { Icon, Text } from '../../components/primitives';
+import { LoadingIndicator } from '../../components/LoadingIndicator';
 import { Select, SelectItem } from '../../components/Select';
 import { showToast } from '../../components/Toast';
 import { Toggle } from '../../components/Toggle';
@@ -226,9 +227,11 @@ function CheckSettingsForm({ settings, canEdit, onSave, saving }: { settings: Fi
 
 /** One *Checks* toggle per section (`PATCH /v3/files/{fileKey}/scopes/{nodeId}`). */
 function SectionChecks({ fileKey, canEdit, disabled }: { fileKey: string; canEdit: boolean; disabled: boolean }) {
-  const scopes = (useScope(fileKey, undefined).data?.scopes ?? []).filter(s => s.nodeId !== 'tokens');
+  const scopesQuery = useScope(fileKey, undefined);
+  const scopes = (scopesQuery.data?.scopes ?? []).filter(s => s.nodeId !== 'tokens');
   const update = useScopeChecks(fileKey);
   const [error, setError] = useState<string | null>(null);
+  if (scopesQuery.isPending) return <LoadingIndicator label="Loading sections…" />;
   if (!scopes.length) return null;
   return (
     <div role="group" aria-label="Sections" className="flex flex-col gap-lg">
@@ -334,7 +337,7 @@ export function FileSettingsDrawer({ fileKey, isOpen, onOpenChange, role }: File
           </Toggle>
           <SectionChecks fileKey={fileKey} canEdit={canEdit} disabled={!auto} />
         </Drawer.Section>
-        {file.data && (
+        {file.data ? (
           <CheckSettingsForm
             key={JSON.stringify(file.data.settings ?? {})}
             settings={file.data.settings ?? {}}
@@ -342,6 +345,8 @@ export function FileSettingsDrawer({ fileKey, isOpen, onOpenChange, role }: File
             saving={update.isPending}
             onSave={next => save(next, 'Check settings saved')}
           />
+        ) : (
+          file.isPending && <LoadingIndicator size="md" label="Loading file settings…" />
         )}
       </Drawer.Body>
     </Drawer>

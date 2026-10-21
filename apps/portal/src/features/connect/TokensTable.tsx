@@ -4,6 +4,7 @@ import { api, type ApiResponse } from '../../api/client';
 import { Badge, type BadgeProps } from '../../components/Badge';
 import { Card } from '../../components/Card';
 import { Text } from '../../components/primitives';
+import { LoadingIndicator } from '../../components/LoadingIndicator';
 import { BadgeCell, Table, TextCell } from '../../components/Table';
 import { useNow } from '../../api/hooks/useNow';
 import { relativeTime } from '../activity/time';
@@ -42,9 +43,7 @@ export function TokensTable({
       />
       <Card.Body>
         {tokens.isPending ? (
-          <Text as="p" color="tertiary" className="px-3xl py-xl">
-            Loading tokens…
-          </Text>
+          <LoadingIndicator size="md" label="Loading tokens…" className="px-3xl py-xl" />
         ) : tokens.error ? (
           <Text as="p" color="error-primary" className="px-3xl py-xl">
             Couldn’t load tokens: {tokens.error.message}

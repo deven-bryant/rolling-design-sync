@@ -54,7 +54,24 @@ function renderDrawer(props: Partial<FileSettingsDrawerProps> = {}, route: Route
   return { api, onOpenChange, ...utils };
 }
 
+const hangFetch = (match: (url: URL) => boolean) => {
+  const mocked = globalThis.fetch;
+  vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
+    match(new URL(String(input), 'http://portal.test')) ? new Promise<Response>(() => {}) : mocked(input, init),
+  );
+};
+
 describe('FileSettingsDrawer', () => {
+  it('shows the shared spinner while the file settings load', async () => {
+    mockApi(routes());
+    hangFetch(url => url.pathname === `/v3/files/${FILE}`);
+    renderWithClient(<FileSettingsDrawer fileKey={FILE} isOpen onOpenChange={vi.fn()} role="agent" />);
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(await dialog.findByText('Loading file settings…')).toBeTruthy();
+    expect(dialog.getAllByRole('status').length).toBeGreaterThan(0);
+    vi.unstubAllGlobals();
+  });
+
   afterEach(() => {
     for (const toast of toastQueue.visibleToasts) act(() => toastQueue.close(toast.key));
     vi.unstubAllGlobals();

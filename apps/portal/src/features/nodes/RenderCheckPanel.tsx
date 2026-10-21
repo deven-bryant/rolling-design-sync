@@ -3,6 +3,7 @@ import { Button } from '../../components/Button';
 import { RenderCheck, type RenderCheckImage, type RenderCheckStatus } from '../../components/domain/RenderCheck';
 import { Input, Textarea } from '../../components/Input';
 import { Text } from '../../components/primitives';
+import { LoadingIndicator } from '../../components/LoadingIndicator';
 import { showToast } from '../../components/Toast';
 import { timeAgo } from './format';
 import { ButtonUtility } from '../../components/Button';
@@ -278,7 +279,13 @@ export function RenderCheckPanel({ fileKey, node, canAct, now, onOpenNode, reten
   const targets = containing.data ?? [];
   const target = targets.find(t => t.nodeId === nodeId);
   const others = targets.filter(t => t.nodeId !== nodeId);
-  if (node.deleted || containing.isPending) return null;
+  if (node.deleted) return null;
+  if (containing.isPending)
+    return (
+      <div className="flex min-h-10 items-center">
+        <LoadingIndicator size="md" label="Loading render checks…" />
+      </div>
+    );
   if (target) return <TargetPanel fileKey={fileKey} target={target} canAct={canAct} now={now} retention={retention} themeMode={themeMode} others={others} onOpenNode={onOpenNode} />;
   const candidate = !!node.screen || SCREEN_TYPES.has(node.type ?? '');
   return (

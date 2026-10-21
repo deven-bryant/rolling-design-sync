@@ -4,6 +4,7 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { Pagination } from '../../components/Pagination';
 import { Text } from '../../components/primitives';
+import { LoadingIndicator } from '../../components/LoadingIndicator';
 import { ProgressCell, Table, TextCell } from '../../components/Table';
 import { AgentCell } from '../../components/domain/AgentCell';
 import { CategoryBadges } from '../../components/domain/CategoryBadges';
@@ -207,7 +208,7 @@ function MessageRow({ span, children }: { span: number; children: ReactNode }) {
   return (
     <Table.Row>
       <Table.Cell colSpan={span}>
-        <Text color="tertiary">{children}</Text>
+        {typeof children === 'string' ? <Text color="tertiary">{children}</Text> : children}
       </Table.Cell>
     </Table.Row>
   );
@@ -257,7 +258,11 @@ export function WorkTable({
             ))}
           </Table.Header>
           <Table.Body>
-            {work.isPageLoading && <MessageRow span={heads.length}>Loading work items…</MessageRow>}
+            {work.isPageLoading && (
+              <MessageRow span={heads.length}>
+                <LoadingIndicator label="Loading work items…" />
+              </MessageRow>
+            )}
             {work.isError && <MessageRow span={heads.length}>Couldn&apos;t load work items.</MessageRow>}
             {!work.isPageLoading && !work.isError && work.items.length === 0 && (
               <MessageRow span={heads.length}>No work items here.</MessageRow>
