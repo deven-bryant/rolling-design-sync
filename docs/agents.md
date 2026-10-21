@@ -416,7 +416,9 @@ section's screens and components* (on by default, saved on the section), or
 With the file setting `autoTargets` on (the default), a checked section's
 targets are the union of its top-level frames / components / instances, every
 variant of its top-level component sets and every main component inside it —
-each node once, no screen / component levels. The plugin uploads each changed
+each node once, no screen / component levels. Slot components (a main
+component with a SLOT of its own) are not targets: they are checked through
+the screens and components that place them with their slots filled. The plugin uploads each changed
 target's reference with its node map; nothing to set up per frame. To skip
 one frame, exclude it: `update_check_target { "excluded": true }` /
 `rds-agent targets set 2-5 --file-key AbC123 --excluded` (the portal's
@@ -469,8 +471,9 @@ in the file settings (`update_file_settings`, or
   component key), `{nodeId}`, `{set}` (component set, or component name),
   `{variant}` (Figma's variant string, `Size=sm, State=Hover`) and
   `{prop.<Name>}` (one variant property). The page renders that one variant
-  with sample props and marks it with `data-rds-target`; the CLI screenshots
-  that element (else the viewport) at the variant's Figma size:
+  with sample props and marks it with `data-rds-target`; the CLI gives that
+  element the variant's Figma width (border-box; its height flows) and
+  screenshots it (else the viewport, clipped to the Figma size):
 
   ```text
   /gallery?figma={set}&variant={variant}

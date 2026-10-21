@@ -66,7 +66,7 @@ export interface RenderCheckImage {
   src: string;
   /** The full image for the lightbox (an attachment's `url`). */
   fullSrc?: string;
-  /** Pixel size of the full image: scales the region outlines. */
+  /** Pixel size of the full image: the frame's aspect ratio; scales the region outlines. */
   width?: number;
   height?: number;
 }
@@ -123,10 +123,23 @@ function Regions({ regions, image }: { regions: readonly RenderCheckRegion[]; im
   );
 }
 
+/** The tallest a side-by-side or heatmap image gets (px); it is shown whole, as wide as the panel allows. */
+export const SHOT_MAX_HEIGHT = 224;
+
 function Shot({ image, alt, caption, overlay }: { image: RenderCheckImage; alt: string; caption: string; overlay?: ReactNode }) {
+  const aspect = image.width && image.height ? { width: image.width, height: image.height } : undefined;
   return (
     <div className="flex min-w-0 flex-1 flex-col items-center">
-      <ImageThumbnail src={image.src} fullSrc={image.fullSrc} alt={alt} caption={caption} className="aspect-square w-full max-w-56" overlay={overlay} />
+      <ImageThumbnail
+        src={image.src}
+        fullSrc={image.fullSrc}
+        alt={alt}
+        caption={caption}
+        aspect={aspect}
+        maxHeight={SHOT_MAX_HEIGHT}
+        className={aspect ? undefined : 'h-40 w-full'}
+        overlay={overlay}
+      />
     </div>
   );
 }
@@ -270,7 +283,7 @@ export function RenderCheck({
 function Missing({ caption }: { caption: string }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col items-center gap-sm">
-      <div className="flex aspect-square w-full max-w-56 items-center justify-center rounded-md border border-dashed border-secondary bg-secondary p-md text-center text-xs text-tertiary">
+      <div className="flex h-40 w-full items-center justify-center rounded-md border border-dashed border-secondary bg-secondary p-md text-center text-xs text-tertiary">
         No image
       </div>
       <span className="text-xs text-tertiary">{caption}</span>

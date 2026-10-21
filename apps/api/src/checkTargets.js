@@ -5,13 +5,15 @@
  * render-checked and how. Every synced scope has one switch, `checks`
  * (default true; `scope_setting`). A checked scope makes its top-level FRAME /
  * COMPONENT / INSTANCE nodes, the variants of its top-level COMPONENT_SETs and
- * every main COMPONENT inside it check targets (the union, each node once).
+ * every main COMPONENT inside it check targets (the union, each node once),
+ * except slot components (a main component with a SLOT of its own): they are
+ * checked through the targets that place them with their fills.
  * Auto targets are `screen` rows with `source: auto`, kept in step by
  * `reconcileTargets` after syncs, scope switches and settings changes.
  * Variants that differ only in mapped variant properties form a family that
  * shares one route.
  */
-const { fileSettings } = require('./nodeService');
+const { fileSettings, refreshNoteState } = require('./nodeService');
 const core = require('@rolling-design-sync/core');
 const { pathNodeIds } = require('./ltree');
 
@@ -80,6 +82,27 @@ const viewportOf = node => {
 };
 
 /**
+ * The main COMPONENTs among `nodes` whose own subtree holds a SLOT (a SLOT
+ * under a nested instance does not count): slot components, not targets.
+ * @param {{ nodeId: string, nodeType?: string | null, parentId?: string | null, isInstance?: boolean }[]} nodes
+ * @returns {Set<string>}
+ */
+function slotComponentIds(nodes) {
+  const byId = new Map(nodes.map(n => [n.nodeId, n]));
+  const out = new Set();
+  for (const slot of nodes) {
+    if (slot.nodeType !== 'SLOT') continue;
+    const seen = new Set();
+    for (let n = slot.parentId ? byId.get(slot.parentId) : null; n && !seen.has(n.nodeId); n = n.parentId ? byId.get(n.parentId) : null) {
+      seen.add(n.nodeId);
+      if (n.isInstance || n.nodeType === 'INSTANCE') break;
+      if (n.nodeType === 'COMPONENT') out.add(n.nodeId);
+    }
+  }
+  return out;
+}
+
+/**
  * The scopes whose targets are detected: every synced scope (not the tokens
  * scope) unless its switch is off.
  * @param {import('./store/types').Store} store
@@ -106,9 +129,10 @@ async function detectTargets(store, fileKey, settings, scopeIds) {
     if (!root || root.deletedAt) continue;
     const subtree = (await store.listNodeSubtree(fileKey, root.nodeId, { includeDeleted: false })).filter(n => !n.library);
     const byId = new Map(subtree.map(n => [n.nodeId, n]));
+    const slotted = slotComponentIds(subtree);
     /** @param {any} node @param {'screen' | 'component'} level */
     const add = (node, level) => {
-      if (out.has(node.nodeId)) return;
+      if (out.has(node.nodeId) || slotted.has(node.nodeId)) return;
       const parent = node.parentId ? byId.get(node.parentId) : null;
       const setId = node.nodeType === 'COMPONENT' && parent && parent.nodeType === 'COMPONENT_SET' ? parent.nodeId : null;
       const props = node.nodeType === 'COMPONENT' ? variantProps(node) : {};
@@ -160,10 +184,27 @@ async function reconcileTargets(store, fileKey, { at }) {
     }
     for (const s of existing.values()) {
       if (s.source !== 'auto' || wanted.has(s.nodeId)) continue;
+      await resolveRenderNotes(tx, fileKey, s, { at });
       removed = removed.concat(await removeTarget(tx, fileKey, s));
     }
   });
   return removed;
+}
+
+/**
+ * Resolves the open render-check notes a target that stops qualifying leaves
+ * (on its subtree, and on the nodes its checks attributed regions to), as a
+ * pass would; no check will clear them once the target is gone.
+ */
+async function resolveRenderNotes(tx, fileKey, s, { at }) {
+  const subtree = (await tx.listNodeSubtree(fileKey, s.nodeId, { includeDeleted: false })).map(n => n.nodeId);
+  const attributed = (await tx.listChecks(fileKey, { nodeId: s.nodeId, limit: 500 })).flatMap(c => c.attribution || []);
+  const noteIds = new Set(attributed.map(a => a.noteId).filter(Boolean));
+  const inTree = new Set([s.nodeId, ...subtree]);
+  const open = (await tx.listNotes(fileKey, [...new Set([...inTree, ...attributed.map(a => a.nodeId)])], { status: 'open' }))
+    .filter(n => n.source === 'render_check' && (inTree.has(n.nodeId) || noteIds.has(n.noteId)));
+  for (const n of open) await tx.closeNote(fileKey, n.noteId, { status: 'resolved', by: AUTO_ACTOR, at });
+  for (const id of new Set(open.map(n => n.nodeId))) await refreshNoteState(tx, fileKey, id);
 }
 
 /** Deletes a target row with its checks and their attachments (in `tx`); returns the removed attachment rows. */
@@ -275,5 +316,5 @@ function normaliseNodeMap(raw) {
 
 module.exports = {
   SCOPE_KINDS, checksOfKind, checkedScopes, AUTO_ACTOR, NODE_MAP_MAX_ENTRIES, NODE_MAP_MAX_BYTES, MAX_ATTRIBUTED_PER_REGION,
-  variantProps, mappedRendering, detectTargets, reconcileTargets, removeTarget, nodeMasks, attribute, commonParent, normaliseNodeMap, area,
+  variantProps, mappedRendering, slotComponentIds, detectTargets, reconcileTargets, removeTarget, nodeMasks, attribute, commonParent, normaliseNodeMap, area,
 };

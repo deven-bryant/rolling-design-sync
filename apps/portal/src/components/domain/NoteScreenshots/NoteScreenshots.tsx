@@ -101,8 +101,8 @@ export function NoteScreenshots({
         <ul aria-label="Attached screenshots" className="flex flex-wrap items-start justify-center gap-lg">
           {screenshots.map(shot => (
             <li key={shot.id} className="relative flex w-32 flex-col gap-sm">
-              <div className="h-20 w-32 overflow-hidden rounded-md border border-secondary bg-secondary">
-                <img src={shot.src} alt={shot.name} className="size-full object-cover object-top" />
+              <div className="h-20 w-32 overflow-hidden rounded-md border border-secondary bg-checkerboard">
+                <img src={shot.src} alt={shot.name} className="size-full object-contain" />
               </div>
               <span className="truncate text-xs text-tertiary">
                 {shot.name}

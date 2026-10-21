@@ -100,14 +100,31 @@ export function useTargets(fileKey: string, { enabled = true } = {}) {
   });
 }
 
-/** The targets containing a node (itself included), each with its open render-check notes (`renderNotes`). */
-export function useContainingTargets(fileKey: string, nodeId: string | null | undefined, { enabled = true } = {}) {
-  return useQuery({
+function containingQuery(fileKey: string, nodeId: string | null | undefined, enabled: boolean) {
+  return {
     queryKey: renderKeys.containing(fileKey, nodeId ?? ''),
     enabled: enabled && !!nodeId,
-    queryFn: async ({ signal }) =>
-      (await api.get('/v3/files/{fileKey}/targets', { path: { fileKey }, query: { containing: nodeId! }, signal })).targets ?? [],
-  });
+    queryFn: async ({ signal }: { signal: AbortSignal }) =>
+      api.get('/v3/files/{fileKey}/targets', { path: { fileKey }, query: { containing: nodeId! }, signal }),
+  };
+}
+
+type ContainingResponse = ApiResponse<'/v3/files/{fileKey}/targets'>;
+const NO_TARGETS: CheckTarget[] = [];
+const selectTargets = (data: ContainingResponse) => data.targets ?? NO_TARGETS;
+
+/** The targets containing a node (itself included), each with its open render-check notes (`renderNotes`). */
+export function useContainingTargets(fileKey: string, nodeId: string | null | undefined, { enabled = true } = {}) {
+  return useQuery({ ...containingQuery(fileKey, nodeId, enabled), select: selectTargets });
+}
+
+/**
+ * Whether a node is a slot component (a main component with a SLOT of its own, checked through what fills its slot),
+ * from the response `useContainingTargets` fetched: call it alongside that hook, which keeps it current.
+ */
+export function useSlotComponent(fileKey: string, nodeId: string | null | undefined) {
+  const client = useQueryClient();
+  return client.getQueryData<ContainingResponse>(renderKeys.containing(fileKey, nodeId ?? ''))?.slotComponent === true;
 }
 
 /** A target's retained results, latest first (`checkRetention` of them plus its last pass). */

@@ -437,7 +437,12 @@ dimmed, so viewers see which settings are on.
     result, *Side by side* (designed and implemented images, differing
     regions outlined) and *Heatmap* tabs, and *Diff Status* (Pixel diff,
     Regions, then each differing region). Images come from `GET
-    …/attachments/:id` (thumbnails first, full image in a lightbox).
+    …/attachments/:id` (thumbnails first, full image in a lightbox), always
+    whole (`object-contain`, in a frame of the image's aspect ratio up to
+    224 px tall, so region outlines sit on the image) on a light
+    checkerboard in both themes, so a transparent reference with dark
+    content stays visible. Note screenshots and the lightbox use the same
+    backdrop.
     **Request check** (any session) → `POST …/screens/:nodeId/checks`.
   - **Render Check Target Details** (Figma `Excluded=False`): *Source* (Auto
     · detected in a checked section, or Manual · set up as a screen),
@@ -460,7 +465,11 @@ dimmed, so viewers see which settings are on.
     the target in the drawer.
   - On a frame or component that **isn't a target**: the hint "This section
     isn’t set up for render checks. Choose Screens or Components for it in
-    the plugin to check it automatically." with *Learn more*; agents get
+    the plugin to check it automatically." with *Learn more* — on a slot
+    component (`slotComponent` from `?containing=`: a main component with a
+    SLOT of its own, which is not detected as a target) instead "This is a
+    slot component, so it isn’t checked on its own. It’s checked through the
+    screens and components that fill its slot."; agents get
     **Set up check** (route, viewport, theme / query, threshold and masks,
     `PUT …/screens/:nodeId`), which makes it a manual target.
   A mismatch adds a **Render mismatch** badge and the `render` category; its

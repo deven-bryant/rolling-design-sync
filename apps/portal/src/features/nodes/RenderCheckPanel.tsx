@@ -15,6 +15,7 @@ import {
   targetStatus,
   useConfigureScreen,
   useContainingTargets,
+  useSlotComponent,
   useRenderCheck,
   useRequestCheck,
   useScreen,
@@ -148,6 +149,8 @@ export function SettingsForm({
 export const RENDER_CHECKS_DOCS = 'https://github.com/deven-bryant/rolling-design-sync/blob/dev/docs/ui-portal.md#render-checks';
 
 export const EXCLUDED_HINT = 'Excluded from render checks: it isn’t checked, and it stays excluded when targets are detected again. Turn the toggle off to check it.';
+export const SLOT_COMPONENT_HINT =
+  'This is a slot component, so it isn’t checked on its own. It’s checked through the screens and components that fill its slot.';
 export const NOT_TARGET_HINT =
   'This section isn’t set up for render checks. Choose Screens or Components for it in the plugin to check it automatically.';
 
@@ -277,6 +280,7 @@ export function RenderCheckPanel({ fileKey, node, canAct, now, onOpenNode, reten
   const nodeId = node.nodeId ?? '';
   const containing = useContainingTargets(fileKey, nodeId, { enabled: !node.deleted });
   const targets = containing.data ?? [];
+  const slotComponent = useSlotComponent(fileKey, nodeId);
   const target = targets.find(t => t.nodeId === nodeId);
   const others = targets.filter(t => t.nodeId !== nodeId);
   if (node.deleted) return null;
@@ -297,7 +301,7 @@ export function RenderCheckPanel({ fileKey, node, canAct, now, onOpenNode, reten
           onOpen={onOpenNode}
         />
       )}
-      {candidate && <ScreenPanel fileKey={fileKey} node={node} canAct={canAct} now={now} />}
+      {candidate && <ScreenPanel fileKey={fileKey} node={node} canAct={canAct} now={now} slotComponent={slotComponent} />}
     </>
   );
 }
@@ -404,7 +408,19 @@ function TargetPanel({
 }
 
 /** A frame, component or instance that isn't a check target: the not-a-target hint, and *Set up check* for agents. */
-function ScreenPanel({ fileKey, node, canAct, now }: { fileKey: string; node: NodeDetail; canAct: boolean; now: number }) {
+function ScreenPanel({
+  fileKey,
+  node,
+  canAct,
+  now,
+  slotComponent,
+}: {
+  fileKey: string;
+  node: NodeDetail;
+  canAct: boolean;
+  now: number;
+  slotComponent: boolean;
+}) {
   const nodeId = node.nodeId ?? '';
   const summary = node.screen;
   const screenQuery = useScreen(fileKey, nodeId, { enabled: !!summary });
@@ -419,7 +435,7 @@ function ScreenPanel({ fileKey, node, canAct, now }: { fileKey: string; node: No
         title="Render check"
         excluded={false}
         hideExclude
-        hint={NOT_TARGET_HINT}
+        hint={slotComponent ? SLOT_COMPONENT_HINT : NOT_TARGET_HINT}
         learnMoreHref={RENDER_CHECKS_DOCS}
         headingLevel="h4"
         footer={

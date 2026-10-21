@@ -298,7 +298,8 @@ const listTargets = {
   description: [
     'Every render-check target — set up with set_screen or detected in checked scopes (`autoTargets`: top-level frames / components / instances, the variants of top-level component sets and every main component) — in check order by containment: a target that contains other targets (nested, or as instances) comes after them, then document order.',
     'Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing target inside; `waiting`: a contained target\'s latest result is a mismatch; excluded targets never match a status filter) and `render`, everything a renderer needs (gallery settings + the key, set, variant string and props; the route + theme/query when set; the Figma size as viewport).',
-    '`containing=<nodeId>` lists the targets that contain that node (itself included), each with `renderNotes`. Run them with `rds-agent check --ready`.',
+    'Slot components (a main component with a SLOT of its own) are not detected: they are checked through the targets that place them with their fills.',
+    '`containing=<nodeId>` lists the targets that contain that node (itself included), each with `renderNotes`, and says whether the node is a slot component (`slotComponent`). Run them with `rds-agent check --ready`.',
   ].join(' '),
   tags, security,
   ...agentOp('list_check_targets', 'targets ls'),
@@ -311,7 +312,17 @@ const listTargets = {
       containing: { type: 'string', description: 'Only targets containing this node (at or above it, or placing an instance of a main component it is in); adds `renderNotes`.' },
     },
   },
-  response: { 200: { type: 'object', properties: { fileKey: { type: 'string' }, targets: { type: 'array', items: target } } }, ...errors() },
+  response: {
+    200: {
+      type: 'object',
+      properties: {
+        fileKey: { type: 'string' },
+        targets: { type: 'array', items: target },
+        slotComponent: { type: 'boolean', description: 'With `containing` only: the node is a main component with a SLOT of its own — not a target itself; checked through the targets that fill its slot.' },
+      },
+    },
+    ...errors(),
+  },
 };
 const updateTarget = {
   summary: 'Change a check target',
@@ -940,10 +951,14 @@ function registerScreenRoutes(app, { store, blobs, now, bus = null, config = {} 
     const { status, under, containing } = request.query;
     const within = under ? new Set((await screensUnder(fileKey, under)).map(s => s.nodeId)) : null;
     const { settings, order, info } = await evaluateTargets(store, fileKey);
-    const holders = containing ? containingTargets(info, await storedNode(store, fileKey, containing)) : null;
+    const node = containing ? await storedNode(store, fileKey, containing) : null;
+    const holders = node ? containingTargets(info, node) : null;
     const picked = order.filter(i => !(status && (i.excluded || i.status !== status)) && !(within && !within.has(i.s.nodeId)) && !(holders && !holders.has(i.s.nodeId)));
-    if (holders) await renderNotesOf(fileKey, picked);
-    return { fileKey, targets: await targetsOut(fileKey, picked, settings) };
+    if (!node) return { fileKey, targets: await targetsOut(fileKey, picked, settings) };
+    await renderNotesOf(fileKey, picked);
+    const slotComponent = node.nodeType === 'COMPONENT' && !node.isInstance && info.get(node.nodeId)?.s.source !== 'auto'
+      && targets.slotComponentIds(await store.listNodeSubtree(fileKey, node.nodeId, { includeDeleted: false })).has(node.nodeId);
+    return { fileKey, targets: await targetsOut(fileKey, picked, settings), slotComponent };
   });
 
   app.patch('/files/:fileKey/targets/:nodeId', { schema: updateTarget }, async (/** @type {any} */ request) => {

@@ -560,6 +560,8 @@ const CHECK_FLAGS = ['file-key', 'base-url', ...CHECK_MODES, 'url', 'storybook',
 /** The element a gallery page or story marks as the thing to screenshot. */
 const RDS_TARGET = '[data-rds-target]';
 const STORYBOOK_ROOT = '#storybook-root';
+/** Page margin (px, each side) around a gallery element given its Figma width, so it never touches the viewport edge. */
+const GALLERY_MARGIN = 32;
 
 function checkHelp() {
   return [
@@ -792,13 +794,16 @@ function themed(url, render) {
 
 /**
  * A PNG of one page (reduced motion, frozen clock, after network idle and fonts): the first of
- * `job.selectors` present on the page, else the viewport.
+ * `job.selectors` present on the page, else the viewport. With `job.fitWidth` (a gallery
+ * element), the element is given that width (border-box; its height flows) in a page a margin
+ * wider, and the viewport fallback is clipped to the Figma size.
  * @param {any} browser
- * @param {{ url: string, viewport: { width: number, height: number }, contextOptions?: object, initScript?: string | null, selectors?: string[] }} job
+ * @param {{ url: string, viewport: { width: number, height: number }, contextOptions?: object, initScript?: string | null, selectors?: string[], fitWidth?: number }} job
  */
 async function screenshot(browser, job, options) {
+  const fit = job.fitWidth || null;
   const context = await browser.newContext({
-    viewport: { width: job.viewport.width, height: job.viewport.height },
+    viewport: { width: fit ? fit + 2 * GALLERY_MARGIN : job.viewport.width, height: job.viewport.height },
     deviceScaleFactor: 1,
     reducedMotion: 'reduce',
     ...(job.contextOptions || {}),
@@ -814,9 +819,18 @@ async function screenshot(browser, job, options) {
     const shot = { type: 'png', animations: 'disabled', caret: 'hide', timeout: options.timeout };
     for (const selector of job.selectors || []) {
       const found = page.locator(selector);
-      if (await found.count()) return await found.first().screenshot(shot);
+      if (!(await found.count())) continue;
+      const element = found.first();
+      if (fit) {
+        await element.evaluate((/** @type {any} */ el, /** @type {number} */ width) => {
+          el.style.width = `${width}px`;
+          el.style.maxWidth = 'none';
+          el.style.boxSizing = 'border-box';
+        }, fit);
+      }
+      return await element.screenshot(shot);
     }
-    return await page.screenshot({ ...shot, fullPage: false });
+    return await page.screenshot({ ...shot, fullPage: false, ...(fit ? { clip: { x: 0, y: 0, width: job.viewport.width, height: job.viewport.height } } : {}) });
   } finally {
     await context.close();
   }
@@ -947,7 +961,7 @@ async function runCheck(argv, { env, fetchImpl, stdout, stderr, cwd = process.cw
     const known = render.route || (target && target.route) || (check && check.route);
     if (target && (configured || !known)) {
       gallery = await galleryOf(target);
-      if (gallery.mapped) return { viewport, selectors: gallery.selectors, ...themed(gallery.url, render) };
+      if (gallery.mapped) return { viewport, selectors: gallery.selectors, fitWidth: viewport.width, ...themed(gallery.url, render) };
     }
     let route = render.route || (target && target.route) || (check && check.route) || null;
     const family = (target && (target.familyKey || target.nodeId)) || (check && check.nodeId);
@@ -1057,4 +1071,4 @@ if (require.main === module) {
   run(process.argv.slice(2)).then(code => { process.exitCode = code; });
 }
 
-module.exports = { parseCheckArgs, loadPlaywright, checkUrl, fillTemplate, findStory, resolveComponent, themed, gitHead, envVar, warnLegacyEnv, retrySeconds, parseArgs, buildRequest, buildUrl, execute, perform, run, normalizeNodeId, usage, commandHelp, CliError, CLIENT, COMMANDS };
+module.exports = { GALLERY_MARGIN, parseCheckArgs, loadPlaywright, checkUrl, fillTemplate, findStory, resolveComponent, themed, gitHead, envVar, warnLegacyEnv, retrySeconds, parseArgs, buildRequest, buildUrl, execute, perform, run, normalizeNodeId, usage, commandHelp, CliError, CLIENT, COMMANDS };

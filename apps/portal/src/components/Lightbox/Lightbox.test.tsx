@@ -16,9 +16,27 @@ describe('ImageThumbnail', () => {
     await user.click(screen.getByRole('button', { name: 'View Screenshot 1' }));
     const dialog = await screen.findByRole('dialog', { name: 'Screenshot 1' });
     expect(dialog.querySelector('img')?.getAttribute('src')).toBe('/full.png');
+    expect(dialog.querySelector('img')?.className).toContain('bg-checkerboard');
     await expectNoAxeViolations(document.body);
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('shows the whole thumbnail on a light backdrop, never cropped', () => {
+    render(<ImageThumbnail src="/thumb.webp" alt="Screenshot 1" />);
+    const frame = screen.getByRole('button', { name: 'View Screenshot 1' });
+    expect(frame.className).toContain('bg-checkerboard');
+    expect(frame.className).toContain('h-20 w-32');
+    expect(frame.querySelector('img')?.className).toContain('object-contain');
+    expect(frame.querySelector('img')?.className).not.toContain('object-cover');
+  });
+
+  it('takes the image aspect ratio, as wide as fits up to maxHeight', () => {
+    render(<ImageThumbnail src="/thumb.webp" alt="Wide" aspect={{ width: 400, height: 100 }} maxHeight={50} />);
+    const frame = screen.getByRole('button', { name: 'View Wide' });
+    expect(frame.style.aspectRatio).toBe('400 / 100');
+    expect(frame.style.width).toBe('min(100%, 200px)');
+    expect(frame.className).not.toContain('h-20');
   });
 
   it('closes from its close button', async () => {

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { NodeDrawer } from './NodeDrawer';
-import { EXCLUDED_HINT, NOT_TARGET_HINT, parseMasks } from './RenderCheckPanel';
+import { EXCLUDED_HINT, NOT_TARGET_HINT, parseMasks, SLOT_COMPONENT_HINT } from './RenderCheckPanel';
 import { acceptScreenshots, fileToBase64, formatBytes, SCREENSHOT_MAX_BYTES } from './screenshots';
 import { breadcrumbs, FILE, mockApi, node, renderWithClient, treeRoutes, type Route } from './test-fixtures';
 import type { SessionRole } from './types';
@@ -75,13 +75,14 @@ function routes({
   screens = [screenState],
   settings = {},
   targets = [],
-}: { detail?: Record<string, unknown>; screens?: object[]; settings?: Record<string, unknown>; targets?: Record<string, unknown>[] } = {}): Route {
+  slotComponent = false,
+}: { detail?: Record<string, unknown>; screens?: object[]; settings?: Record<string, unknown>; targets?: Record<string, unknown>[]; slotComponent?: boolean } = {}): Route {
   let current = targets;
   return treeRoutes(call => {
     if (call.method === 'GET' && call.path === `/v3/files/${FILE}/targets`) {
       const inside = call.query.get('containing');
       const contains = (t: Record<string, unknown>) => t.nodeId === inside || ((t.contains as string[] | undefined) ?? []).includes(inside ?? '');
-      return { fileKey: FILE, targets: inside ? current.filter(contains) : current };
+      return { fileKey: FILE, targets: inside ? current.filter(contains) : current, ...(inside ? { slotComponent } : {}) };
     }
     if (call.method === 'GET' && call.path === `/v3/files/${FILE}/targets/1:9/checks`) return { fileKey: FILE, checks: history };
     if (call.method === 'PATCH' && call.path === `/v3/files/${FILE}/targets/1:9`) {
@@ -215,6 +216,14 @@ describe('render check section', () => {
     const viewer = within(await screen.findByRole('group', { name: 'Render check' }));
     expect(viewer.getByText(NOT_TARGET_HINT)).toBeTruthy();
     expect(viewer.queryByRole('button', { name: 'Set up check' })).toBeNull();
+  });
+
+  it('on a slot component: explains it is checked through what fills its slot', async () => {
+    renderDrawer('agent', routes({ detail: { type: 'COMPONENT', screen: null, notes: [] }, screens: [], slotComponent: true }));
+    const section = within(await screen.findByRole('group', { name: 'Render check' }));
+    expect(await section.findByText(SLOT_COMPONENT_HINT)).toBeTruthy();
+    expect(section.queryByText(NOT_TARGET_HINT)).toBeNull();
+    expect(section.getByRole('button', { name: 'Set up check' })).toBeTruthy();
   });
 
   it.each([
