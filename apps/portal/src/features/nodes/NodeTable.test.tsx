@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expectNoAxeViolations } from '../../test/axe';
 import { FakeEventSource } from '../../test/fake-event-source';
 import { NodeTable, type NodeTableProps } from './NodeTable';
 import { claimC1, FILE, logo, mockApi, node, pageHeader, renderWithClient, scope, treeRoutes, type Route } from './test-fixtures';
@@ -63,7 +64,7 @@ describe('NodeTable', () => {
     expect(crumbs.getByText('FRAME · 1:3')).toBeTruthy();
     expect(crumbs.getByText('Dirty')).toBeTruthy();
     expect(crumbs.getByText('Modified')).toBeTruthy();
-    expect(crumbs.getByText('layout')).toBeTruthy();
+    expect(crumbs.queryByText('layout')).toBeNull();
     expect(crumbs.getByText('itemSpacing')).toBeTruthy();
     expect(crumbs.getByText('spacing-md → spacing-lg')).toBeTruthy();
     expect(crumbs.getByText('devin')).toBeTruthy();
@@ -374,7 +375,7 @@ describe('NodeTable notes', () => {
     expect(within(row('1:2')).queryByRole('img', { name: /open note/ })).toBeNull();
   });
 
-  it('shows render-check status in the Check column, before Notes; In mismatch on attributed nodes; — elsewhere', async () => {
+  it('shows render-check status in the Render Check column, before Notes (no Categories column); In mismatch on attributed nodes; — elsewhere', async () => {
     const base = treeRoutes();
     const routes: Route = call => {
       if (call.method === 'GET' && call.path === `/v3/files/${FILE}/targets`)
@@ -387,10 +388,33 @@ describe('NodeTable notes', () => {
     renderTable({}, routes);
     await screen.findByText('Breadcrumbs');
     const headers = screen.getAllByRole('columnheader').map(h => h.textContent);
-    expect(headers.slice(-2)).toEqual(['Check', 'Notes']);
+    expect(headers).toEqual(['Node', 'Scope', 'State', 'Change', 'What changed', 'Agent', 'Render Check', 'Notes']);
     const checkCell = (id: string) => [...row(id).querySelectorAll('td')].at(-2)!;
     expect(await within(row('1:2')).findByText('Waiting')).toBeTruthy();
     expect(within(checkCell('1:3')).getByText('In mismatch')).toBeTruthy();
     expect(checkCell('1:1').textContent).toBe('—');
+  });
+
+  const renderHanging = (path: string) => {
+    mockApi(treeRoutes());
+    const mocked = globalThis.fetch;
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
+      new URL(String(input), 'http://portal.test').pathname === path ? new Promise<Response>(() => {}) : mocked(input, init),
+    );
+    return renderWithClient(<NodeTable fileKey={FILE} scopeId="1:1" filters={{}} onFiltersChange={vi.fn()} onOpenNode={vi.fn()} />);
+  };
+
+  it('shows the shared spinner while the first page loads', async () => {
+    const { container } = renderHanging(pagePath);
+    expect((await screen.findByRole('status')).textContent).toBe('Loading nodes…');
+    await expectNoAxeViolations(container);
+  });
+
+  it('shows a spinner in the Render Check column until the targets answer', async () => {
+    renderHanging(`/v3/files/${FILE}/targets`);
+    await screen.findByText('Breadcrumbs');
+    const checkCell = [...row('1:1').querySelectorAll('td')].at(-2)!;
+    expect(within(checkCell).getByRole('status').textContent).toBe('Loading render check');
+    await expectNoAxeViolations(row('1:1'));
   });
 });
