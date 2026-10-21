@@ -228,8 +228,9 @@ function TargetDetails({ fileKey, target, canAct, themeMode }: { fileKey: string
     <RenderCheckTargetDetails
       excluded={excluded}
       onExcludedChange={
-        canAct && !update.isPending
+        canAct
           ? next =>
+              !update.isPending &&
               update.mutate(
                 { nodeId: target.nodeId ?? '', change: { excluded: next } },
                 { onSuccess: () => void showToast(next ? 'Excluded from render checks' : 'Included in render checks') },

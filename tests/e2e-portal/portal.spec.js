@@ -407,6 +407,7 @@ test('automatic check targets: an agent edits a route, excludes a target and tur
   await expect(exclude).not.toBeChecked();
   await expect(details).toContainText('/card');
   await page.keyboard.press('Escape');
+  await expect(node).toBeHidden();
 
   await page.getByRole('button', { name: 'Expand Card' }).click();
   await row(page, INSTANCE).getByText('Button', { exact: true }).click();
@@ -415,6 +416,7 @@ test('automatic check targets: an agent edits a route, excludes a target and tur
   await containing.getByRole('button', { name: 'Open Card' }).click();
   await expect(node.getByRole('heading', { name: 'Card' })).toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(node).toBeHidden();
 
   await page.getByRole('button', { name: 'File settings' }).click();
   const settings = page.getByRole('dialog', { name: 'File settings' });
@@ -428,6 +430,7 @@ test('automatic check targets: an agent edits a route, excludes a target and tur
   await settings.getByRole('group', { name: 'Sections' }).getByText('Page', { exact: true }).click();
   await expect(section).toBeChecked();
   await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
 
   await signOut(page);
   await signIn(page, TOKENS.viewer);

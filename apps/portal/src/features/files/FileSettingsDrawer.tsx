@@ -240,8 +240,9 @@ function SectionChecks({ fileKey, canEdit, disabled }: { fileKey: string; canEdi
           key={scope.nodeId}
           size="sm"
           isSelected={scope.checks !== false}
-          isDisabled={!canEdit || disabled || update.isPending}
+          isDisabled={!canEdit || disabled}
           onChange={checks =>
+            !update.isPending &&
             update.mutate(
               { nodeId: scope.nodeId ?? '', checks },
               {
