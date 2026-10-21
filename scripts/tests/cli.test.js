@@ -126,6 +126,14 @@ test('flag values are typed and validated from the generated schema', () => {
   assert.throws(() => buildRequest(parseArgs(['resolve', 'a', '--url', 'b'])), /as an argument or --url, not both/);
 });
 
+test('object flags take JSON and are sent as objects', () => {
+  const gallery = { urlTemplate: '/ui/gallery?figma={set}&variant={variant}', storybookUrl: null };
+  const req = buildRequest(parseArgs(['files', 'settings', '--file-key', 'fk', '--gallery', JSON.stringify(gallery)]));
+  assert.deepEqual(req.body.settings.gallery, gallery);
+  assert.throws(() => buildRequest(parseArgs(['files', 'settings', '--file-key', 'fk', '--gallery', '/ui/gallery'])), /--gallery must be a JSON object/);
+  assert.throws(() => buildRequest(parseArgs(['files', 'settings', '--file-key', 'fk', '--gallery', '[1]'])), /--gallery must be a JSON object/);
+});
+
 test('clear splits item lists over the API limit into batches and merges the results', async () => {
   const max = COMMANDS.get('clear').items.maxItems;
   const calls = [];
