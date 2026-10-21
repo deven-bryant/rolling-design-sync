@@ -2,6 +2,7 @@ import type { HTMLAttributes, ReactNode } from 'react';
 import { Badge } from '../../components/Badge';
 import { Card } from '../../components/Card';
 import { Text } from '../../components/primitives';
+import { LoadingIndicator } from '../../components/LoadingIndicator';
 import { BadgeCell, ProgressCell, Table, TextCell } from '../../components/Table';
 import { AgentCell } from '../../components/domain/AgentCell';
 import { NodeCell } from '../../components/domain/NodeCell';
@@ -95,7 +96,7 @@ function MessageRow({ children }: { children: ReactNode }) {
   return (
     <Table.Row>
       <Table.Cell colSpan={COLUMNS.length}>
-        <Text color="tertiary">{children}</Text>
+        {typeof children === 'string' ? <Text color="tertiary">{children}</Text> : children}
       </Table.Cell>
     </Table.Row>
   );
@@ -122,7 +123,11 @@ export function FilesTable({ onOpenFile, onOpenConnect, className, ...rest }: Fi
             ))}
           </Table.Header>
           <Table.Body>
-            {files.isPending && <MessageRow>Loading files…</MessageRow>}
+            {files.isPending && (
+              <MessageRow>
+                <LoadingIndicator label="Loading files…" />
+              </MessageRow>
+            )}
             {files.isError && <MessageRow>Couldn&apos;t load files.</MessageRow>}
             {files.data?.length === 0 && (
               <MessageRow>

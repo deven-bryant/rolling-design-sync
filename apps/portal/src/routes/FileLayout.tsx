@@ -3,6 +3,7 @@ import { Navigate, Outlet, useLocation, useNavigate, useOutletContext, useParams
 import { useNow } from '../api/hooks/useNow';
 import { Button, ButtonUtility } from '../components/Button';
 import { Icon } from '../components/primitives';
+import { LoadingIndicator } from '../components/LoadingIndicator';
 import { PageHeader } from '../components/PageHeader';
 import { FileSettingsDrawer, formatCount, timeAgo, useLastSyncClient } from '../features/files';
 import { splitUnder, useFile, useScope } from '../features/nodes';
@@ -152,7 +153,7 @@ export function FileLayout() {
           ) : scope ? (
             <ScopeMeta fileKey={fileKey} scope={scope} />
           ) : scopes.isPending ? (
-            'Loading scopes…'
+            <LoadingIndicator label="Loading scopes…" />
           ) : (
             'No scopes yet — run the plugin on a frame'
           )}

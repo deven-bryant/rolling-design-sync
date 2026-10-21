@@ -8,6 +8,7 @@ import { Pagination } from '../../components/Pagination';
 import { LeadAction, Table, TextCell } from '../../components/Table';
 import { Toggle } from '../../components/Toggle';
 import { cx, Icon, Text } from '../../components/primitives';
+import { LoadingIndicator } from '../../components/LoadingIndicator';
 import { formatCount, plural, timeAgo, useFileScopes, type FileScope } from '../files';
 
 const VISIBLE_KEY = 'rds.portal.scopesVisible';
@@ -142,9 +143,7 @@ export function ScopePanel({ fileKey, fileName, selected, onSelectionChange, onV
           />
           <Card.Body>
             {scopes.isPending ? (
-              <Text as="p" color="tertiary" className="px-3xl py-xl">
-                Loading scopes…
-              </Text>
+              <LoadingIndicator size="md" label="Loading scopes…" className="px-3xl py-xl" />
             ) : scopes.error ? (
               <Text as="p" color="error-primary" className="px-3xl py-xl">
                 Couldn’t load scopes: {scopes.error.message}

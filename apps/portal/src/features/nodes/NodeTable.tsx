@@ -6,8 +6,8 @@ import { useNow } from '../../api/hooks/useNow';
 import { Badge } from '../../components/Badge';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
+import { LoadingIndicator } from '../../components/LoadingIndicator';
 import { AgentCell } from '../../components/domain/AgentCell';
-import { CategoryBadges } from '../../components/domain/CategoryBadges';
 import { ChangeBadge } from '../../components/domain/ChangeBadge';
 import { NodeCell } from '../../components/domain/NodeCell';
 import { RenderCheckStatusBadge } from '../../components/domain/RenderCheckTarget';
@@ -20,7 +20,7 @@ import { Select, SelectItem } from '../../components/Select';
 import { FileTypeCell, Table, TextCell } from '../../components/Table';
 import { Toggle } from '../../components/Toggle';
 import { cx, Icon, Text, VisuallyHidden } from '../../components/primitives';
-import { CATEGORIES, categoriesOf, type Category } from './categories';
+import { CATEGORIES, type Category } from './categories';
 import { isTokenNodeId, nodeMeta, plural, timeAgo, tokenMeta, tokenModeChanges, tokenValueView, whatChanged, type TokenModeChange } from './format';
 import { useNodeLiveUpdates, type NodeLiveUpdates } from './live';
 import { targetStatus, useTargets, type CheckTarget } from './renderChecks';
@@ -34,10 +34,9 @@ const COLUMNS = [
   { id: 'scope', label: 'Scope', width: 'whitespace-nowrap' },
   { id: 'state', label: 'State', width: 'w-25' },
   { id: 'change', label: 'Change', width: 'w-28' },
-  { id: 'categories', label: 'Categories', width: 'w-43' },
   { id: 'changed', label: 'What changed', width: 'w-45' },
   { id: 'agent', label: 'Agent', width: 'w-45' },
-  { id: 'check', label: 'Check', width: 'w-32' },
+  { id: 'check', label: 'Render Check', width: 'w-28' },
   { id: 'notes', label: 'Notes', width: 'w-45' },
 ] as const;
 export type NodeColumn = (typeof COLUMNS)[number]['id'];
@@ -166,6 +165,8 @@ interface RowContextValue {
   scopeNames: ReadonlyMap<string, string>;
   /** The file's render-check targets by node id. */
   targets: ReadonlyMap<string, CheckTarget>;
+  /** The targets are still loading, so a missing target isn't known to be missing yet. */
+  targetsLoading: boolean;
   now: number;
   /** Rows the user opened or closed, by row key; others fall back to their default. */
   expansion: ReadonlyMap<string, boolean>;
@@ -184,11 +185,12 @@ function Dash() {
   return <Text color="quaternary">—</Text>;
 }
 
-/** `Check`: a target's render-check status; *In mismatch* on a node a failed check was traced to; `—` elsewhere. */
+/** `Render Check`: a target's status; *In mismatch* on a node a failed check was traced to; `—` elsewhere; a spinner while targets load. */
 function CheckCell({ node }: { node: NodeItem }) {
-  const { targets } = useRowContext();
+  const { targets, targetsLoading } = useRowContext();
   const target = targets.get(node.nodeId ?? '');
   if (target && !target.excluded) return <RenderCheckStatusBadge status={targetStatus(target)} />;
+  if (targetsLoading) return <LoadingIndicator hideLabel label="Loading render check" />;
   if (node.notes?.some(n => n.source === 'render_check'))
     return (
       <Badge size="sm" color="error">
@@ -282,14 +284,13 @@ function NodeRowView({ node, scope, depth, via, expandable, expanded, onToggle }
   const token = isTokenNodeId(id);
   const changed = whatChanged(node);
   const modes = token && node.changeType === 'modified' ? tokenModeChanges(node) : [];
-  const categories = categoriesOf(node.changedProps ?? []);
   return (
     <Table.Row
       data-node-id={id}
       selected={!!selectedNodeId && selectedNodeId === id}
       onAction={onOpenNode ? () => onOpenNode(id) : undefined}
     >
-      <Table.Cell className="w-93.75 py-lg">
+      <Table.Cell className="min-w-93.75 py-lg">
         <NodeCell
           name={name}
           meta={token ? tokenMeta(node) : nodeMeta(node, via)}
@@ -305,9 +306,6 @@ function NodeRowView({ node, scope, depth, via, expandable, expanded, onToggle }
       {columns.has('scope') && <Table.Cell>{scope ? <Text color="tertiary" className="whitespace-nowrap">{scope}</Text> : <Dash />}</Table.Cell>}
       {columns.has('state') && <Table.Cell>{node.state ? <StateBadge state={node.state} /> : <Dash />}</Table.Cell>}
       {columns.has('change') && <Table.Cell>{node.changeType ? <ChangeBadge change={node.changeType} /> : <Dash />}</Table.Cell>}
-      {columns.has('categories') && (
-        <Table.Cell>{categories.length ? <CategoryBadges categories={categories} max={2} /> : <Dash />}</Table.Cell>
-      )}
       {columns.has('changed') &&
         (modes.length ? (
           <TokenChanges modes={modes} />
@@ -335,13 +333,14 @@ function NodeRowView({ node, scope, depth, via, expandable, expanded, onToggle }
   );
 }
 
-function StatusRow({ children, depth = 0 }: { children: ReactNode; depth?: number }) {
+/** A full-width message row; `loading` shows the message beside the shared spinner. */
+function StatusRow({ children, depth = 0, loading = false }: { children: ReactNode; depth?: number; loading?: boolean }) {
   const { columns } = useRowContext();
   return (
     <tr>
       <td colSpan={columns.size + 1} className="h-14 border-b border-secondary px-3xl py-lg">
         <div style={{ paddingLeft: `calc(${depth} * 1.5rem + 1.75rem)` }}>
-          <Text color="tertiary">{children}</Text>
+          {loading ? <LoadingIndicator label={children} /> : <Text color="tertiary">{children}</Text>}
         </div>
       </td>
     </tr>
@@ -442,7 +441,7 @@ function MoreRow({ loading, onMore }: { loading: boolean; onMore: () => void }) 
 function ChildRows({ parentId, depth, instances, scope }: { parentId: string; depth: number; instances: string; scope?: string }) {
   const { query, nodes, more } = useLevel(parentId);
   const children = nodes.filter(n => n.nodeId !== parentId);
-  if (query.isPending) return <StatusRow depth={depth}>Loading…</StatusRow>;
+  if (query.isPending) return <StatusRow depth={depth} loading>Loading child nodes…</StatusRow>;
   if (query.isError) return <StatusRow depth={depth}>Couldn’t load child nodes: {errorText(query.error)}</StatusRow>;
   if (!children.length) return <StatusRow depth={depth}>No child nodes match the filters.</StatusRow>;
   return (
@@ -460,7 +459,7 @@ function MainComponentRows({ instance, depth, instances, scope }: { instance: No
   const mainId = instance.mainComponentId ?? '';
   const through = rowKeyOf(instances, `${instance.nodeId ?? ''}>`);
   const { query, nodes, more } = useLevel(mainId);
-  if (query.isPending) return <StatusRow depth={depth}>Loading main component…</StatusRow>;
+  if (query.isPending) return <StatusRow depth={depth} loading>Loading main component…</StatusRow>;
   if (query.isError) return <StatusRow depth={depth}>Couldn’t load main component {mainId}: {errorText(query.error)}</StatusRow>;
   const main = nodes.find(n => n.nodeId === mainId);
   const children = nodes.filter(n => n.nodeId !== mainId);
@@ -507,7 +506,7 @@ function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
   const queryClient = useQueryClient();
 
   let body: ReactNode;
-  if (query.isPending) body = <StatusRow>Loading nodes…</StatusRow>;
+  if (query.isPending) body = <StatusRow loading>Loading nodes…</StatusRow>;
   else if (query.isError) body = <StatusRow>Couldn’t load nodes: {errorText(query.error)}</StatusRow>;
   else if (!nodes.length) body = <StatusRow>No nodes match the filters.</StatusRow>;
   else if (roots.length)
@@ -572,7 +571,8 @@ export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNo
   const live = useNodeLiveUpdates(fileKey);
   const claimsQuery = useFileClaims(fileKey);
   const file = useFile(fileKey);
-  const targetList = useTargets(fileKey).data;
+  const targetsQuery = useTargets(fileKey);
+  const targetList = targetsQuery.data;
   const targets = useMemo(() => new Map((targetList ?? []).map(t => [t.nodeId ?? '', t])), [targetList]);
   const { scope, selected, data: scopeList } = useScope(fileKey, scopeId);
   const scopeNames = new Map((scopeList?.scopes ?? []).flatMap(s => (s.nodeId && s.name ? [[s.nodeId, s.name] as const] : [])));
@@ -631,14 +631,14 @@ export function NodeTable({ fileKey, scopeId, filters, onFiltersChange, onOpenNo
         <div className="overflow-x-auto">
           <Table aria-label="Nodes" aria-describedby={undefined}>
             <Table.Header>
-              <Table.HeaderCell className="w-93.75">Node</Table.HeaderCell>
+              <Table.HeaderCell className="min-w-93.75">Node</Table.HeaderCell>
               {visible.map(c => (
                 <Table.HeaderCell key={c.id} className={c.width}>
                   {c.label}
                 </Table.HeaderCell>
               ))}
             </Table.Header>
-            <RowContext value={{ fileKey, filters, columns, onOpenNode, selectedNodeId, live, claims, scopeNames, targets, now, expansion: expansion.rows, setExpanded }}>
+            <RowContext value={{ fileKey, filters, columns, onOpenNode, selectedNodeId, live, claims, scopeNames, targets, targetsLoading: targetsQuery.isPending, now, expansion: expansion.rows, setExpanded }}>
               <PagedRows key={pageKey} fileKey={fileKey} scopeId={scopeId} filters={filters} colSpan={visible.length + 1} />
             </RowContext>
           </Table>

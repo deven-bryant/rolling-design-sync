@@ -126,7 +126,7 @@ describe('design tokens: node tree', () => {
     expect(active.getByText('VARIABLE · COLOR · --color-bg-active')).toBeTruthy();
     expect(active.getByText('Dirty')).toBeTruthy();
     expect(active.getByText('Modified')).toBeTruthy();
-    expect(active.getByText('token')).toBeTruthy();
+    expect(active.queryByText('token')).toBeNull();
     expect(active.getByText('Dark')).toBeTruthy();
     const swatches = [...row(BG_ACTIVE).querySelectorAll<HTMLElement>('[data-slot="swatch"]')].map(s => s.style.backgroundColor);
     expect(swatches).toEqual(['rgb(32, 37, 39)', 'rgb(43, 48, 51)']);

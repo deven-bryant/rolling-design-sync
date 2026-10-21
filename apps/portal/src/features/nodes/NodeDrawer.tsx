@@ -24,6 +24,7 @@ import { TokenValue } from '../../components/domain/TokenValue';
 import { Input, Textarea } from '../../components/Input';
 import { Menu } from '../../components/Menu';
 import { Text } from '../../components/primitives';
+import { LoadingIndicator } from '../../components/LoadingIndicator';
 import { showToast } from '../../components/Toast';
 import { Tooltip, TooltipTrigger } from '../../components/Tooltip';
 import { categoriesOf, type Category } from './categories';
@@ -642,7 +643,7 @@ function useHistory(fileKey: string, nodeId: string, now: number): { history: No
     };
   });
   let historyEmpty: ReactNode = 'No history yet.';
-  if (query.isPending) historyEmpty = 'Loading history…';
+  if (query.isPending) historyEmpty = <LoadingIndicator label="Loading history…" />;
   else if (query.isError) historyEmpty = <Text color="error-primary">Couldn’t load history: {query.error.message}</Text>;
   return { history, historyEmpty };
 }
@@ -722,7 +723,7 @@ function NodeDrawerContent({ fileKey, nodeId, role, removal, onOpenNode, ...tab 
       <>
         <Drawer.Header title={nodeId} description={detail.isError ? 'Couldn’t load this node' : 'Loading…'} />
         <Drawer.Body>
-          {detail.isError ? <Text color="error-primary">{detail.error.message}</Text> : <Text color="tertiary">Loading node…</Text>}
+          {detail.isError ? <Text color="error-primary">{detail.error.message}</Text> : <LoadingIndicator size="md" label="Loading node…" />}
         </Drawer.Body>
       </>
     );

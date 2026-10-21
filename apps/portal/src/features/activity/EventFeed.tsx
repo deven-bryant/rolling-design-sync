@@ -6,6 +6,7 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { Feed, FeedItem } from '../../components/FeedItem';
 import { Text } from '../../components/primitives';
+import { LoadingIndicator } from '../../components/LoadingIndicator';
 import type { StreamState } from '../../api/useEventStream';
 import { actorInitials, describeEvent, eventNodeIds, type ActivityEvent } from './events';
 import { useNow } from '../../api/hooks/useNow';
@@ -183,9 +184,7 @@ export function EventFeed({
       />
       <Card.Body className="p-3xl">
         {isLoading ? (
-          <Text as="p" color="tertiary">
-            Loading events…
-          </Text>
+          <LoadingIndicator size="md" label="Loading events…" />
         ) : error ? (
           <Text as="p" color="error-primary">
             Couldn’t load events: {error.message}

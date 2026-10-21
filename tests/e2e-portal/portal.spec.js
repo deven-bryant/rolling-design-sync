@@ -49,6 +49,9 @@ test('viewer browses files, expands a frame and an instance, and sees no actions
   await fileRow.click();
   await expect(page).toHaveURL(new RegExp(`/ui/files/${fileKey}/nodes`));
   await expect(page.getByRole('heading', { level: 1, name: 'Page' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Render Check' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'Categories' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Category/ })).toBeVisible();
 
   await page.getByText('Expand instances', { exact: true }).click();
   await expect(page.getByRole('switch', { name: 'Expand instances' })).toBeChecked();
@@ -265,6 +268,8 @@ test('file settings: an agent turns library tracking off and on; a viewer sees i
   const readOnly = page.getByRole('dialog', { name: 'File settings' });
   await expect(readOnly.getByText('Sign in with an agent token to change file settings.')).toBeVisible();
   await expect(readOnly.getByRole('switch', { name: /Track library components/ })).toBeDisabled();
+  await expect(readOnly.getByRole('switch', { name: /Track library components/ })).toBeChecked();
+  await expect(readOnly.locator('label', { hasText: 'Track library components' }).locator('[data-pressed]')).toHaveClass(/bg-brand-solid/);
 });
 
 test('a removed screen is one Removed work item; its row opens the Removal panel', async ({ page }) => {

@@ -4,6 +4,7 @@ import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { AgentCell } from '../../components/domain/AgentCell';
 import { Text, VisuallyHidden } from '../../components/primitives';
+import { LoadingIndicator } from '../../components/LoadingIndicator';
 import { Table, TextCell } from '../../components/Table';
 import { useClaims } from '../../api/hooks/useClaims';
 import { useNow } from '../../api/hooks/useNow';
@@ -51,9 +52,7 @@ export function ClaimsPanel({
       <Card.Header title={title} badge={<Badge color="brand">{workers.length} active</Badge>} description={description} />
       <Card.Body>
         {claims.isPending ? (
-          <Text as="p" color="tertiary" className="px-3xl py-xl">
-            Loading claims…
-          </Text>
+          <LoadingIndicator size="md" label="Loading claims…" className="px-3xl py-xl" />
         ) : claims.error ? (
           <Text as="p" color="error-primary" className="px-3xl py-xl">
             Couldn’t load claims: {claims.error.message}
