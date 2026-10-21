@@ -469,8 +469,9 @@ in the file settings (`update_file_settings`, or
   component key), `{nodeId}`, `{set}` (component set, or component name),
   `{variant}` (Figma's variant string, `Size=sm, State=Hover`) and
   `{prop.<Name>}` (one variant property). The page renders that one variant
-  with sample props and marks it with `data-rds-target`; the CLI screenshots
-  that element (else the viewport) at the variant's Figma size:
+  with sample props and marks it with `data-rds-target`; the CLI gives that
+  element the variant's Figma width (border-box; its height flows) and
+  screenshots it (else the viewport, clipped to the Figma size):
 
   ```text
   /gallery?figma={set}&variant={variant}

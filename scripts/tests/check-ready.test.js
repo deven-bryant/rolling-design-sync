@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { run, fillTemplate, findStory, themed } = require('../rds-agent');
+const { run, fillTemplate, findStory, themed, GALLERY_MARGIN } = require('../rds-agent');
 
 const env = { RDS_API_BASE_URL: 'https://rds.example.com', RDS_AGENT_TOKEN: 'agent-secret' };
 const PNG = Buffer.from('fake-png-bytes');
@@ -77,7 +77,7 @@ function fakePlaywright({ elements = [] } = {}) {
           log.contexts.push(options);
           return {
             newPage: async () => {
-              const page = { url: null, initScripts: [], shot: null };
+              const page = { url: null, initScripts: [], shot: null, clip: null, styled: null };
               log.pages.push(page);
               return {
                 setDefaultTimeout: () => {},
@@ -87,9 +87,16 @@ function fakePlaywright({ elements = [] } = {}) {
                 evaluate: async () => true,
                 locator: selector => ({
                   count: async () => (elements.includes(selector) ? 1 : 0),
-                  first: () => ({ screenshot: async () => { page.shot = selector; return ELEMENT_PNG; } }),
+                  first: () => ({
+                    evaluate: async (fn, arg) => {
+                      const el = { style: {} };
+                      fn(el, arg);
+                      page.styled = { selector, style: el.style };
+                    },
+                    screenshot: async () => { page.shot = selector; return ELEMENT_PNG; },
+                  }),
                 }),
-                screenshot: async options => { page.shot = options.fullPage === false ? 'viewport' : '?'; return PNG; },
+                screenshot: async options => { page.shot = options.fullPage === false ? 'viewport' : '?'; page.clip = options.clip || null; return PNG; },
               };
             },
             close: async () => {},
@@ -116,8 +123,14 @@ test('check --ready: lists ready targets and checks them in API order, through t
     'http://localhost:3000/gallery?figma=Button&variant=Size%3Dsm%2C%20State%3DHover',
     'http://localhost:3000/files',
   ]);
-  assert.deepEqual(pw.log.contexts.map(c => c.viewport), [{ width: 120, height: 40 }, { width: 120, height: 40 }, { width: 1440, height: 900 }]);
+  const wide = { width: 120 + 2 * GALLERY_MARGIN, height: 40 };
+  assert.deepEqual(pw.log.contexts.map(c => c.viewport), [wide, wide, { width: 1440, height: 900 }], 'components: a page wider than the Figma width');
   assert.deepEqual(pw.log.pages.map(p => p.shot), ['[data-rds-target]', '[data-rds-target]', 'viewport'], 'screens: the viewport');
+  assert.deepEqual(pw.log.pages.map(p => p.styled), [
+    { selector: '[data-rds-target]', style: { width: '120px', maxWidth: 'none', boxSizing: 'border-box' } },
+    { selector: '[data-rds-target]', style: { width: '120px', maxWidth: 'none', boxSizing: 'border-box' } },
+    null,
+  ], 'the gallery element gets the Figma width; its height flows; screens are left alone');
   const result = api.calls.find(c => /\/result$/.test(c.path));
   assert.equal(result.body.image, ELEMENT_PNG.toString('base64'));
   const stored = api.calls.filter(c => c.method === 'PATCH').map(c => c.body);
@@ -208,6 +221,7 @@ test('check: Storybook — resolves figma:<key> (or figma-node:<nodeId>) tags fr
   const pw2 = fakePlaywright({ elements: ['#storybook-root [data-rds-target]', '#storybook-root'] });
   assert.equal(await runCheck([...base, '--ready', '--storybook', SB], flag, pw2), 0);
   assert.equal(pw2.log.pages[0].shot, '#storybook-root [data-rds-target]');
+  assert.deepEqual(pw2.log.pages[0].styled, { selector: '#storybook-root [data-rds-target]', style: { width: '120px', maxWidth: 'none', boxSizing: 'border-box' } }, 'stories are sized like gallery pages');
 
   const broken = fakeApi({ targets: [component('1:1', {}, sb)] });
   const err = sink();
@@ -297,6 +311,7 @@ test('check --screen: a component target renders through the gallery', async () 
   assert.equal(await runCheck([...base, '--screen', '1-1'], api, pw), 1);
   assert.equal(pw.log.pages[0].url, 'http://localhost:3000/gallery?figma=Button&variant=Size%3Dsm%2C%20State%3DHover');
   assert.equal(pw.log.pages[0].shot, 'viewport');
+  assert.deepEqual(pw.log.pages[0].clip, { x: 0, y: 0, width: 120, height: 40 }, 'without the marked element: the Figma size of the wider page');
 });
 
 test('check: exit codes — nothing ready 0 (no browser), errors 2, usage', async () => {

@@ -150,7 +150,11 @@ rds-agent check --file-key AbC123 --list-unmapped
      and shot at `#storybook-root` (its `[data-rds-target]` when present);
      else `gallery.urlTemplate` filled in (`{key}`, `{nodeId}`, `{set}`,
      `{variant}`, `{prop.<Name>}`, each URL-encoded), shot at its
-     `[data-rds-target]` element (else the viewport).
+     `[data-rds-target]` element (else the viewport). The element (or
+     `#storybook-root`) is given the Figma width before the shot
+     (`box-sizing: border-box`; its height flows), in a page 32 px wider on
+     each side, so a wrapper that hugs its content is captured at the
+     designed width.
      The resolution is stored with the target (`targets set --mapped --story-id --url`).
    - **Route:** no gallery entry → `base-url + route (+ query)`. A target
      whose family has no route either is *Not mapped* — pass `--url <full url>`
