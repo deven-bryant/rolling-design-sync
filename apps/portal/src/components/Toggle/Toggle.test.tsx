@@ -97,6 +97,17 @@ describe('Toggle', () => {
     expect(classesOf(track(container))).toContain('bg-disabled');
   });
 
+  it('keeps a disabled toggle that is on looking on', async () => {
+    const { container } = render(<Toggle aria-label="Tracked" isSelected isDisabled />);
+    expect((screen.getByRole('switch') as HTMLInputElement).checked).toBe(true);
+    const classes = classesOf(track(container));
+    expect(classes).toEqual(expect.arrayContaining(['bg-brand-solid', 'opacity-50']));
+    expect(classes).not.toContain('bg-disabled');
+    expect(classesOf(track(container)?.firstElementChild)).toEqual(expect.arrayContaining(['bg-fg-white', 'translate-x-4']));
+    expect(classesOf(track(container)?.firstElementChild)).not.toContain('bg-toggle-button-fg_disabled');
+    await expectNoAxeViolations(container);
+  });
+
   it('renders Size=md, Text=False as a labelled md switch', async () => {
     const user = userEvent.setup();
     const { container } = render(<Toggle size="md" aria-label="Dark mode" />);

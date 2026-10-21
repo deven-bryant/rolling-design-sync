@@ -9,8 +9,12 @@ export const toggleBaseStyles = variants({
     size: { sm: 'h-5 w-9', md: 'h-6 w-11' },
     pressed: { true: 'bg-brand-solid', false: 'bg-tertiary' },
     focusVisible: { true: 'outline-2 outline-offset-2 outline-focus-ring', false: '' },
-    disabled: { true: 'bg-disabled', false: '' },
+    disabled: { true: '', false: '' },
   },
+  compound: [
+    { pressed: false, disabled: true, className: 'bg-disabled' },
+    { pressed: true, disabled: true, className: 'opacity-50' },
+  ],
   defaults: { size: 'sm', pressed: false, focusVisible: false, disabled: false },
 });
 
@@ -19,9 +23,10 @@ const thumbStyles = variants({
   variants: {
     size: { sm: 'size-4', md: 'size-5' },
     pressed: { true: '', false: 'translate-x-0' },
-    disabled: { true: 'bg-toggle-button-fg_disabled shadow-none', false: '' },
+    disabled: { true: '', false: '' },
   },
   compound: [
+    { pressed: false, disabled: true, className: 'bg-toggle-button-fg_disabled shadow-none' },
     { size: 'sm', pressed: true, className: 'translate-x-4' },
     { size: 'md', pressed: true, className: 'translate-x-5' },
   ],
@@ -38,7 +43,7 @@ export interface ToggleBaseProps extends HTMLAttributes<HTMLSpanElement> {
   ref?: Ref<HTMLSpanElement>;
 }
 
-/** The `_Toggle base` track and thumb. Visual only: `Toggle` carries the switch semantics. */
+/** The `_Toggle base` track and thumb; a disabled toggle that is on keeps its on track, dimmed. Visual only: `Toggle` carries the switch semantics. */
 export function ToggleBase({ pressed = false, size = 'sm', focusVisible, disabled, className, ref, ...rest }: ToggleBaseProps) {
   return (
     <span
