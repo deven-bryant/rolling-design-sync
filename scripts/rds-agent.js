@@ -207,6 +207,12 @@ function valueOf(f, raw) {
     if (!list.length) throw new CliError(`--${f.flag} needs at least one value`);
     return f.in === 'query' ? list.join(',') : list.map(v => (f.items === 'integer' ? integerOf(f, v) : v));
   }
+  if (f.type === 'object' && f.in !== 'query') {
+    let value;
+    try { value = JSON.parse(text); } catch { throw new CliError(`--${f.flag} must be a JSON object, e.g. --${f.flag} '{"key":"value"}'`); }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new CliError(`--${f.flag} must be a JSON object`);
+    return value;
+  }
   if (f.enum && !f.enum.includes(text)) throw new CliError(`--${f.flag} must be one of: ${f.enum.join(', ')}`);
   if (NODE_ID_PARAMS.has(f.name)) return splitList(text).map(normalizeNodeId).join(',');
   return text;
