@@ -64,7 +64,7 @@ system into code — so its component layer follows the design file closely.
 |---|---|---|---|
 | Tokens | `src/styles/` | `tokens.css` (CSS variables), Tailwind `@theme` | — |
 | Primitives | `src/components/primitives/` | Icon, Text, Stack, Inline, Surface, VisuallyHidden, the `variants()` helper | tokens |
-| Components | `src/components/<Name>/` | One per Figma component set: Button, ButtonGroup, Badge, Avatar, Input, Select, Toggle, Checkbox, Tabs, Breadcrumbs, Pagination, Table, Card, Metric, FeedItem, CodeSnippet, ProgressBar, Drawer, Menu, SidebarNav, PageHeader (Tooltip and others when a design needs them) | primitives, other components |
+| Components | `src/components/<Name>/` | One per Figma component set: Button, ButtonGroup, Badge, Avatar, Input, Select, Toggle, LoadingIndicator, Checkbox, Tabs, Breadcrumbs, Pagination, Table, Card, Metric, FeedItem, CodeSnippet, ProgressBar, Drawer, Menu, SidebarNav, PageHeader (Tooltip and others when a design needs them) | primitives, other components |
 | Domain components | `src/components/domain/` | The portal-only Figma components: NodeCell, AgentCell (with the sprite), DiffRow, plus StateBadge, ChangeBadge, CategoryBadges | components |
 | Features | `src/features/<area>/` | Data-connected pieces: query hooks, event wiring, containers such as NodeTable or ClaimsPanel | components, `src/api` |
 | Routes | `src/routes/` | Pages: layout, URL state, composition of features | everything |
@@ -261,6 +261,16 @@ The sidebar header holds the theme toggle (light / dark). The choice is saved
 per browser (`localStorage['rds-theme']`); with no saved choice the portal
 follows the OS `prefers-color-scheme`, live.
 
+While a request is in flight, the screen shows the shared `LoadingIndicator`
+(Figma *Loading indicator*, `Type=Line simple`): a spinner with its label in a
+`role="status"` element, sized for table rows and text (`sm`) or drawer
+sections (`md`); it stops turning under `prefers-reduced-motion`. Table pages
+and child rows, the Nodes table's *Render Check* cells, Work items, Files,
+the node drawer (node, *Render check* section, History), File settings
+sections, scopes, claims, events and tokens use it; errors and empty states
+stay plain text. A disabled **Toggle** that is on keeps its brand track,
+dimmed, so viewers see which settings are on.
+
 ### Files — `/ui/files` (home)
 - Metrics, in this order: **Dirty nodes** (sum of `GET /v3/files` counts),
   **Cleared this week** and **Active claims** (unexpired `GET /v3/claims`, with
@@ -359,15 +369,17 @@ follows the OS `prefers-color-scheme`, live.
   *Expand instances* on loads its main component (`under=<mainComponentId>`,
   shown as `↳ … via <instanceId>`). Columns: Node (Node cell: indent, chevron,
   name, a gray **Library** badge on library nodes, `TYPE · id`, `→ main` for
-  instances; 375px), Scope (the name of the synced scope the row is under,
-  hugging its text), State, Change, Categories, What changed (first changed
-  prop with its token change, or "N properties"), Agent, **Check**, Notes.
-  *Check* (`GET /v3/files/:fileKey/targets`) shows a check target's status —
+  instances; it takes the remaining width, at least 375px), Scope (the name of
+  the synced scope the row is under, hugging its text), State, Change, What
+  changed (first changed prop with its token change, or "N properties"),
+  Agent, **Render Check**, Notes. There is no Categories column; the
+  *Category* filter stays.
+  *Render Check* (`GET /v3/files/:fileKey/targets`) shows a check target's status —
   Mismatch · Passed · Waiting (a target inside it last failed) · Not mapped
   (no gallery entry or route renders it) · Error, also Ready · Requested ·
   Building · Stale — a red **In mismatch** badge on a node a failed check was
   traced to (it has an open `render_check` note), and `—` on other nodes and
-  excluded targets.
+  excluded targets. While the targets load, the column shows the loading spinner.
 - **Design tokens** (the `TOKENS` scope, "Design tokens"): selecting it lists
   its collections (`VARIABLE_COLLECTION · 2 modes`), each expanding to its
   tokens. Its levels are listed with `fields=…,attrs` so token rows can show
