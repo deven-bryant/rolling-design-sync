@@ -378,7 +378,11 @@ const setScopeChecks = {
 // --- state -------------------------------------------------------------------------
 /** Hash of the content hashes of `nodeId` and its live descendants. */
 async function designVersion(store, fileKey, nodeId) {
-  const nodes = await store.listNodeSubtree(fileKey, nodeId, { includeDeleted: false });
+  return designVersionOf(await store.listNodeSubtree(fileKey, nodeId, { includeDeleted: false }));
+}
+
+/** designVersion of a subtree's live nodes. */
+function designVersionOf(nodes) {
   const hash = createHash('sha256');
   for (const n of [...nodes].sort((a, b) => (a.nodeId < b.nodeId ? -1 : a.nodeId > b.nodeId ? 1 : 0))) hash.update(`${n.nodeId}\u0000${n.contentHash || ''}\n`);
   return hash.digest('hex').slice(0, 32);
@@ -394,8 +398,17 @@ const renderOnly = n => n.changeType === 'requested' && (n.changeCategories || [
  * @param {import('../store/types').RenderCheck | null} last
  */
 async function screenState(store, s, last) {
-  const version = await designVersion(store, s.fileKey, s.nodeId);
-  const dirty = (await store.listNodeSubtree(s.fileKey, s.nodeId, { dirty: true, includeDeleted: false })).filter(n => !renderOnly(n));
+  return stateOf(await store.listNodeSubtree(s.fileKey, s.nodeId, { includeDeleted: false }), last);
+}
+
+/**
+ * screenState from the live nodes of the screen's subtree.
+ * @param {Pick<import('../store/types').StoredNode, 'nodeId' | 'contentHash' | 'dirty' | 'changeType' | 'changeCategories'>[]} nodes
+ * @param {import('../store/types').RenderCheck | null} last
+ */
+function stateOf(nodes, last) {
+  const version = designVersionOf(nodes);
+  const dirty = nodes.filter(n => n.dirty && !renderOnly(n));
   let status;
   let stale = false;
   if (last && last.status === 'requested') status = 'requested';
@@ -407,6 +420,39 @@ async function screenState(store, s, last) {
   return { designVersion: version, status, stale, score: last ? last.score : null, lastCheck: last };
 }
 
+/**
+ * The live subtrees of `rootIds` from one load of the file's nodes (same
+ * rows as listNodeSubtree with includeDeleted false, matched by path prefix).
+ * `root` is the root's full row when it is live, else null.
+ * @param {import('../store/types').Store} store
+ * @param {string} fileKey
+ * @param {string[]} rootIds
+ * @returns {Promise<Map<string, { root: import('../store/types').StoredNode | null, nodes: import('../store/types').TargetNode[] }>>}
+ */
+async function liveSubtrees(store, fileKey, rootIds) {
+  /** @type {Map<string, { root: import('../store/types').StoredNode | null, nodes: import('../store/types').TargetNode[] }>} */
+  const out = new Map(rootIds.map(id => [id, { root: null, nodes: [] }]));
+  if (!rootIds.length) return out;
+  /** @type {Map<string, string[]>} */
+  const byPath = new Map();
+  for (const r of await store.getNodes(fileKey, rootIds)) {
+    const tree = out.get(r.nodeId);
+    if (!r.path || !tree) continue;
+    if (!r.deletedAt) tree.root = r;
+    byPath.set(r.path, [...(byPath.get(r.path) || []), r.nodeId]);
+  }
+  if (!byPath.size) return out;
+  for (const n of await store.listFileNodesForTargets(fileKey)) {
+    let prefix = '';
+    for (const lbl of n.path.split('.')) {
+      prefix = prefix ? `${prefix}.${lbl}` : lbl;
+      const roots = byPath.get(prefix);
+      if (roots) for (const id of roots) /** @type {any} */ (out.get(id)).nodes.push(n);
+    }
+  }
+  return out;
+}
+
 /** Sets `screen: { status, stale, score }` on the node rows that are screens. */
 async function withScreens(store, fileKey, rows) {
   const live = rows.filter(Boolean);
@@ -415,8 +461,9 @@ async function withScreens(store, fileKey, rows) {
   const hit = live.filter(n => screens.has(n.nodeId));
   if (!hit.length) return rows;
   const latest = new Map((await store.latestChecks(fileKey, hit.map(n => n.nodeId))).map(c => [c.nodeId, c]));
+  const trees = await liveSubtrees(store, fileKey, [...new Set(hit.map(n => n.nodeId))]);
   for (const n of hit) {
-    const st = await screenState(store, /** @type {any} */ (screens.get(n.nodeId)), latest.get(n.nodeId) || null);
+    const st = stateOf(/** @type {any} */ (trees.get(n.nodeId)).nodes, latest.get(n.nodeId) || null);
     n.screen = { status: st.status, stale: st.stale, score: st.score, excluded: screens.get(n.nodeId).excluded === true };
   }
   return rows;
@@ -450,15 +497,15 @@ async function evaluateTargets(store, fileKey) {
   const all = await store.listScreens(fileKey);
   const latest = new Map((await store.latestChecks(fileKey, all.map(s => s.nodeId))).map(c => [c.nodeId, c]));
   const families = new Map((await store.listFamilies(fileKey)).map(f => [f.familyKey, f]));
+  const trees = await liveSubtrees(store, fileKey, all.map(s => s.nodeId));
   const info = new Map();
   for (const s of all) {
-    const subtree = await store.listNodeSubtree(fileKey, s.nodeId, { includeDeleted: false });
-    const ids = new Set(subtree.map(n => n.nodeId));
-    const mains = new Set(subtree.filter(n => n.isInstance && n.mainComponentId).map(n => n.mainComponentId));
+    const { root, nodes } = /** @type {any} */ (trees.get(s.nodeId));
+    const ids = new Set(nodes.map(n => n.nodeId));
+    const mains = new Set(nodes.filter(n => n.isInstance && n.mainComponentId).map(n => n.mainComponentId));
     const contains = all.filter(c => c.nodeId !== s.nodeId && (ids.has(c.nodeId) || mains.has(c.nodeId))).map(c => c.nodeId);
-    const root = subtree.find(n => n.nodeId === s.nodeId) || null;
     const last = latest.get(s.nodeId) || null;
-    info.set(s.nodeId, { s, root, ids, mains, contains, last, st: await screenState(store, s, last), route: await routeOf(store, s, families) });
+    info.set(s.nodeId, { s, root, ids, mains, contains, last, st: stateOf(nodes, last), route: await routeOf(store, s, families) });
   }
   const notMapped = i => !!i.s.gallery && i.s.gallery.mapped === false && !i.route;
   const depth = new Map();
@@ -518,12 +565,17 @@ function containingTargets(info, node) {
   return out;
 }
 
-/** What a renderer needs for target `i` (an evaluateTargets entry): gallery info first, then the route. */
-async function renderInfo(store, i, settings) {
+/**
+ * What a renderer needs for target `i` (an evaluateTargets entry): gallery info first, then the route.
+ * @param {any} i
+ * @param {any} settings
+ * @param {Map<string, import('../store/types').StoredNode>} parents targetParents()
+ */
+function renderInfo(i, settings, parents) {
   const { s, root } = i;
   const attrs = (root && root.attrs) || {};
   const ref = attrs.componentReference && typeof attrs.componentReference === 'object' ? attrs.componentReference : {};
-  const parent = root && root.parentId ? await store.getNode(s.fileKey, root.parentId) : null;
+  const parent = root && root.parentId ? parents.get(root.parentId) || null : null;
   const inSet = !!parent && parent.nodeType === 'COMPONENT_SET' && !!root && root.nodeType === 'COMPONENT';
   return {
     gallery: settings.gallery, key: typeof ref.key === 'string' ? ref.key : null, nodeId: s.nodeId,
@@ -531,6 +583,12 @@ async function renderInfo(store, i, settings) {
     variant: inSet && root ? root.name : '', props: root && root.nodeType === 'COMPONENT' ? targets.variantProps(root) : {}, cache: s.gallery,
     route: i.route, theme: s.theme, query: s.query, themeMode: settings.themeMode, themeKey: settings.themeKey, viewport: s.viewport,
   };
+}
+
+/** The stored parent rows (tombstoned included) of `list`'s target roots, by node id — one lookup. */
+async function targetParents(store, fileKey, list) {
+  const ids = [...new Set(list.map(i => i.root && i.root.parentId).filter(Boolean))];
+  return new Map((ids.length ? await store.getNodes(fileKey, ids) : []).map(n => [n.nodeId, n]));
 }
 
 const lastCheckOut = c => c && ({ checkId: c.checkId, status: c.status, score: c.score, designVersion: c.designVersion, requestedAt: c.requestedAt, submittedAt: c.submittedAt });
@@ -840,15 +898,27 @@ function registerScreenRoutes(app, { store, blobs, now, bus = null, config = {} 
   });
 
   // --- check targets ---------------------------------------------------------------
-  async function targetOut(i, settings) {
+  /** targetOut of each of `list`; references and node maps (owned by their screen) and root parents load in one lookup each. */
+  async function targetsOut(fileKey, list, settings) {
+    const parents = await targetParents(store, fileKey, list);
+    const wanted = new Set(list.flatMap(i => [i.s.referenceId, i.s.nodeMapId]).filter(Boolean));
+    const images = new Map();
+    if (wanted.size) {
+      const owned = await store.listAttachments(fileKey, 'screen', [...new Set(list.map(i => i.s.nodeId))]);
+      for (const a of owned) if (wanted.has(a.attachmentId)) images.set(a.attachmentId, attachmentOut(a));
+      for (const [id, a] of await attachments(fileKey, [...wanted].filter(id => !images.has(id)))) images.set(id, a);
+    }
+    return list.map(i => targetOut(i, settings, images, parents));
+  }
+
+  function targetOut(i, settings, images, parents) {
     const { s, st } = i;
-    const images = await attachments(s.fileKey, [s.referenceId, s.nodeMapId]);
     return {
       nodeId: s.nodeId, name: i.root ? i.root.name ?? null : null, type: i.root ? i.root.nodeType ?? null : null, level: s.level, source: s.source,
       excluded: i.excluded, familyKey: s.familyKey, route: i.route, theme: s.theme, query: s.query, viewport: s.viewport, masks: s.masks, maskNodeIds: s.maskNodeIds,
       threshold: s.threshold, designVersion: st.designVersion, referenceVersion: s.referenceVersion, reference: images.get(s.referenceId) || null,
       nodeMap: images.get(s.nodeMapId) || null, status: i.status, stale: st.stale, score: st.score, waitingOn: i.waitingOn, notMapped: i.notMapped,
-      contains: i.contains, lastCheck: lastCheckOut(i.last), render: await renderInfo(store, i, settings), gallery: s.gallery,
+      contains: i.contains, lastCheck: lastCheckOut(i.last), render: renderInfo(i, settings, parents), gallery: s.gallery,
       updatedBy: s.updatedBy, updatedAt: s.updatedAt, ...(i.renderNotes ? { renderNotes: i.renderNotes } : {}),
     };
   }
@@ -873,9 +943,7 @@ function registerScreenRoutes(app, { store, blobs, now, bus = null, config = {} 
     const holders = containing ? containingTargets(info, await storedNode(store, fileKey, containing)) : null;
     const picked = order.filter(i => !(status && (i.excluded || i.status !== status)) && !(within && !within.has(i.s.nodeId)) && !(holders && !holders.has(i.s.nodeId)));
     if (holders) await renderNotesOf(fileKey, picked);
-    const out = [];
-    for (const i of picked) out.push(await targetOut(i, settings));
-    return { fileKey, targets: out };
+    return { fileKey, targets: await targetsOut(fileKey, picked, settings) };
   });
 
   app.patch('/files/:fileKey/targets/:nodeId', { schema: updateTarget }, async (/** @type {any} */ request) => {
@@ -897,7 +965,8 @@ function registerScreenRoutes(app, { store, blobs, now, bus = null, config = {} 
       return s.nodeId;
     });
     const { settings, info } = await evaluateTargets(store, fileKey);
-    return { fileKey, target: await targetOut(info.get(nodeId), settings) };
+    const [target] = await targetsOut(fileKey, [info.get(nodeId)], settings);
+    return { fileKey, target };
   });
 
   app.get('/files/:fileKey/targets/:nodeId/checks', { schema: targetChecks }, async (/** @type {any} */ request) => {
@@ -975,8 +1044,10 @@ function registerScreenPluginRoutes(app, { store, blobs, now, config = {} }) {
   app.get('/files/:fileKey/screens/references-needed', { schema: referencesNeeded }, async (/** @type {any} */ request) => {
     const fileKey = await file(request);
     const out = [];
-    for (const s of await screensUnder(fileKey, request.query.under || null)) {
-      const version = await designVersion(store, fileKey, s.nodeId);
+    const list = await screensUnder(fileKey, request.query.under || null);
+    const trees = await liveSubtrees(store, fileKey, list.map(s => s.nodeId));
+    for (const s of list) {
+      const version = designVersionOf(/** @type {any} */ (trees.get(s.nodeId)).nodes);
       if (!s.referenceId || s.referenceVersion !== version) out.push({ nodeId: s.nodeId, designVersion: version, level: s.level });
     }
     return { screens: out };
