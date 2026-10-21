@@ -372,6 +372,16 @@ class PostgresStore {
     return rows.map(mapNode);
   }
 
+  async listFileNodesForTargets(fileKey) {
+    const { rows } = await this.query(
+      `select node_id, path, parent_id, content_hash, is_instance, main_component_id, dirty, change_type, change_categories
+       from node where file_key = $1 and deleted_at is null and path is not null`, [fileKey]);
+    return rows.map(r => ({
+      nodeId: r.node_id, path: r.path, parentId: r.parent_id ?? null, contentHash: r.content_hash ?? null, isInstance: !!r.is_instance,
+      mainComponentId: r.main_component_id ?? null, dirty: !!r.dirty, changeType: r.change_type ?? null, changeCategories: r.change_categories ?? [],
+    }));
+  }
+
   /** Live (non-tombstoned) rows whose `parent_id` is in `parentIds` — one batched lookup. */
   async listChildren(fileKey, parentIds) {
     if (!parentIds.length) return [];

@@ -263,6 +263,13 @@ class MemoryStore {
       .map(clone);
   }
 
+  async listFileNodesForTargets(fileKey) {
+    return this._fileNodes(fileKey).filter(n => !n.deletedAt && n.path).map(n => ({
+      nodeId: n.nodeId, path: n.path, parentId: n.parentId ?? null, contentHash: n.contentHash ?? null, isInstance: !!n.isInstance,
+      mainComponentId: n.mainComponentId ?? null, dirty: !!n.dirty, changeType: n.changeType ?? null, changeCategories: [...(n.changeCategories || [])],
+    }));
+  }
+
   /** Live (non-tombstoned) rows whose `parentId` is in `parentIds`. */
   async listChildren(fileKey, parentIds) {
     const parents = new Set(parentIds);
