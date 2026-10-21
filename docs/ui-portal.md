@@ -319,15 +319,36 @@ follows the OS `prefers-color-scheme`, live.
   open notes (named `N open notes`).
 - **File settings** (gear button beside *Copy agent prompt*, tooltip "File
   settings", on Nodes and Work Items) opens a right drawer with the file's
-  name and **Track library components** (`settings.trackLibraryComponents`,
-  default on): when off, the plugin doesn't scan library main components, they
-  drop out of counts and work and appear as reference items; instances stay
-  tracked. The drawer also says whether links to library files are on
-  (`libraryLinks`; off until `RDS_FIGMA_TOKEN` is set on the server). Changing
-  the toggle sends `PATCH /v3/files/:fileKey`, shows a toast and refetches the
-  work items, nodes, scope counts and file metrics; on an error the toggle
-  reverts and the error shows under it. Viewer sessions see the toggle
-  disabled with "Sign in with an agent token to change file settings."
+  name and its settings (`PATCH /v3/files/:fileKey` with `{ settings }`; each
+  change shows a toast and refetches the work items, nodes, scope counts and
+  file metrics; on an error the change reverts and the error shows at the
+  top). Viewer sessions see every control disabled with "Sign in with an agent
+  token to change file settings."
+  - **Library components** — **Track library components**
+    (`trackLibraryComponents`, default on): when off, the plugin doesn't scan
+    library main components, they drop out of counts and work and appear as
+    reference items; instances stay tracked. It also says whether links to
+    library files are on (`libraryLinks`; off until `RDS_FIGMA_TOKEN` is set
+    on the server).
+  - **Render checks** — **Auto-detect check targets** (`autoTargets`, default
+    on): every checked section's top-level frames, components and instances,
+    each variant of its top-level component sets and every main component in
+    it are check targets; off, only screens set up by hand are checked. Under
+    it, **Sections**: one *checks* toggle per synced section (not the tokens
+    scope), default on → `PATCH …/scopes/:nodeId { checks }`.
+  - **Variant mappings** (`variantMappings`): rows of *Property*, *As*
+    (Theme or Query, with a *Query key*) and *Values* (`Light=light,
+    Dark=dark`); **Add mapping** and a remove button per row.
+  - **Theme** — *Theme mode* (`themeMode`: color scheme (default), query
+    parameter or localStorage key, with its *Query parameter* / *Storage
+    key*, `themeKey`).
+  - **Component gallery** — *Gallery URL template* (`gallery.urlTemplate`:
+    `/…` or `http(s)://…` with `{key}`, `{nodeId}`, `{set}`, `{variant}`,
+    `{prop.<Name>}`) and *Storybook URL* (`gallery.storybookUrl`).
+  - **Retention** — *Results kept per target* (`checkRetention`, 1–100,
+    default 5; the last passing result is always kept as the baseline).
+  Mappings, theme, gallery and retention are saved together with **Save
+  check settings**; the toggles save at once.
 - The scope panel above the filters.
 - Filters map one-to-one to listing parameters (`q`, `state`, `changeType`,
   `category`, `type`); the **Expand instances** toggle adds `expand=instances`.
@@ -340,7 +361,13 @@ follows the OS `prefers-color-scheme`, live.
   name, a gray **Library** badge on library nodes, `TYPE · id`, `→ main` for
   instances; 375px), Scope (the name of the synced scope the row is under,
   hugging its text), State, Change, Categories, What changed (first changed
-  prop with its token change, or "N properties"), Agent, Notes.
+  prop with its token change, or "N properties"), Agent, **Check**, Notes.
+  *Check* (`GET /v3/files/:fileKey/targets`) shows a check target's status —
+  Mismatch · Passed · Waiting (a target inside it last failed) · Not mapped
+  (no gallery entry or route renders it) · Error, also Ready · Requested ·
+  Building · Stale — a red **In mismatch** badge on a node a failed check was
+  traced to (it has an open `render_check` note), and `—` on other nodes and
+  excluded targets.
 - **Design tokens** (the `TOKENS` scope, "Design tokens"): selecting it lists
   its collections (`VARIABLE_COLLECTION · 2 modes`), each expanding to its
   tokens. Its levels are listed with `fields=…,attrs` so token rows can show
@@ -390,18 +417,47 @@ follows the OS `prefers-color-scheme`, live.
   screenshots as thumbnails (`?size=thumb`) that open the full image in a
   lightbox. With the file's `storeImages` setting off the field is replaced by
   "Screenshots are off for this file: its settings don’t store images."
-- **Render check** (Figma *Node Details - Render Check*; frames and
-  components): the screen's status badge (Not set up · Building · Ready ·
-  Requested · Passed · Render mismatch · Error · Stale), KV badges (Checked ·
-  Commit · Source · Limit), *Side by side* (designed and implemented images,
-  differing regions outlined) and *Heatmap* tabs, and *Diff Status* (Pixel
-  diff, Regions, then each differing region).
-  Images come from `GET …/attachments/:id` (thumbnails first, full image in a
-  lightbox). **Request check** (any session) → `POST
-  …/screens/:nodeId/checks`; **Check settings** (agents) edits route,
-  viewport, theme / query, threshold and masks (`PUT …/screens/:nodeId`).
+- **Render check** (Figma *Node Details - Render Check*), from `GET
+  …/targets?containing=:nodeId` (the targets that are, or contain, the node):
+  - On a **check target**: its status badge (Not set up · Building · Ready ·
+    Waiting · Requested · Passed · Render mismatch · Not mapped · Error ·
+    Stale), KV badges (Checked · Commit · Source · Limit) of the viewed
+    result, *Side by side* (designed and implemented images, differing
+    regions outlined) and *Heatmap* tabs, and *Diff Status* (Pixel diff,
+    Regions, then each differing region). Images come from `GET
+    …/attachments/:id` (thumbnails first, full image in a lightbox).
+    **Request check** (any session) → `POST …/screens/:nodeId/checks`.
+  - **Render Check Target Details** (Figma `Excluded=False`): *Source* (Auto
+    · detected in a checked section, or Manual · set up as a screen),
+    *Route* (an edit button for agents opens an inline form → `PATCH
+    …/targets/:nodeId { route }`; it must start with `/`), *Variants* (the
+    target's variant properties) and *Theme* (its theme and the file's theme
+    mode). **Exclude from checks** (agents; read-only for viewers) → `PATCH
+    …/targets/:nodeId { excluded }`; an excluded target (`Excluded=True`)
+    shows the hint "Excluded from render checks: it isn’t checked, and it
+    stays excluded when targets are detected again…" with *Learn more*
+    instead of the details, and no *Request check*.
+  - **History** (`GET …/targets/:nodeId/checks`): "Last N results · the last
+    pass is always kept as the baseline" (N = `checkRetention`), newest
+    first — status, `score · commit`, relative time; the shown result is
+    marked **Viewing**, the last pass **Baseline**; selecting another row
+    shows that result above.
+  - On a **node inside targets**: **Render checks** — "Checks that include
+    this node", one row per containing target (name, `Screen · checked 2h
+    ago` / `Component · waiting on …`, status) with **Open**, which opens
+    the target in the drawer.
+  - On a frame or component that **isn't a target**: the hint "This section
+    isn’t set up for render checks. Choose Screens or Components for it in
+    the plugin to check it automatically." with *Learn more*; agents get
+    **Set up check** (route, viewport, theme / query, threshold and masks,
+    `PUT …/screens/:nodeId`), which makes it a manual target.
   A mismatch adds a **Render mismatch** badge and the `render` category; its
-  `render_check` note is badged too. `render_check.*` events refresh it live.
+  `render_check` note is badged too, with **Go to target**. On a node inside
+  a mismatched target whose note is on another node, *Open notes* starts
+  with the target's note (Figma *Preview Target Note Reference*): **Render
+  mismatch** badge, **Go to target**, the note text, and the part of the
+  heatmap traced to the node ("Cropped from the heatmap").
+  `render_check.*` and `file.settings_changed` events refresh it live.
 - **History:** `GET /v3/files/:fileKey/events?nodeId=…` as a feed — including
   "Added a note", "Resolved a note by clearing it at <commit>" and "Dismissed
   a note: <reason>".
@@ -494,7 +550,10 @@ follows the OS `prefers-color-scheme`, live.
   `event: reset` refetches the visible queries.
 - Event → cache: `sync.completed` refetches the file's visible node pages,
   summary and work items; `nodes.cleared`, `node.blocked` / `node.unblocked`
-  update the affected rows in place; `claim.*` update claims and sprites.
+  update the affected rows in place; `claim.*` update claims and sprites;
+  `render_check.requested` / `.passed` / `.mismatch` refetch the check
+  targets, their histories and the drawer's render check;
+  `file.settings_changed` refetches the file, its scopes and the targets.
 - A status dot in the sidebar card shows live / reconnecting / polling.
 
 ## Non-goals (this phase)

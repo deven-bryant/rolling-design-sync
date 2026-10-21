@@ -380,3 +380,64 @@ test('an agent requests a render check; the submitted mismatch shows live with i
   await expect(check).toContainText('Passed');
   await expect(node.getByRole('group', { name: 'Status' })).not.toContainText('Render mismatch');
 });
+
+test('automatic check targets: an agent edits a route, excludes a target and turns a section off; a contained node opens its target; a viewer is read-only', async ({ page }) => {
+  const { fileKey } = await seedFile();
+  await signIn(page, TOKENS.agent);
+  await openNodeTree(page, fileKey);
+  await expect(row(page, FRAME).locator('td').nth(-2)).toContainText('Building');
+
+  await row(page, FRAME).getByText('Card', { exact: true }).click();
+  const node = drawer(page);
+  const details = node.getByRole('group', { name: 'Render Check Target Details' });
+  await expect(details).toContainText('Auto · detected in a checked section');
+  await details.getByRole('button', { name: 'Edit route' }).click();
+  await node.getByRole('form', { name: 'Edit route' }).getByRole('textbox', { name: /Route/ }).fill('/card');
+  const routed = page.waitForResponse(res => res.request().method() === 'PATCH' && decodeURIComponent(res.url()).endsWith(`/targets/${FRAME}`));
+  await node.getByRole('button', { name: 'Save route' }).click();
+  expect((await routed).status()).toBe(200);
+  await expect(details).toContainText('/card');
+
+  const exclude = details.getByRole('switch', { name: 'Exclude from checks' });
+  await details.getByText('Exclude from checks', { exact: true }).click();
+  await expect(exclude).toBeChecked();
+  await expect(details).toContainText('Excluded from render checks');
+  await expect(node.getByRole('button', { name: 'Request check' })).toHaveCount(0);
+  await details.getByText('Exclude from checks', { exact: true }).click();
+  await expect(exclude).not.toBeChecked();
+  await expect(details).toContainText('/card');
+  await page.keyboard.press('Escape');
+  await expect(node).toBeHidden();
+
+  await page.getByRole('button', { name: 'Expand Card' }).click();
+  await row(page, INSTANCE).getByText('Button', { exact: true }).click();
+  const containing = node.getByRole('group', { name: 'Render checks' });
+  await expect(containing).toContainText('Checks that include this node');
+  await containing.getByRole('button', { name: 'Open Card' }).click();
+  await expect(node.getByRole('heading', { name: 'Card' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(node).toBeHidden();
+
+  await page.getByRole('button', { name: 'File settings' }).click();
+  const settings = page.getByRole('dialog', { name: 'File settings' });
+  await expect(settings.getByRole('switch', { name: /Auto-detect check targets/ })).toBeChecked();
+  const section = settings.getByRole('group', { name: 'Sections' }).getByRole('switch', { name: /Page/ });
+  await expect(section).toBeChecked();
+  const scoped = page.waitForResponse(res => res.request().method() === 'PATCH' && decodeURIComponent(res.url()).endsWith(`/scopes/${ROOT}`));
+  await settings.getByRole('group', { name: 'Sections' }).getByText('Page', { exact: true }).click();
+  expect((await scoped).status()).toBe(200);
+  await expect(section).not.toBeChecked();
+  await settings.getByRole('group', { name: 'Sections' }).getByText('Page', { exact: true }).click();
+  await expect(section).toBeChecked();
+  await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
+
+  await signOut(page);
+  await signIn(page, TOKENS.viewer);
+  await openNodeTree(page, fileKey);
+  await row(page, FRAME).getByText('Card', { exact: true }).click();
+  const readOnly = drawer(page).getByRole('group', { name: 'Render Check Target Details' });
+  await expect(readOnly).toContainText('/card');
+  await expect(readOnly.getByRole('switch', { name: 'Exclude from checks' })).toBeDisabled();
+  await expect(readOnly.getByRole('button', { name: 'Edit route' })).toHaveCount(0);
+});
