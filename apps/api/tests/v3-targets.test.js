@@ -373,6 +373,45 @@ for (const kind of Object.keys(STORES)) {
     assert.equal((await byId(app, '6:4')).renderNotes, undefined, 'only with containing');
   });
 
+  test(`[${kind}] slot components: not auto targets, checked through what fills them; removal resolves their render notes; manual stays`, async t => {
+    const { app, close } = await openApp(kind);
+    t.after(close);
+    const ids = async () => (await list(app)).map(x => x.nodeId).sort();
+    const card = up('8:1', 'COMPONENT', 'Card', { width: 40, height: 40 }, C);
+    const slot = up('8:2', 'SLOT', 'Content', { width: 40, height: 20 }, [...C, '8:1']);
+    // Panel places a Card: the SLOT under that instance is the Card's, not Panel's own.
+    const panel = [
+      up('8:3', 'COMPONENT', 'Panel', { width: 60, height: 60 }, C),
+      inst('8:4', 'Card', '8:1', { width: 40, height: 40 }, [...C, '8:3']),
+      up('I8:4;8:2', 'SLOT', 'Content', { width: 40, height: 20 }, [...C, '8:3', '8:4']),
+    ];
+    await sync(app, { rootNodeId: '5:1', upserts: [card, ...panel], markImplemented: true });
+    assert.ok((await ids()).includes('8:1'), 'without a slot: a target');
+    await reference(app, '8:1', { width: 40, height: 40 });
+    await check(app, '8:1', await png({ width: 40, height: 40, boxes: [{ x: 0, y: 0, width: 20, height: 20 }] }));
+    assert.equal((await openNotes(app, '8:1')).length, 1);
+    assert.equal(ok(await call(app, 'GET', '/nodes/8:1')).state, 'dirty');
+
+    await sync(app, { rootNodeId: '5:1', upserts: [slot], markImplemented: true });
+    const after = await ids();
+    assert.ok(!after.includes('8:1'), 'a main component with a SLOT of its own is not a target');
+    assert.ok(after.includes('8:3'), 'a SLOT inside a nested instance does not count');
+    assert.equal((await openNotes(app, '8:1')).length, 0, 'removing the target resolves its render notes');
+    assert.equal(ok(await call(app, 'GET', '/nodes/8:1')).state, 'clean');
+
+    const containing = ok(await call(app, 'GET', '/targets?containing=8:1'));
+    assert.equal(containing.slotComponent, true);
+    assert.deepEqual(containing.targets.map(x => x.nodeId), ['8:3'], 'the components that fill its slot still contain it');
+    assert.equal(ok(await call(app, 'GET', '/targets?containing=8:2')).slotComponent, false, 'the SLOT itself is not');
+    assert.equal(ok(await call(app, 'GET', '/targets?containing=8:3')).slotComponent, false);
+    assert.equal(ok(await call(app, 'GET', '/targets')).slotComponent, undefined, 'only with containing');
+
+    ok(await call(app, 'PUT', '/screens/8:1', { payload: { route: '/card', viewport: { width: 400, height: 300 } } }));
+    await sync(app, { rootNodeId: '5:1', upserts: [] });
+    assert.equal((await byId(app, '8:1')).source, 'manual', 'a manual target stays one');
+    assert.equal(ok(await call(app, 'GET', '/targets?containing=8:1')).slotComponent, true);
+  });
+
   test(`[${kind}] attribution: deepest node, instance → main node, > 2 nodes → common parent, summary; pass resolves; node masks`, async t => {
     const { app, close } = await openApp(kind);
     t.after(close);

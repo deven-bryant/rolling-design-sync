@@ -7532,7 +7532,7 @@ export interface paths {
         };
         /**
          * List check targets
-         * @description Every render-check target — set up with set_screen or detected in checked scopes (`autoTargets`: top-level frames / components / instances, the variants of top-level component sets and every main component) — in check order by containment: a target that contains other targets (nested, or as instances) comes after them, then document order. Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing target inside; `waiting`: a contained target's latest result is a mismatch; excluded targets never match a status filter) and `render`, everything a renderer needs (gallery settings + the key, set, variant string and props; the route + theme/query when set; the Figma size as viewport). `containing=<nodeId>` lists the targets that contain that node (itself included), each with `renderNotes`. Run them with `rds-agent check --ready`.
+         * @description Every render-check target — set up with set_screen or detected in checked scopes (`autoTargets`: top-level frames / components / instances, the variants of top-level component sets and every main component) — in check order by containment: a target that contains other targets (nested, or as instances) comes after them, then document order. Each has its `status` (`status=ready`: what to check now — built, no result for its current design, no failing target inside; `waiting`: a contained target's latest result is a mismatch; excluded targets never match a status filter) and `render`, everything a renderer needs (gallery settings + the key, set, variant string and props; the route + theme/query when set; the Figma size as viewport). Slot components (a main component with a SLOT of its own) are not detected: they are checked through the targets that place them with their fills. `containing=<nodeId>` lists the targets that contain that node (itself included), each with `renderNotes`, and says whether the node is a slot component (`slotComponent`). Run them with `rds-agent check --ready`.
          */
         get: {
             parameters: {
@@ -7686,6 +7686,8 @@ export interface paths {
                                 updatedBy?: string;
                                 updatedAt?: string;
                             }[];
+                            /** @description With `containing` only: the node is a main component with a SLOT of its own — not a target itself; checked through the targets that fill its slot. */
+                            slotComponent?: boolean;
                         };
                     };
                 };

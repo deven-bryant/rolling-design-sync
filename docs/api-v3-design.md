@@ -460,9 +460,14 @@ design: `POST …/nodes/{nodeId}/notes { body, worker? }` (body 1–4000 chars).
 - **Detection.** With `autoTargets` (file setting, default true), each checked
   scope → the union of its top-level FRAME / COMPONENT / INSTANCE nodes, each
   variant of a top-level COMPONENT_SET and every main COMPONENT inside it
-  (library nodes excluded), each node once. Auto rows follow syncs, scope
+  (library nodes excluded), each node once. Slot components — a main
+  COMPONENT with a SLOT in its own subtree (a SLOT under a nested instance
+  does not count) — are left out: they are checked through the targets that
+  place them with their slots filled. Auto rows follow syncs, scope
   switches and settings changes; a node that stops qualifying loses its auto
-  target with its checks and images. `excluded` is never reset by
+  target with its checks and images, and its open render-check notes (on its
+  subtree and the nodes its checks attributed) are resolved. Manual targets
+  are kept, slot components included. `excluded` is never reset by
   re-detection. `autoTargets: false` leaves only manual screens.
 - **Exclude.** `PATCH …/targets/{nodeId}` `{ excluded }`: an excluded target
   keeps its history, matches no `status` filter (so it leaves the ready
@@ -487,7 +492,8 @@ design: `POST …/nodes/{nodeId}/notes { body, worker? }` (body 1–4000 chars).
   route, else reports *Not mapped*. `?containing=<nodeId>` returns the targets
   containing a node (at or above it, placing an instance of a main component
   it is in, or containing such a target) with `renderNotes` (open render-check
-  notes in the target, and the latest).
+  notes in the target, and the latest), plus `slotComponent` (the node is a
+  slot component, so not a target itself).
 - **Attribution.** On a mismatch with a node map, each differing region goes
   to the deepest touched entries with their own record (an instance sublayer
   → `mainNodeId`; an entry is dropped when a deeper touched entry covers its

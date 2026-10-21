@@ -416,7 +416,9 @@ section's screens and components* (on by default, saved on the section), or
 With the file setting `autoTargets` on (the default), a checked section's
 targets are the union of its top-level frames / components / instances, every
 variant of its top-level component sets and every main component inside it —
-each node once, no screen / component levels. The plugin uploads each changed
+each node once, no screen / component levels. Slot components (a main
+component with a SLOT of its own) are not targets: they are checked through
+the screens and components that place them with their slots filled. The plugin uploads each changed
 target's reference with its node map; nothing to set up per frame. To skip
 one frame, exclude it: `update_check_target { "excluded": true }` /
 `rds-agent targets set 2-5 --file-key AbC123 --excluded` (the portal's
