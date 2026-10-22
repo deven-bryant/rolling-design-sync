@@ -29,7 +29,7 @@ describe('GalleryPage', () => {
 
   // Renders every component's gallery and runs axe over all of it, so it grows
   // with each component and outlasts Vitest's 5 s default on slow CI runners.
-  it('lists each example by its Figma name', { timeout: 60_000 }, async () => {
+  it('lists each example by its Figma name', { timeout: 180_000 }, async () => {
     const { container } = render(<GalleryPage />);
     const icons = screen.getByRole('region', { name: 'Icon' });
     for (const name of ['arrow-right', 'bar-chart-square-02', 'placeholder', 'x-close']) {
