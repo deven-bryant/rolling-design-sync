@@ -433,8 +433,14 @@ design: `POST …/nodes/{nodeId}/notes { body, worker? }` (body 1–4000 chars).
 - **Checks.** Anyone signed in requests a check (idempotent while
   `requested`); an agent submits the built screenshot. The API compares it
   with the reference — no resizing, size differences count as differing,
-  masks skipped, YIQ distance with anti-aliasing tolerance — and stores
-  `score`, up to 10 merged `regions` and a heatmap. Over the threshold is
+  masks skipped, YIQ distance (tolerance 0.1) — and stores `score`, up to 10
+  merged `regions` (counted pixels only) and a heatmap. Anti-aliased pixels
+  are not counted but stored as `antialiased` and drawn faint neutral on the
+  heatmap: an intensity-slope pixel whose slope ends in a flat area in both
+  images (pixelmatch's detector, ported) or where the other image also has an
+  edge (same edge, different rasterization). Content missing from one image
+  still counts in full; a glyph change in the same place (bold vs regular)
+  counts only partly. Over the threshold is
   `mismatch`: a `render_check` note (author `render-check`, the three images
   attached) dirties the screen root as `requested` with category `render`.
   A pass resolves those notes. A design change makes the last result

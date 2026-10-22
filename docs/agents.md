@@ -459,6 +459,21 @@ when targets are re-detected.
   heatmap. A later pass resolves the render notes under the target.
 - `list_target_checks` shows a target's history (latest first); each keeps
   `checkRetention` results (default 5) plus its last pass.
+- **What counts as a difference.** Pixels are compared by perceptual colour
+  distance (YIQ, tolerance 0.1); masked areas are skipped and a size mismatch
+  counts the uncovered area as differing. A differing pixel that is
+  *anti-aliasing* is not counted in `score`: it sits on an intensity slope
+  (it has both darker and lighter neighbours) and either that slope ends in a
+  flat area in both images (pixelmatch's detector), or the other image also
+  has an edge at the same spot (Figma and the browser drew the same edge with
+  different rasterization). So text that only differs in sub-pixel position
+  or smoothing passes, while a missing or moved element, a shifted block or a
+  colour change still counts — content missing from one image is flat there.
+  The trade-off: a glyph change *in the same place* (bold vs regular, a wrong
+  letter) is only partly counted, its edges overlapping; at body text sizes it
+  still scores well over 1%. Ignored pixels are reported as `antialiased`
+  (the note says "N more ignored as anti-aliasing") and drawn faint grey on
+  the heatmap; differing regions are built from counted pixels only.
 
 #### The gallery contract
 
