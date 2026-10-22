@@ -98,7 +98,9 @@ const check = {
     checkId: { type: 'string' }, nodeId: { type: 'string' }, status: { type: 'string', enum: CHECK_STATUSES },
     designVersion: { type: 'string' }, requestedBy: { type: 'string' }, requestedAt: { type: 'string' },
     submittedBy: nullable('string'), submittedAt: nullable('string'), commitRef: nullable('string'), source: nullable('string'),
-    score: nullable('number', { description: '% of the compared pixels that differ.' }), threshold: nullable('number'),
+    score: nullable('number', { description: '% of the compared pixels that differ; pixels ignored as anti-aliasing are not counted.' }),
+    antialiased: nullable('integer', { description: 'Differing pixels ignored as anti-aliasing (edges both images draw, rasterized differently); not in `score`, shown faint on the heatmap.' }),
+    threshold: nullable('number'),
     regions: { type: 'array', items: region, description: 'Up to 10 differing areas, largest first.' },
     error: nullable('string'),
     route: nullable('string'), viewport: nullable('object', { properties: { width: { type: 'integer' }, height: { type: 'integer' } } }),
@@ -871,6 +873,7 @@ function registerScreenRoutes(app, { store, blobs, now, bus = null, config = {} 
             ? ` Traced to: ${attribution.map(a => `${a.name ? `"${a.name}"` : a.nodeId} (${a.nodeId}) — ${a.regions.map(i => region(diff.regions[i])).join('; ')}`).join('; ')}.`
             : '';
           const text = `Render check: ${diff.score}% of pixels differ from the design (threshold ${s.threshold}%)`
+            + `${diff.antialiased ? `, ${diff.antialiased} more ignored as anti-aliasing` : ''}`
             + `${diff.sizeMatch ? '' : `; the screenshot is ${shot.width}×${shot.height}, the design ${ref.width}×${ref.height}`}`
             + `${diff.regions.length ? `; largest differing area at ${diff.regions[0].x},${diff.regions[0].y} (${diff.regions[0].width}×${diff.regions[0].height} px)` : ''}.`
             + traced
@@ -885,7 +888,7 @@ function registerScreenRoutes(app, { store, blobs, now, bus = null, config = {} 
           summaryNoteId = note.noteId;
         }
         const row = await tx.finishCheck(fileKey, checkId, {
-          ...meta, status: passed ? 'passed' : 'mismatch', score: diff.score, threshold: s.threshold, regions: diff.regions,
+          ...meta, status: passed ? 'passed' : 'mismatch', score: diff.score, antialiased: diff.antialiased, threshold: s.threshold, regions: diff.regions,
           builtId: stored[0].attachmentId, heatmapId: stored[1].attachmentId, referenceId: s.referenceId, attribution,
         });
         if (!row) throw problem('check_not_requested', `Render check ${checkId} already has a result.`, { hint: 'Request a new check with request_render_check.' });

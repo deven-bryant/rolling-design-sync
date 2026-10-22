@@ -155,3 +155,42 @@ test('render diff: identical, masks, antialiasing, size mismatch, regions, heatm
   const png = await images.encodeRgba(heat);
   assert.equal(images.sniff(png.bytes || png), 'png');
 });
+
+const FIXTURES = path.join(__dirname, 'fixtures', 'render-diff');
+const fixture = name => images.decodeRgba(fs.readFileSync(path.join(FIXTURES, `${name}.png`)));
+
+test('render diff: anti-aliasing is ignored, real differences still count', async () => {
+  const shifted = paint(solid(100, 80), { x: 11, y: 20, width: 20, height: 10 }, [0, 0, 0]);
+  const box = paint(solid(100, 80), { x: 10, y: 20, width: 20, height: 10 }, [0, 0, 0]);
+  const moved = compareImages(box, shifted);
+  assert.equal(moved.different, 20, 'a solid block shifted by 1 px: both hard edges count');
+  assert.equal(moved.antialiased, 0);
+  const recoloured = compareImages(box, paint(solid(100, 80), { x: 10, y: 20, width: 20, height: 10 }, [200, 0, 0]));
+  assert.equal(recoloured.different, 200, 'a colour change on a flat area counts');
+  assert.equal(compareImages(solid(100, 80), box).different, 200, 'a missing element counts');
+
+  // The same text, 13 px, cropped to it (170×22).
+  const text = await fixture('text');
+  const subpixel = compareImages(text, await fixture('text-subpixel'));
+  assert.ok(subpixel.score < 1, `0.4 px sub-pixel offset: ${subpixel.score}%`);
+  assert.ok(subpixel.antialiased > subpixel.different * 10, `${subpixel.antialiased} ignored, ${subpixel.different} counted`);
+  for (const name of ['text-missing-word', 'text-bold', 'text-wrong-letter']) {
+    const diff = compareImages(text, await fixture(name));
+    assert.ok(diff.score > 1, `${name}: ${diff.score}%`);
+    assert.ok(diff.regions.length > 0, name);
+  }
+  const missing = compareImages(text, await fixture('text-missing-word'));
+  assert.ok(missing.regions[0].x >= 100, 'the missing word is where the difference is');
+
+  // Regression: Figma's export vs the browser's render of the same component (563×90).
+  const ref = await fixture('claim-holder-reference');
+  const built = await fixture('claim-holder-built');
+  const claim = compareImages(ref, built);
+  assert.ok(claim.score <= 1, `Claim Holder: ${claim.score}%`);
+  assert.ok((claim.different + claim.antialiased) / claim.compared > 0.04, 'without the detector it would fail');
+
+  const heat = heatmap(built, claim);
+  const p = claim.aa.findIndex(Boolean);
+  const [r, g, b] = heat.data.subarray(p * 4, p * 4 + 3);
+  assert.ok(Math.abs(r - g) < 20 && b >= r, `ignored pixels are a faint neutral colour, not the hot scale: ${[r, g, b]}`);
+});

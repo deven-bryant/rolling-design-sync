@@ -805,7 +805,7 @@ class MemoryStore {
     const c = {
       checkId: randomUUID(), fileKey, nodeId, status: 'requested', designVersion, requestedBy, requestedAt: at,
       submittedBy: null, submittedAt: null, commitRef: null, source: null, score: null, threshold: null, regions: [],
-      builtId: null, heatmapId: null, referenceId: null, error: null, attribution: [], seq: this._checkSeq,
+      builtId: null, heatmapId: null, referenceId: null, error: null, attribution: [], antialiased: null, seq: this._checkSeq,
     };
     this.checks.set(c.checkId, c);
     return this._checkOut(c);

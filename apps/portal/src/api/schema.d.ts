@@ -6505,8 +6505,10 @@ export interface paths {
                                 submittedAt?: null | string;
                                 commitRef?: null | string;
                                 source?: null | string;
-                                /** @description % of the compared pixels that differ. */
+                                /** @description % of the compared pixels that differ; pixels ignored as anti-aliasing are not counted. */
                                 score?: null | number;
+                                /** @description Differing pixels ignored as anti-aliasing (edges both images draw, rasterized differently); not in `score`, shown faint on the heatmap. */
+                                antialiased?: null | number;
                                 threshold?: null | number;
                                 /** @description Up to 10 differing areas, largest first. */
                                 regions?: {
@@ -6758,8 +6760,10 @@ export interface paths {
                                 submittedAt?: null | string;
                                 commitRef?: null | string;
                                 source?: null | string;
-                                /** @description % of the compared pixels that differ. */
+                                /** @description % of the compared pixels that differ; pixels ignored as anti-aliasing are not counted. */
                                 score?: null | number;
+                                /** @description Differing pixels ignored as anti-aliasing (edges both images draw, rasterized differently); not in `score`, shown faint on the heatmap. */
+                                antialiased?: null | number;
                                 threshold?: null | number;
                                 /** @description Up to 10 differing areas, largest first. */
                                 regions?: {
@@ -7008,8 +7012,10 @@ export interface paths {
                                 submittedAt?: null | string;
                                 commitRef?: null | string;
                                 source?: null | string;
-                                /** @description % of the compared pixels that differ. */
+                                /** @description % of the compared pixels that differ; pixels ignored as anti-aliasing are not counted. */
                                 score?: null | number;
+                                /** @description Differing pixels ignored as anti-aliasing (edges both images draw, rasterized differently); not in `score`, shown faint on the heatmap. */
+                                antialiased?: null | number;
                                 threshold?: null | number;
                                 /** @description Up to 10 differing areas, largest first. */
                                 regions?: {
@@ -7276,8 +7282,10 @@ export interface paths {
                                 submittedAt?: null | string;
                                 commitRef?: null | string;
                                 source?: null | string;
-                                /** @description % of the compared pixels that differ. */
+                                /** @description % of the compared pixels that differ; pixels ignored as anti-aliasing are not counted. */
                                 score?: null | number;
+                                /** @description Differing pixels ignored as anti-aliasing (edges both images draw, rasterized differently); not in `score`, shown faint on the heatmap. */
+                                antialiased?: null | number;
                                 threshold?: null | number;
                                 /** @description Up to 10 differing areas, largest first. */
                                 regions?: {
@@ -8163,8 +8171,10 @@ export interface paths {
                                 submittedAt?: null | string;
                                 commitRef?: null | string;
                                 source?: null | string;
-                                /** @description % of the compared pixels that differ. */
+                                /** @description % of the compared pixels that differ; pixels ignored as anti-aliasing are not counted. */
                                 score?: null | number;
+                                /** @description Differing pixels ignored as anti-aliasing (edges both images draw, rasterized differently); not in `score`, shown faint on the heatmap. */
+                                antialiased?: null | number;
                                 threshold?: null | number;
                                 /** @description Up to 10 differing areas, largest first. */
                                 regions?: {

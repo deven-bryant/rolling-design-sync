@@ -48,7 +48,7 @@ const num = v => (v === null || v === undefined ? null : Number(v));
 const mapCheck = r => r && ({
   checkId: r.check_id, fileKey: r.file_key, nodeId: r.node_id, status: r.status, designVersion: r.design_version,
   requestedBy: r.requested_by, requestedAt: iso(r.requested_at), submittedBy: r.submitted_by ?? null, submittedAt: iso(r.submitted_at),
-  commitRef: r.commit_ref ?? null, source: r.source ?? null, score: num(r.score), threshold: num(r.threshold), regions: r.regions ?? [],
+  commitRef: r.commit_ref ?? null, source: r.source ?? null, score: num(r.score), antialiased: num(r.antialiased), threshold: num(r.threshold), regions: r.regions ?? [],
   builtId: r.built_id ?? null, heatmapId: r.heatmap_id ?? null, referenceId: r.reference_id ?? null, error: r.error ?? null,
   attribution: r.attribution ?? [],
 });
@@ -1265,11 +1265,11 @@ class PostgresStore {
     const { rows: [row] } = await this.query(
       `update render_check set status = $3, design_version = $4, submitted_by = $5, submitted_at = $6, commit_ref = $7, source = $8,
          score = $9, threshold = $10, regions = $11::jsonb, built_id = $12::uuid, heatmap_id = $13::uuid, reference_id = $14::uuid, error = $15,
-         attribution = $16::jsonb
+         attribution = $16::jsonb, antialiased = $17
        where file_key = $1 and check_id = $2::uuid and status = 'requested' returning *`,
       [fileKey, checkId, r.status, r.designVersion, r.submittedBy, r.submittedAt, r.commitRef ?? null, r.source ?? null, r.score ?? null,
         r.threshold ?? null, JSON.stringify(r.regions || []), r.builtId ?? null, r.heatmapId ?? null, r.referenceId ?? null, r.error ?? null,
-        JSON.stringify(r.attribution || [])]);
+        JSON.stringify(r.attribution || []), r.antialiased ?? null]);
     return mapCheck(row) || null;
   }
 
