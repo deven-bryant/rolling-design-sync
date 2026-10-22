@@ -23,6 +23,17 @@ export const figmaNodeDetails = {
       'Render mismatch heatmap': { nodeId: '197:53702', props: { renderCheck: '<RenderCheck status="mismatch" view="heatmap">' } },
     },
   },
+  /** The set's variants (not every State × Context pair is drawn). */
+  variants: [
+    'State=Change List - No Note, Context=Default',
+    'State=Change List - No Note, Context=Excluded from render check',
+    'State=Change List - Existing Note, Context=Default',
+    'State=Change List - Existing Note, Context=Node contained by mismatched target',
+    'State=Change List, Context=Render mismatch sbs',
+    'State=Change List, Context=Render mismatch heatmap',
+    'State=Add Change, Context=Default',
+    'State=Change History, Context=Default',
+  ],
   /** Figma layer → prop / part. */
   layers: {
     'Custom Section header': 'SectionHeader (title · description · actions)',

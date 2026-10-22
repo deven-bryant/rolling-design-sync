@@ -6,6 +6,7 @@
 export const figmaThemeToggle = {
   component: 'ThemeToggle',
   setId: '121:41375',
+  componentSet: { nodeId: '121:41375', name: 'Color Mode Toggle' },
   properties: { State: 'theme' },
   variants: [
     {
