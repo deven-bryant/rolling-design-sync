@@ -10,7 +10,7 @@ export const figmaRenderCheckTarget = {
     },
   },
   history: { component: { nodeId: '230:43820', name: 'Render Check History' } },
-  containing: { component: { nodeId: '230:44018', name: 'Render Checks Containing Mismatch Targets' } },
+  containing: { component: { nodeId: '230:44018', name: 'Render Checks Contining Mismatch Targets' } }, // sic: the Figma name
   heatmapCrop: { component: { nodeId: '230:45984', name: 'Node Details - Note Section / Screenshots (Preview Target Note Reference)' } },
   layers: {
     'Target Details / header': 'Text h3 md semibold secondary + Toggle sm, supporting text "Exclude from checks"; justify-between',

@@ -9,6 +9,7 @@ export const figmaNoteSection = {
       Default: { nodeId: '198:95091', props: { component: 'NodeDetails', state: 'change-list', addChange: 'set' } },
       Edit: { nodeId: '198:104579', props: { component: 'NodeDetails', state: 'add-change', addChange: 'set' } },
       Preview: { nodeId: '198:106305', props: { component: 'NoteSection' } },
+      'Preview Target Note Reference': { nodeId: '230:45984', props: { component: 'NoteSection', screenshots: '<HeatmapCrop>' } },
     },
   },
   layers: {

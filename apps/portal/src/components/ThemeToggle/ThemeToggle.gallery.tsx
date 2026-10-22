@@ -9,6 +9,7 @@ function Example({ initial }: { initial: ThemeToggleTheme }) {
 
 export default {
   component: 'ThemeToggle',
+  figma: 'Color Mode Toggle',
   examples: inBothThemes([
     { figma: 'State=Light', render: () => <Example initial="light" /> },
     { figma: 'State=Dark', render: () => <Example initial="dark" /> },

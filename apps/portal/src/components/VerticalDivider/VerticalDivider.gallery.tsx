@@ -7,6 +7,7 @@ export default {
   examples: inBothThemes([
     {
       figma: 'Vertical Divider',
+      variant: '',
       render: () => (
         <div className="flex items-center gap-md text-sm text-tertiary">
           <span>Checked</span>

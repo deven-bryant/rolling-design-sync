@@ -13,10 +13,10 @@ export default {
   component: 'NoteScreenshots',
   figma: 'Node Details - Notes Screenshots',
   examples: inBothThemes([
-    { figma: 'Node Details - Notes Screenshots', render: () => <NoteScreenshots screenshots={shots} onAdd={noop} onRemove={noop} /> },
-    { figma: 'Empty', render: () => <NoteScreenshots screenshots={[]} onAdd={noop} onRemove={noop} /> },
+    { figma: 'Node Details - Notes Screenshots', variant: '', render: () => <NoteScreenshots screenshots={shots} onAdd={noop} onRemove={noop} /> },
+    { figma: 'Without screenshots', render: () => <NoteScreenshots screenshots={[]} onAdd={noop} onRemove={noop} /> },
     {
-      figma: 'Error',
+      figma: 'With an error',
       render: () => <NoteScreenshots screenshots={[]} onAdd={noop} onRemove={noop} error="huge.png is over 5 MB." />,
     },
   ]),

@@ -40,9 +40,10 @@ const themes = [
 ] as const;
 
 /** Each example once per theme: `Color Mode` is the `data-theme` it renders under, never a prop. */
-const bothThemes = (examples: { figma: string; render: (mode: string) => ReturnType<GalleryExample['render']> }[]) =>
+const bothThemes = (examples: (Omit<GalleryExample, 'render'> & { render: (mode: string) => ReturnType<GalleryExample['render']> })[]) =>
   themes.flatMap(([mode, theme]) =>
-    examples.map(({ figma, render }): GalleryExample => ({
+    examples.map(({ figma, render, ...rest }): GalleryExample => ({
+      ...rest,
       figma: `${figma} · Color Mode=${mode}`,
       render: () => (
         <div data-theme={theme} className="bg-primary">
@@ -56,10 +57,10 @@ export default {
   component: 'NodeCell',
   figma: 'Node cell',
   examples: bothThemes([
-    { figma: 'Node cell (Chevron=True)', render: () => <NodeCell {...figmaNodeCell.defaults} className="w-72" /> },
-    { figma: 'Node cell (Chevron=False)', render: () => <NodeCell name="Team View" meta="FRAME · 1:95540" className="w-72" /> },
+    { figma: 'Node cell', variant: '', render: () => <NodeCell {...figmaNodeCell.defaults} /> },
+    { figma: 'Without the chevron', render: () => <NodeCell name="Team View" meta="FRAME · 1:95540" className="w-72" /> },
     {
-      figma: 'Node cell with badges (Removed · Library)',
+      figma: 'With badges (Removed, Library)',
       render: () => (
         <NodeCell
           name="Files"
@@ -74,6 +75,6 @@ export default {
         />
       ),
     },
-    { figma: 'Node tree (depth 0–2)', render: () => <Tree /> },
+    { figma: 'In a node tree, depth 0 to 2', render: () => <Tree /> },
   ]),
 } satisfies GalleryEntry;
