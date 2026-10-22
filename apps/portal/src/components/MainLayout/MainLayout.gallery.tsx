@@ -26,7 +26,6 @@ const bothThemes = (examples: { figma: string; render: (mode: string) => ReturnT
 
 export default {
   component: 'MainLayout',
-  figma: 'Main',
   examples: bothThemes([
     {
       figma: 'Main · Slot',
