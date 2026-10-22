@@ -135,6 +135,25 @@ portal's components the way they screenshot any other app:
   `{ figma: '_Dot · Size=md, Outline=False', set: '_Dot', variant: 'Size=md, Outline=False' }`.
   Descriptive labels (`Sizes (xs · sm · md · lg)`) are addressed by the label
   itself as `variant`.
+- **One example per Figma variant.** Each example a render check can target
+  names the exact Figma set (or component) and variant string — `Property
+  1=Claimed`, `Excluded=False`; a standalone component uses its own name and
+  `variant: ''` (`{ figma: 'KV Badge', variant: '' }`). It renders the sample
+  content the Figma frame shows (its text, numbers and states) at its natural
+  layout; the render check sets the Figma width. Sets that only appear together
+  in a component's folder still get their own `set` (`Render Check History`,
+  `Diff Status`), spelled as Figma spells them.
+- **Documentation examples.** Extra examples (empty and error states, a
+  component in a table) keep labels that aren't Figma variant strings — plain
+  descriptions without `Property=Value` pairs (`Without the chevron`) — so a
+  render check can't match them by accident. Slot components (`Main`,
+  `Custom Section header`) aren't render targets; their entries name no Figma
+  set.
+- **Drift test.** `galleryDrift.test.ts` reads every `figma.ts` and fails when
+  a variant it lists (its `variants`, or a one-axis set's `axes`; '' for a
+  standalone component) has no gallery example, or when two examples claim the
+  same set + variant in the same theme. Untitled UI library parts outside the
+  Portal file's synced scopes are listed there as not targets.
 - **Theme.** The portal's own theme mechanism (`ThemeProvider`): the target is
   wrapped in `data-theme` set to the variant's `Color Mode` (`Light` / `Dark`,
   treated as the theme rather than a property), else `&theme=light|dark`, else
