@@ -59,6 +59,7 @@ const PROBES = Object.freeze({
     table('scope_setting'), table('target_family'), constraint('attachment', 'attachment_kind_check', '%node_map%'),
   ),
   '20261021000000_api_v3_scope_checks.sql': all(column('scope_setting', 'checks'), column('screen', 'excluded')),
+  '20261022000000_api_v3_check_antialiased.sql': all(column('render_check', 'antialiased')),
 });
 
 /** The `*.sql` filenames in `dir`, in apply order. */

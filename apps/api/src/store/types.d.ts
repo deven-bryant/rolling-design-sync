@@ -106,7 +106,7 @@ export interface RenderRegion { x: number; y: number; width: number; height: num
 export interface RenderCheck {
   checkId: string; fileKey: string; nodeId: string; status: 'requested' | 'passed' | 'mismatch' | 'error'; designVersion: string;
   requestedBy: string; requestedAt: string; submittedBy: string | null; submittedAt: string | null; commitRef: string | null; source: string | null;
-  score: number | null; threshold: number | null; regions: RenderRegion[]; builtId: string | null; heatmapId: string | null;
+  score: number | null; antialiased: number | null; threshold: number | null; regions: RenderRegion[]; builtId: string | null; heatmapId: string | null;
   referenceId: string | null; error: string | null;
   /** The nodes a mismatch was attributed to (v3/targets.js `attribute`). */
   attribution: Record<string, any>[];
@@ -256,7 +256,7 @@ export interface Store {
   latestChecks(fileKey: string, nodeIds: string[]): Promise<RenderCheck[]>;
   /** Records the result of a requested check; null when it isn't requested (anymore). */
   finishCheck(fileKey: string, checkId: string, result: Pick<RenderCheck, 'status' | 'designVersion' | 'submittedBy' | 'submittedAt'>
-    & Partial<Pick<RenderCheck, 'commitRef' | 'source' | 'score' | 'threshold' | 'regions' | 'builtId' | 'heatmapId' | 'referenceId' | 'error' | 'attribution'>>): Promise<RenderCheck | null>;
+    & Partial<Pick<RenderCheck, 'commitRef' | 'source' | 'score' | 'antialiased' | 'threshold' | 'regions' | 'builtId' | 'heatmapId' | 'referenceId' | 'error' | 'attribution'>>): Promise<RenderCheck | null>;
   /** Deletes the screen's checks but the newest `keep`; returns the deleted ones. */
   deleteChecks(fileKey: string, nodeId: string, options?: { keep?: number; except?: string[] }): Promise<RenderCheck[]>;
 
