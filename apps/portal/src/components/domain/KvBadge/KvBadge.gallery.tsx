@@ -5,9 +5,9 @@ export default {
   component: 'KvBadge',
   figma: 'KV Badge',
   examples: inBothThemes([
-    { figma: 'KV Badge', render: () => <dl><KvBadge label="Checked" value="2h ago" /></dl> },
+    { figma: 'KV Badge', variant: '', render: () => <dl><KvBadge label="Checked" value="2h ago" /></dl> },
     {
-      figma: 'KV Badge × 4 · Vertical Divider',
+      figma: 'Four KV badges between vertical dividers',
       render: () => (
         <KvBadgeList
           items={[
