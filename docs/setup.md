@@ -4,7 +4,7 @@ The full self-hosting walkthrough behind the root README's
 [Self-hosting](../README.md#self-hosting) section. You need the Figma desktop
 app, plus one of:
 
-- **Docker** (or Node 22.22+ and nothing else) — a single user on one machine can
+- **Docker** (or Node 22.23.4+ and nothing else) — a single user on one machine can
   run the API with an embedded Postgres
   ([Run with Docker](#run-with-docker-recommended-for-local-use),
   [Single user, no database server](#single-user-no-database-server)).

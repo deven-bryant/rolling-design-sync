@@ -7,6 +7,12 @@ are cut.
 
 ## [Unreleased]
 
+### Security
+
+- The Docker image now runs Node.js 22.23.4, which fixes CVE-2026-111497 (an
+  out-of-bounds write in Node's bundled Brotli decoder). Every package now
+  requires Node 22.23.4 or later (`engines`).
+
 ## [0.14.2] - 2026-10-14
 
 ### Changed
