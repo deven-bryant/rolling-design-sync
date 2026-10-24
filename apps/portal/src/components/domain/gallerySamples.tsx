@@ -1,4 +1,4 @@
-import { Button, ButtonUtility } from '../Button';
+import { Button } from '../Button';
 import { Textarea } from '../Input';
 import { sampleImage } from '../Lightbox/sample';
 import { Icon } from '../primitives';
@@ -47,7 +47,15 @@ export const renderCheckMismatch = (view: RenderCheckProps['view']): RenderCheck
 export const renderCheckTargetDetails = [
   { label: 'Level', value: 'Screen' },
   { label: 'Source', value: 'Auto · section “Screens”' },
-  { label: 'Route', value: '/files/:fileKey/nodes', action: <ButtonUtility hierarchy="tertiary" icon={<Icon name="edit-01" />} tooltip="Edit route" /> },
+  {
+    label: 'Route',
+    value: '/files/:fileKey/nodes',
+    action: (
+      <Button hierarchy="link-gray" size="sm" iconOnly iconLeading={<Icon name="edit-01" />}>
+        Edit route
+      </Button>
+    ),
+  },
   { label: 'Variants', value: 'Color Mode: Light · Dark (same route)' },
   { label: 'Theme', value: 'color-scheme' },
 ];

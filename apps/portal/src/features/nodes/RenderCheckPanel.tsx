@@ -6,7 +6,6 @@ import { Text } from '../../components/primitives';
 import { LoadingIndicator } from '../../components/LoadingIndicator';
 import { showToast } from '../../components/Toast';
 import { timeAgo } from './format';
-import { ButtonUtility } from '../../components/Button';
 import { RenderCheckHistory, RenderChecksContaining, RenderCheckTargetDetails, type RenderCheckTargetDetail } from '../../components/domain/RenderCheckTarget';
 import { Icon } from '../../components/primitives';
 import {
@@ -222,7 +221,9 @@ function TargetDetails({ fileKey, target, canAct, themeMode }: { fileKey: string
       label: 'Route',
       value: target.route ?? (target.notMapped ? '—' : 'Gallery'),
       action: canAct && !editing && (
-        <ButtonUtility hierarchy="tertiary" icon={<Icon name="edit-01" />} tooltip="Edit route" onPress={() => setEditing(true)} />
+        <Button hierarchy="link-gray" size="sm" iconOnly iconLeading={<Icon name="edit-01" />} onPress={() => setEditing(true)}>
+          Edit route
+        </Button>
       ),
     },
     { label: 'Variants', value: variantText(target) },
