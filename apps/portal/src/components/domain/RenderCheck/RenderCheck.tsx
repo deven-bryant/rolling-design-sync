@@ -172,9 +172,12 @@ export function DiffStatus({ score, regions, details = [], headingLevel = 4, cla
         <dd className="font-semibold">{regions}</dd>
       </dl>
       {details.length > 0 && (
-        <ul aria-label="Differing regions" className="flex list-inside list-disc flex-col text-sm text-tertiary">
+        <ul aria-label="Differing regions" className="flex list-none flex-col text-sm text-tertiary">
           {details.map((detail, i) => (
-            <li key={i}>{detail}</li>
+            <li key={i}>
+              <span aria-hidden="true">• </span>
+              <span>{detail}</span>
+            </li>
           ))}
         </ul>
       )}

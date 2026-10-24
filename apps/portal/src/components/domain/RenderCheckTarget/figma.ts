@@ -14,7 +14,7 @@ export const figmaRenderCheckTarget = {
   heatmapCrop: { component: { nodeId: '230:45984', name: 'Node Details - Note Section / Screenshots (Preview Target Note Reference)' } },
   layers: {
     'Target Details / header': 'Text h3 md semibold secondary + Toggle sm, supporting text "Exclude from checks"; justify-between',
-    'Target Details / rows': 'dl grid: labels text-sm regular tertiary · values text-sm semibold tertiary, gap-md; Route has ButtonUtility edit-01',
+    'Target Details / rows': 'dl grid: labels text-sm regular tertiary · values text-sm semibold tertiary, gap-md; Route has Button (Buttons/Button Size=sm, Hierarchy=Link gray, icon-only edit-01, 20px) so the row stays 20px',
     'Target Details / hint': 'pt-xl, card border-secondary rounded-md px-xl py-lg: text-sm tertiary + Button link-color "Learn more"',
     'History / row': 'flex gap-lg px-lg py-md rounded-md (bg-secondary when viewing): Badge sm dot · summary flex-1 · Viewing | Badge badge-modern "Baseline" · time',
     'Containing / row': 'flex gap-lg py-2.5 border-b border-secondary: name + meta (text-sm tertiary) · Badge sm dot · Button link-color "Open"',
