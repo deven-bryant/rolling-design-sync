@@ -2,10 +2,9 @@
 
 From a clean machine to a coding agent clearing its first Figma changes, in six
 steps. Everything runs on your machine: the API and portal in Docker, the plugin
-in Figma desktop, the agent tools from this checkout.
+in Figma desktop, the MCP server for your agent in Docker too.
 
-You need **git**, **Docker** (with Compose), the **Figma desktop app**, and
-**Node 22.23.4+** for the agent tools.
+You need **git**, **Docker** (with Compose) and the **Figma desktop app**.
 
 ## 1. Start the API
 
@@ -14,10 +13,12 @@ git clone https://github.com/deven-bryant/rolling-design-sync.git
 cd rolling-design-sync
 docker compose up -d
 curl -s http://localhost:8787/health      # {"ok":true}
+curl -s http://localhost:8788/health      # {"status":"ok","tools":…}
 ```
 
-The API and its portal run at **`http://localhost:8787`**, reachable from this
-machine only. On first start the container generates three tokens and keeps
+The API and its portal run at **`http://localhost:8787`**, the MCP server for
+agents at **`http://localhost:8788/mcp`** — both reachable from this machine
+only. On first start the container generates three tokens and keeps
 them, with the data, in the `rds-data` Docker volume (`/data/tokens.json` inside
 the container) — they survive restarts and rebuilds; `docker compose down -v`
 deletes them.
@@ -25,16 +26,22 @@ deletes them.
 | Token | Used by | Can |
 |---|---|---|
 | `plugin` | the Figma plugin | upload syncs |
-| `agent` | the MCP server and CLI | read, claim, clear, block |
+| `agent` | the MCP server and CLI (they read it themselves) | read, claim, clear, block |
 | `viewer` | you, in the portal | read only |
 
-Print one when you need it (run these from the checkout):
+Print one when you need it (run these from the checkout) — you only need the
+`plugin` and `viewer` tokens; the Docker MCP server and CLI read the agent token
+from the volume:
 
 ```bash
 docker compose exec -T api node -p "require('/data/tokens.json').plugin"
-docker compose exec -T api node -p "require('/data/tokens.json').agent"
 docker compose exec -T api node -p "require('/data/tokens.json').viewer"
 ```
+
+When the volume already holds data, the API says so at startup
+(`docker compose logs api`): `Using existing data in /data: 1 file, 281 nodes,
+first created 2026-09-28. To start fresh: docker compose down -v …` — only
+totals, no file names.
 
 Treat them like passwords: paste them into user-level config, never into a file
 you commit.
@@ -110,58 +117,42 @@ link.
 
 ## 3. Connect an agent
 
-Install the checkout's dependencies once (the MCP server needs them; the CLI
-needs nothing):
+The MCP server is already running (`docker compose up -d` started it), and needs
+no token or variables: point your agent at **`http://localhost:8788/mcp`**.
+
+**Claude Code** — nothing to do when you run it in this checkout: the
+repository's `.mcp.json` names the server (approve `rds` when Claude Code asks).
+From another project:
 
 ```bash
-npm install
+claude mcp add rds --scope user --transport http http://localhost:8788/mcp
 ```
 
-Replace `<your agent token>` below with the `agent` token from step 1, and
-`<fileKey>` with the segment after `/design/` in your Figma link (optional — it
-saves passing the file on every call).
-
-**Claude Code** — run from the checkout's root:
-
-```bash
-claude mcp add rds --scope user --transport stdio \
-  --env RDS_API_BASE_URL=http://localhost:8787 \
-  --env RDS_AGENT_TOKEN=<your agent token> \
-  --env RDS_FILE_KEY=<fileKey> \
-  -- node "$PWD/apps/mcp/bin/rds-mcp.js"
-```
-
-**Cursor** — add to `~/.cursor/mcp.json`, with the absolute path of your
-checkout:
+**Cursor** — add to `~/.cursor/mcp.json`:
 
 ```json
 {
   "mcpServers": {
-    "rds": {
-      "command": "node",
-      "args": ["/path/to/rolling-design-sync/apps/mcp/bin/rds-mcp.js"],
-      "env": {
-        "RDS_API_BASE_URL": "http://localhost:8787",
-        "RDS_AGENT_TOKEN": "<your agent token>",
-        "RDS_FILE_KEY": "<fileKey>"
-      }
-    }
+    "rds": { "url": "http://localhost:8788/mcp" }
   }
 }
 ```
 
-**CLI** — any agent with a shell, or you:
+Pass `fileKey` (or a Figma link as `url`) on tool calls; the agent finds it in
+the links you give it.
+
+**CLI** — any agent with a shell, or you; inside the API container it needs no
+flags or variables:
 
 ```bash
-export RDS_API_BASE_URL=http://localhost:8787
-export RDS_AGENT_TOKEN='<your agent token>'
-export RDS_WORKER=claude-1
-node scripts/rds-agent.js files ls --format table
+docker compose exec api rds-agent files ls --format table
 ```
 
 `files ls` lists the file you synced. [docs/agents.md](agents.md) covers the
-other hosts (including Devin), keeping the token in user-level config, and one
-worker id per agent.
+other hosts (including Devin), the stdio server and CLI from a checkout
+(Node 22.23.4+), and one worker id per agent. The CLI steps below use
+`node scripts/rds-agent.js` from a checkout; `docker compose exec api rds-agent`
+takes the same commands.
 
 ## 4. Open the portal
 
@@ -198,7 +189,7 @@ progress, and the **Nodes** tab marks each node `Dirty` with what changed.
 **Claim.** Lease the nodes so parallel agents don't build the same thing:
 
 ```bash
-node scripts/rds-agent.js claim "$LINK" --label "Checkout screen" --limit 20
+node scripts/rds-agent.js claim "$LINK" --worker claude-1 --label "Checkout screen" --limit 20
 ```
 
 *Portal:* the nodes show the worker's avatar, the **Activity** page logs
@@ -222,7 +213,7 @@ included; **Change History** has its claims, clears and blocks.
 read and the commit SHA:
 
 ```bash
-node scripts/rds-agent.js nodes ls "$LINK" --claimed mine --worker "$RDS_WORKER" --fields nodeId,contentHash --all \
+node scripts/rds-agent.js nodes ls "$LINK" --claimed mine --worker claude-1 --fields nodeId,contentHash --all \
   | jq -r '.nodes[] | "\(.nodeId)=\(.contentHash)"' \
   | node scripts/rds-agent.js clear --url "$LINK" --commit-ref "$(git rev-parse --short HEAD)" -
 ```

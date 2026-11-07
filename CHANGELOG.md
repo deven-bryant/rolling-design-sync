@@ -7,6 +7,29 @@ are cut.
 
 ## [Unreleased]
 
+### Added
+
+- **MCP in Docker, zero setup:** `docker compose up -d` also starts the MCP
+  server over Streamable HTTP at `http://localhost:8788/mcp` (loopback only,
+  hardened like the API). It reads the agent token from the API's volume, so
+  agents connect with just the URL; the checkout's `.mcp.json` points Claude
+  Code at it. `rds-mcp --http` (or `RDS_MCP_TRANSPORT=http`) serves the same
+  outside Docker, with `RDS_MCP_PORT`, `RDS_MCP_HOST` and
+  `RDS_MCP_ALLOWED_HOSTS`; requests whose `Host` or `Origin` isn't an allowed
+  host are refused (DNS-rebinding protection).
+- **`RDS_AGENT_TOKEN_FILE`** (MCP and CLI): read the agent token from a
+  local-mode `tokens.json`. The CLI is in the Docker image:
+  `docker compose exec api rds-agent files ls` needs no flags or variables.
+- Local mode logs `Using existing data in /data: … To start fresh: …` at
+  startup when it reuses a data directory (totals only).
+
+### Fixed
+
+- The stdio MCP server no longer exits when the API is down or no token is set:
+  it starts with a bundled copy of the tool list, and tool calls say how to
+  start the API or which variable to set. `RDS_API_BASE_URL` defaults to
+  `http://localhost:8787` in the MCP server and the CLI.
+
 ### Security
 
 - The Docker image now runs Node.js 22.23.4, which fixes CVE-2026-111497 (an
