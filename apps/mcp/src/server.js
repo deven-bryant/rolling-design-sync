@@ -2,8 +2,10 @@
 
 const { Server } = require('@modelcontextprotocol/sdk/server/index.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
+const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
+const http = require('node:http');
 const { CallToolRequestSchema, ListToolsRequestSchema, McpError, ErrorCode } = require('@modelcontextprotocol/sdk/types.js');
-const { readConfig, DEFAULT_LIMIT, MAX_RESULT_CHARS } = require('./config');
+const { readConfig, agentToken, ConfigError, DEFAULT_LIMIT, MAX_RESULT_CHARS } = require('./config');
 const { createApiClient } = require('./client');
 const { toolsFromOpenApi, toRequest, ToolError } = require('./tools');
 const pkg = require('../package.json');
@@ -11,6 +13,10 @@ const pkg = require('../package.json');
 const CLIENT = `mcp/${pkg.version}`;
 const OPENAPI_PATH = '/v3/openapi.json';
 const STARTUP_TIMEOUT_MS = 15000;
+const MCP_PATH = '/mcp';
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+/** Bundled copy of the API's x-rds-mcp operations, served over stdio while the API is down. */
+const SNAPSHOT_FILE = require.resolve('./openapi.snapshot.json');
 
 const INSTRUCTIONS = [
   'rolling-design-sync tracks what changed in Figma since it was last built, node by node. The tools are generated from the connected API\'s OpenAPI document.',
@@ -31,7 +37,13 @@ const moreResults = cursor => `More results: call again with cursor="${cursor}"`
 /** Characters an outline page keeps free for its X-RDS-Next-Cursor, beyond the one it came with. */
 const CURSOR_ROOM = 64;
 
-class StartupError extends Error {}
+class StartupError extends Error {
+  /** @param {string} message @param {{ unreachable?: boolean }} [options] */
+  constructor(message, { unreachable = false } = {}) {
+    super(message);
+    this.unreachable = unreachable;
+  }
+}
 
 const text = (value, isError = false) => ({
   content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }],
@@ -80,9 +92,9 @@ async function fetchOpenApi(api, baseUrl) {
   const fix = 'Start the API, or set RDS_API_BASE_URL to the origin of a running rolling-design-sync API (v3), e.g. http://127.0.0.1:8787.';
   let res;
   try {
-    res = await api.request('GET', OPENAPI_PATH, { signal: AbortSignal.timeout(STARTUP_TIMEOUT_MS) });
+    res = await api.request('GET', OPENAPI_PATH, { signal: AbortSignal.timeout(STARTUP_TIMEOUT_MS), auth: false });
   } catch (err) {
-    throw new StartupError(`rds-mcp: could not reach the rolling-design-sync API at RDS_API_BASE_URL=${baseUrl} to load its tools from ${where}: ${reason(err)}. ${fix}`);
+    throw new StartupError(`rds-mcp: could not reach the rolling-design-sync API at RDS_API_BASE_URL=${baseUrl} to load its tools from ${where}: ${reason(err)}. ${fix}`, { unreachable: true });
   }
   if (!res.ok) throw new StartupError(`rds-mcp: GET ${where} returned HTTP ${res.status}; RDS_API_BASE_URL=${baseUrl} does not look like a rolling-design-sync API with v3. ${fix}`);
   if (!res.data || typeof res.data !== 'object' || !res.data.paths) {
@@ -91,10 +103,31 @@ async function fetchOpenApi(api, baseUrl) {
   return res.data;
 }
 
+/** The bundled OpenAPI snapshot (the API's x-rds-mcp operations at release time). */
+function loadSnapshot() {
+  return JSON.parse(require('node:fs').readFileSync(SNAPSHOT_FILE, 'utf8'));
+}
+
+/** `doc`'s tools; a StartupError when it has none. */
+function toolsOf(doc, config) {
+  const tools = toolsFromOpenApi(doc);
+  if (!tools.length) {
+    throw new StartupError(`rds-mcp: ${config.baseUrl}${OPENAPI_PATH} lists no agent operations (x-rds-mcp), so there are no tools to serve. Check that RDS_API_BASE_URL points at a rolling-design-sync API with v3.`);
+  }
+  return tools;
+}
+
+/** The API client for `config`: the agent token is resolved per request (RDS_AGENT_TOKEN, else RDS_AGENT_TOKEN_FILE). */
+function apiClient(config, fetchImpl) {
+  return createApiClient({ baseUrl: config.baseUrl, token: () => agentToken(config), clientName: CLIENT, fetchImpl, hostHeader: config.apiHost || null });
+}
+
 /**
  * The MCP server for `config`, with one tool per `x-rds-mcp` operation of the
- * API's OpenAPI document (fetched now unless `doc` is given). Rejects with a
- * StartupError when the document can't be loaded or has no agent operations.
+ * API's OpenAPI document (fetched now unless `doc` is given). When the API
+ * can't be reached and `fallback` is set, the bundled snapshot's tools are
+ * served instead (calls then report the API as down until it is up). Rejects
+ * with a StartupError when the document can't be loaded or has no agent operations.
  *
  * Listing tools get `limit` = `config.defaultLimit` when the call omits it. A
  * JSON result is sent pretty-printed, ending with a "More results" line when it
@@ -107,17 +140,27 @@ async function fetchOpenApi(api, baseUrl) {
  */
 /**
  * @param {any} config
- * @param {{ fetchImpl?: typeof fetch, doc?: any }} [options]
+ * @param {{ fetchImpl?: typeof fetch, doc?: any, fallback?: boolean, log?: (line: string) => void }} [options]
  */
-async function createServer(config, { fetchImpl, doc } = {}) {
+async function createServer(config, { fetchImpl, doc, fallback = false, log = line => process.stderr.write(`${line}\n`) } = {}) {
+  const api = apiClient(config, fetchImpl);
+  let openapi = doc;
+  if (!openapi) {
+    try {
+      openapi = await fetchOpenApi(api, config.baseUrl);
+    } catch (err) {
+      if (!(fallback && err instanceof StartupError && err.unreachable)) throw err;
+      log(`${err.message}\nrds-mcp: serving the bundled tool list (v${pkg.version}); tool calls will fail until the API is up.`);
+      openapi = loadSnapshot();
+    }
+  }
+  return serverForTools(config, toolsOf(openapi, config), api);
+}
+
+/** An MCP server for `tools`, calling the API through `api`. */
+function serverForTools(config, tools, api) {
   const defaultLimit = config.defaultLimit || DEFAULT_LIMIT;
   const maxResultChars = config.maxResultChars || MAX_RESULT_CHARS;
-  const api = createApiClient({ baseUrl: config.baseUrl, token: config.token, clientName: CLIENT, fetchImpl });
-  const openapi = doc || await fetchOpenApi(api, config.baseUrl);
-  const tools = toolsFromOpenApi(openapi);
-  if (!tools.length) {
-    throw new StartupError(`rds-mcp: ${config.baseUrl}${OPENAPI_PATH} lists no agent operations (x-rds-mcp), so there are no tools to serve. Check that RDS_API_BASE_URL points at a rolling-design-sync API with v3.`);
-  }
   const byName = new Map(tools.map(t => [t.name, t]));
 
   const server = new Server({ name: 'rds-mcp', version: pkg.version }, { capabilities: { tools: {} }, instructions: INSTRUCTIONS });
@@ -153,7 +196,9 @@ async function createServer(config, { fetchImpl, doc } = {}) {
       try {
         res = await api.request(req.method, req.path, { query: req.query, body: req.body });
       } catch (err) {
-        return text(`Could not reach the rolling-design-sync API at ${config.baseUrl} (RDS_API_BASE_URL): ${reason(err)}`, true);
+        if (err instanceof ConfigError) return text(err.message, true);
+        return text(`Could not reach the rolling-design-sync API at ${config.baseUrl} (RDS_API_BASE_URL): ${reason(err)}. ` +
+          'Start it (`docker compose up -d` in the rolling-design-sync checkout, or `npm start`), or set RDS_API_BASE_URL to a running API, then call the tool again.', true);
       }
       if (!res.ok) return httpError(res);
       if (res.data === '' || res.data === null) return text(`HTTP ${res.status} ${req.method} ${req.path}: no content.`);
@@ -192,10 +237,148 @@ async function createServer(config, { fetchImpl, doc } = {}) {
   return server;
 }
 
-async function main({ env = process.env } = {}) {
-  const server = await createServer(readConfig(env));
+/** The host name of a `Host` header (`name[:port]` / `[v6][:port]`), lower-cased; null when malformed. */
+function hostName(header) {
+  const m = /^(\[[^\]]*\]|[^:[\]]*)(?::\d*)?$/.exec(String(header || '').trim().toLowerCase());
+  return m && m[1] ? m[1] : null;
+}
+
+/** DNS-rebinding defense: `Host`, and `Origin` when sent, must name an allowed host (any port). Returns the problem, or null. */
+function foreignRequest(req, allowedHosts) {
+  const host = hostName(req.headers.host);
+  if (!host || !allowedHosts.includes(host)) return `Host header '${req.headers.host || ''}' is not allowed`;
+  const origin = req.headers.origin;
+  if (origin !== undefined) {
+    let name = null;
+    try { name = new URL(String(origin)).hostname.toLowerCase(); } catch (_) { name = null; }
+    if (!name || !allowedHosts.includes(name)) return `Origin '${origin}' is not allowed`;
+  }
+  return null;
+}
+
+const rpcError = (res, status, code, message) => {
+  res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', error: { code, message }, id: null }));
+};
+
+/** The request body as JSON; undefined when empty. Rejects with a status-tagged error. */
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > MAX_BODY_BYTES) { reject(Object.assign(new Error('request body too large'), { status: 413 })); req.destroy(); return; }
+      chunks.push(chunk);
+    });
+    req.on('error', reject);
+    req.on('end', () => {
+      const body = Buffer.concat(chunks).toString('utf8');
+      if (!body.trim()) return resolve(undefined);
+      try { resolve(JSON.parse(body)); } catch (_) { reject(Object.assign(new Error('Parse error: the body is not JSON'), { status: 400, code: -32700 })); }
+    });
+  });
+}
+
+const sleep = (ms, signal) => new Promise(resolve => {
+  const timer = setTimeout(resolve, ms);
+  if (signal) signal.addEventListener('abort', () => { clearTimeout(timer); resolve(undefined); }, { once: true });
+});
+
+/**
+ * Serves MCP over Streamable HTTP (stateless JSON responses) at
+ * `http://<config.httpHost>:<config.httpPort>/mcp`, plus `GET /health`. Listens
+ * at once and loads the tools from the API in the background, retrying with
+ * backoff until it answers; until then `/health` is 503 and `/mcp` answers 503.
+ * Requests whose `Host` / `Origin` name a host outside `config.allowedHosts`
+ * are refused (403).
+ * @param {any} config
+ * @param {{ fetchImpl?: typeof fetch, log?: (line: string) => void, retry?: { initialMs?: number, maxMs?: number } }} [options]
+ */
+async function startHttpServer(config, { fetchImpl, log = line => process.stderr.write(`${line}\n`), retry = {} } = {}) {
+  const api = apiClient(config, fetchImpl);
+  const state = { tools: /** @type {any[] | null} */ (null), problem: /** @type {string | null} */ ('loading the tools from the API') };
+  const stop = new AbortController();
+
+  const ready = (async () => {
+    let delay = retry.initialMs || 500;
+    let reported = null;
+    while (!stop.signal.aborted) {
+      try {
+        state.tools = toolsOf(await fetchOpenApi(api, config.baseUrl), config);
+        state.problem = null;
+        log(`rds-mcp: serving ${state.tools.length} tools from ${config.baseUrl}`);
+        return true;
+      } catch (err) {
+        state.problem = err && err.message ? err.message : String(err);
+        if (state.problem !== reported) { log(`${state.problem}\nrds-mcp: retrying until the API is up.`); reported = state.problem; }
+      }
+      await sleep(delay, stop.signal);
+      delay = Math.min(delay * 2, retry.maxMs || 5000);
+    }
+    return false;
+  })();
+
+  const handle = async (req, res) => {
+    const url = new URL(req.url || '/', 'http://localhost');
+    const foreign = foreignRequest(req, config.allowedHosts);
+    if (foreign) return rpcError(res, 403, -32000, `Forbidden: ${foreign}. Connect via http://localhost:${config.httpPort}${MCP_PATH}, or add the host name to RDS_MCP_ALLOWED_HOSTS.`);
+    if (url.pathname === '/health') {
+      const body = state.tools ? { status: 'ok', tools: state.tools.length } : { status: 'starting', detail: state.problem };
+      return res.writeHead(state.tools ? 200 : 503, { 'content-type': 'application/json' }).end(JSON.stringify(body));
+    }
+    if (url.pathname !== MCP_PATH) return rpcError(res, 404, -32000, `Not found: the MCP endpoint is ${MCP_PATH}`);
+    if (req.method !== 'POST') return rpcError(res, 405, -32000, 'Method not allowed: this server is stateless; send JSON-RPC requests with POST.');
+    if (!state.tools) return rpcError(res, 503, -32000, `rds-mcp is not ready: ${state.problem}`);
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      return rpcError(res, err.status || 400, err.code || -32000, err.message);
+    }
+    const server = serverForTools(config, state.tools, api);
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    res.on('close', () => { transport.close().catch(() => {}); server.close().catch(() => {}); });
+    await server.connect(transport);
+    await transport.handleRequest(req, res, body);
+  };
+
+  const httpServer = http.createServer((req, res) => {
+    handle(req, res).catch(err => {
+      log(`rds-mcp: ${err && err.message ? err.message : err}`);
+      if (!res.headersSent) rpcError(res, 500, -32603, 'Internal error');
+      else res.end();
+    });
+  });
+  await new Promise((resolve, reject) => {
+    httpServer.once('error', reject);
+    httpServer.listen(config.httpPort, config.httpHost, () => { httpServer.off('error', reject); resolve(undefined); });
+  });
+  const address = /** @type {import('node:net').AddressInfo} */ (httpServer.address());
+  const shown = address.family === 'IPv6' ? `[${address.address}]` : address.address;
+  const url = `http://${shown}:${address.port}${MCP_PATH}`;
+  log(`rds-mcp: MCP over HTTP at ${url} (API: ${config.baseUrl})`);
+  const close = async () => {
+    stop.abort();
+    await ready;
+    await new Promise(resolve => { httpServer.close(() => resolve(undefined)); httpServer.closeAllConnections(); });
+  };
+  return { httpServer, url, port: address.port, ready, close };
+}
+
+/**
+ * Starts the transport `readConfig` picks: stdio (default; falls back to the
+ * bundled tool list while the API is down) or HTTP (`--http` / RDS_MCP_TRANSPORT=http).
+ * @param {{ env?: NodeJS.ProcessEnv, argv?: string[] }} [options]
+ */
+async function main({ env = process.env, argv = [] } = {}) {
+  const config = readConfig(env, {}, argv);
+  if (config.transport === 'http') return startHttpServer(config);
+  const server = await createServer(config, { fallback: true });
   await server.connect(new StdioServerTransport());
   return server;
 }
 
-module.exports = { createServer, httpError, retrySeconds, main, fetchOpenApi, StartupError, INSTRUCTIONS, CLIENT, TRUNCATED, moreResults };
+module.exports = {
+  createServer, startHttpServer, loadSnapshot, httpError, retrySeconds, main, fetchOpenApi, foreignRequest,
+  StartupError, INSTRUCTIONS, CLIENT, TRUNCATED, moreResults, SNAPSHOT_FILE, MCP_PATH,
+};

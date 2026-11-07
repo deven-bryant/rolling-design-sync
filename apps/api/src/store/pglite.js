@@ -90,13 +90,15 @@ async function migrate(db, migrationsDir = DEFAULT_MIGRATIONS_DIR) {
 
 /**
  * Opens (creating if needed) the local store under `dataDir`. Returns the
- * PostgresStore plus the migrations applied by this open.
+ * PostgresStore, the migrations applied by this open, and whether the
+ * directory already held a database (`existing`).
  *
  * @param {{ dataDir?: string, migrationsDir?: string }} [options]
  */
 async function openLocalStore({ dataDir, migrationsDir = DEFAULT_MIGRATIONS_DIR } = {}) {
   if (!dataDir) throw new Error('openLocalStore requires a dataDir.');
   ensureDataDir(dataDir);
+  const existing = fs.existsSync(path.join(dataDir, PGDATA));
   const db = await PGlite.create({ dataDir: path.join(dataDir, PGDATA), extensions: { ltree, pgcrypto } });
   let applied;
   try {
@@ -106,7 +108,26 @@ async function openLocalStore({ dataDir, migrationsDir = DEFAULT_MIGRATIONS_DIR 
     throw err;
   }
   const adapter = new PGliteAdapter(db);
-  return { store: new PostgresStore(adapter, { pool: adapter }), applied };
+  return { store: new PostgresStore(adapter, { pool: adapter }), applied, existing };
 }
 
-module.exports = { openLocalStore, migrate, PGliteAdapter, DEFAULT_MIGRATIONS_DIR };
+/** Totals only (no names or keys): `{ files, nodes, firstCreated }`, nodes not counting deleted ones. */
+async function summarizeLocalData(pool) {
+  const { rows } = await pool.query(`select
+    (select count(*) from public.file)::int as files,
+    (select count(*) from public.node where deleted_at is null)::int as nodes,
+    (select min(created_at) from public.file) as first_created`);
+  const row = rows[0] || {};
+  return { files: row.files || 0, nodes: row.nodes || 0, firstCreated: row.first_created ? new Date(row.first_created) : null };
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** The startup line for a local store that already held data. */
+function existingDataNotice(dataDir, { files, nodes, firstCreated }) {
+  const created = firstCreated ? `, first created ${firstCreated.toISOString().slice(0, 10)}` : '';
+  return `Using existing data in ${dataDir}: ${plural(files, 'file')}, ${plural(nodes, 'node')}${created}. ` +
+    `To start fresh: docker compose down -v (Docker), or stop the API and remove ${dataDir}.`;
+}
+
+module.exports = { openLocalStore, summarizeLocalData, existingDataNotice, migrate, PGliteAdapter, DEFAULT_MIGRATIONS_DIR };

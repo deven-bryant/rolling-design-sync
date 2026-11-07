@@ -1,12 +1,16 @@
 # @rolling-design-sync/mcp
 
-A local (stdio) [MCP](https://modelcontextprotocol.io) server over the
+An [MCP](https://modelcontextprotocol.io) server (stdio, or Streamable HTTP) over the
 [Rolling Design Sync](https://github.com/deven-bryant/rolling-design-sync)
 **v3** API, so any MCP-capable coding agent (Claude Code, Cursor,
 Windsurf, Devin, …) can list what changed in Figma since it was last built,
 lease work, and clear implemented nodes without a bespoke CLI. It talks to
 whatever API `RDS_API_BASE_URL` points at (self-hosted, `RDS_STORE=local`, or
 hosted).
+
+**Using the Docker setup?** `docker compose up -d` in the repository already
+runs this server at `http://localhost:8788/mcp` — connect your client to that
+URL; no token, env or `npm install` needed (see [Transports](#transports)).
 
 ## How tools are discovered
 
@@ -29,9 +33,12 @@ annotated `x-rds-mcp: { tool: "<name>" }`:
   doesn't take are rejected before any request is sent.
 
 Operations without the annotation (the plugin routes, `openapi.json`) are
-never exposed. If the API can't be reached, answers with something other than
-an OpenAPI document, or lists no annotated operations, the server exits with a
-message naming `RDS_API_BASE_URL` instead of starting with no tools.
+never exposed. If the API answers with something other than an OpenAPI
+document, or lists no annotated operations, the server exits with a message
+naming `RDS_API_BASE_URL` instead of starting with no tools. If it can't be
+reached at all, the stdio server starts with the tools of a bundled snapshot of
+this release's API (`src/openapi.snapshot.json`) and each tool call says how to
+start the API; the HTTP server instead retries until the API answers.
 
 **The tool set follows the connected server's version:** an older or newer
 API simply yields a different set of tools, with that server's schemas and
@@ -124,19 +131,45 @@ HTTP 404 GET /v3/files/AbCdEf123456/nodes/9%3A9 — Node not found (node_not_fou
 Hint: …
 ```
 
+## Transports
+
+- **stdio** (default) — the client starts `rds-mcp` and talks over its stdin /
+  stdout.
+- **Streamable HTTP** — `rds-mcp --http` (or `RDS_MCP_TRANSPORT=http`) serves
+  `http://127.0.0.1:8788/mcp` (`RDS_MCP_HOST`, `RDS_MCP_PORT`), stateless,
+  with `GET /health` (`503` until the tools are loaded from the API, which is
+  retried with backoff). Requests are refused (`403`) unless `Host`, and
+  `Origin` when sent, name `localhost`, `127.0.0.1`, `[::1]` or a host in
+  `RDS_MCP_ALLOWED_HOSTS` — a DNS-rebinding defense. Anyone who can reach the
+  port acts with the server's agent token, so keep it on loopback.
+
+`compose.yaml` runs the HTTP transport as the `mcp` service, published on
+`127.0.0.1:8788`, reading the token from the API's `rds-data` volume
+(read-only) with `RDS_AGENT_TOKEN_FILE=/data/tokens.json`. The repository's
+`.mcp.json` points Claude Code at it:
+
+```json
+{ "mcpServers": { "rds": { "type": "http", "url": "http://localhost:8788/mcp" } } }
+```
+
 ## Environment
 
 | Variable | Required | Meaning |
 |----------|----------|---------|
-| `RDS_API_BASE_URL` | yes | API origin, e.g. `http://127.0.0.1:8787`. |
-| `RDS_AGENT_TOKEN` | yes | An agent token (`RDS_AGENT_TOKENS` on the API; `agent` in `tokens.json` for `RDS_STORE=local` — [docs/agents.md](https://github.com/deven-bryant/rolling-design-sync/blob/main/docs/agents.md#2-get-the-agent-token-once) shows how to copy it out). |
+| `RDS_API_BASE_URL` | no | API origin (default `http://localhost:8787`). |
+| `RDS_AGENT_TOKEN` | yes, unless `RDS_AGENT_TOKEN_FILE` | An agent token (`RDS_AGENT_TOKENS` on the API; `agent` in `tokens.json` for `RDS_STORE=local` — [docs/agents.md](https://github.com/deven-bryant/rolling-design-sync/blob/main/docs/agents.md#2-get-the-agent-token-once) shows how to copy it out). |
+| `RDS_AGENT_TOKEN_FILE` | no | A local-mode `tokens.json`; its `agent` entry is used when `RDS_AGENT_TOKEN` is unset (read per call, never logged). |
+| `RDS_API_HOST` | no | `Host` header sent to the API (e.g. `localhost:8787` when reaching a local-mode API by another name). |
+| `RDS_MCP_TRANSPORT` | no | `stdio` (default) or `http` (same as `--http`). |
+| `RDS_MCP_HOST` / `RDS_MCP_PORT` | no | HTTP listen address (default `127.0.0.1:8788`). |
+| `RDS_MCP_ALLOWED_HOSTS` | no | Extra comma-separated host names (no port) the HTTP transport accepts in `Host` / `Origin`. |
 | `RDS_FILE_KEY` | no | Default `fileKey`, so single-file users needn't pass it on every call. |
 | `RDS_MCP_DEFAULT_LIMIT` | no | Page size when a listing call omits `limit` (default 25); not applied to `format=outline`, which comes whole. |
 | `RDS_MCP_MAX_RESULT_CHARS` | no | Tool-result size budget (default 50,000); larger results come back as smaller pages (an outline as fewer whole lines, via `limit`, with its `X-RDS-Next-Cursor` as the cursor). |
 
-The server exits with a message naming the missing variable(s) if a required
-one is unset, and with a message naming `RDS_API_BASE_URL` if the API can't be
-reached at startup (it needs the API running to know its tools).
+Without a token the server still starts; tool calls then say which variable to
+set. It exits only on a malformed setting (e.g. a non-http(s)
+`RDS_API_BASE_URL`).
 
 ## Install
 
@@ -194,6 +227,7 @@ Point `RDS_API_BASE_URL` at `http://localhost:<PORT>` or
 ```bash
 npm test -w @rolling-design-sync/mcp    # DB-free: memory-store API on a loopback port + in-memory / stdio MCP clients
 npm run build -w @rolling-design-sync/mcp
+npm run gen:snapshot -w @rolling-design-sync/mcp   # after an API change; a test fails while the snapshot is stale
 ```
 
 ## License

@@ -2,7 +2,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseArgs, buildRequest, buildUrl, execute, run, usage, CliError, CLIENT, COMMANDS } = require('../rds-agent');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { parseArgs, buildRequest, buildUrl, execute, run, usage, readEnv, CliError, CLIENT, COMMANDS, DEFAULT_BASE_URL, DEFAULT_TOKEN_FILE } = require('../rds-agent');
 const SPEC = require('../commands.generated.json');
 const { version: VERSION } = require('../package.json');
 
@@ -108,9 +111,27 @@ test('execute: GET has no body; missing env fails before any request', async () 
   assert.equal(calls[0].init.headers['x-rds-client'], `cli/${VERSION}`);
   assert.equal(buildUrl('https://x', { path: '/v3/resolve', query: { url: 'a b' } }), 'https://x/v3/resolve?url=a+b');
 
-  await assert.rejects(execute({ method: 'GET', path: '/v3/files' }, { env: { RDS_AGENT_TOKEN: 't' }, fetchImpl }), /RDS_API_BASE_URL/);
-  await assert.rejects(execute({ method: 'GET', path: '/v3/files' }, { env: { RDS_API_BASE_URL: 'https://x' }, fetchImpl }), /RDS_AGENT_TOKEN/);
+  const missing = path.join(os.tmpdir(), `rds-agent-missing-${process.pid}.json`);
+  await assert.rejects(execute({ method: 'GET', path: '/v3/files' }, { env: { RDS_API_BASE_URL: 'https://x', RDS_AGENT_TOKEN_FILE: missing }, fetchImpl }),
+    new RegExp(`RDS_AGENT_TOKEN is not set, and ${missing.replace(/[.\\/]/g, '\\$&')} \\(RDS_AGENT_TOKEN_FILE\\) has no agent token`));
   assert.equal(calls.length, 1);
+});
+
+test('readEnv: local defaults — http://localhost:8787, and the agent token from RDS_AGENT_TOKEN_FILE (default /data/tokens.json)', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rds-agent-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'tokens.json');
+  fs.writeFileSync(file, JSON.stringify({ plugin: 'p', agent: ' from-file ', viewer: 'v' }));
+  assert.deepEqual(readEnv({ RDS_AGENT_TOKEN_FILE: file }), { baseUrl: DEFAULT_BASE_URL, token: 'from-file' });
+  assert.equal(DEFAULT_BASE_URL, 'http://localhost:8787');
+  assert.deepEqual(readEnv({ RDS_API_BASE_URL: 'https://x/', RDS_AGENT_TOKEN: 'env', RDS_AGENT_TOKEN_FILE: file }), { baseUrl: 'https://x', token: 'env' });
+  const reads = [];
+  const readFile = name => { reads.push(name); return JSON.stringify({ agent: 'docker' }); };
+  assert.deepEqual(readEnv({}, { readFile }), { baseUrl: 'http://localhost:8787', token: 'docker' });
+  assert.deepEqual(reads, [DEFAULT_TOKEN_FILE]);
+  assert.equal(DEFAULT_TOKEN_FILE, '/data/tokens.json');
+  assert.throws(() => readEnv({}, { readFile: () => JSON.stringify({ plugin: 'p' }) }), /has no agent token/);
+  assert.throws(() => readEnv({}, { readFile: () => '{' }), /has no agent token/);
 });
 
 test('flag values are typed and validated from the generated schema', () => {
