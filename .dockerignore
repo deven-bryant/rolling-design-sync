@@ -5,8 +5,12 @@
 **/data
 docs
 apps/figma-plugin
-apps/mcp
-scripts
+apps/mcp/tests
+apps/mcp/scripts
+scripts/*
+!scripts/package.json
+!scripts/rds-agent.js
+!scripts/commands.generated.json
 tests
 apps/api/tests
 packages/core/tests
