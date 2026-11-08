@@ -9,7 +9,8 @@ import { splitUnder, useFile, useScope } from '../features/nodes';
 import { defaultScope, ScopePanel } from '../features/scopes';
 import { useWorkItems } from '../features/work';
 import { CopyButton } from './CopyButton';
-import { rememberFile } from './lastFile';
+import { ApiError } from '../api/problem';
+import { forgetFile, rememberFile } from './lastFile';
 import { filePath, query } from './urlState';
 
 type Scope = NonNullable<ReturnType<typeof useScope>['scope']>;
@@ -113,8 +114,10 @@ export function FileLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const file = useFile(fileKey);
   const scopes = useScope(fileKey, undefined);
-  useEffect(() => rememberFile(fileKey), [fileKey]);
+  const untracked = file.error instanceof ApiError && file.error.code === 'file_not_found';
+  useEffect(() => (untracked ? forgetFile(fileKey) : rememberFile(fileKey)), [fileKey, untracked]);
 
+  if (untracked) return <Navigate to="/files" replace />;
   const live = (scopes.data?.scopes ?? []).filter(s => !s.deleted);
   const under = params.get('under') || undefined;
   const fallback = defaultScope(live);
