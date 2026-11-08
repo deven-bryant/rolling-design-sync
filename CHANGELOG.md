@@ -29,6 +29,9 @@ are cut.
   it starts with a bundled copy of the tool list, and tool calls say how to
   start the API or which variable to set. `RDS_API_BASE_URL` defaults to
   `http://localhost:8787` in the MCP server and the CLI.
+- Portal: a remembered file the server no longer tracks (e.g. after
+  `docker compose down -v`) is forgotten, and its pages open Files instead of
+  showing "No tracked file" errors.
 
 ### Security
 

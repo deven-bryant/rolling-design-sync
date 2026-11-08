@@ -335,6 +335,21 @@ describe('routes', () => {
     expect(sidebar().getByRole('link', { name: 'Nodes' }).getAttribute('href')).toBe(`/files/${FILE}/nodes`);
   });
 
+  it('forgets a remembered file the server no longer tracks and opens Files', async () => {
+    window.localStorage.setItem('rds.portal.lastFile', 'AbCdEf123456GhIjKl7890');
+    fetchMock.mockImplementation(async (input, init) => {
+      const path = decodeURIComponent(new URL(String(input), 'http://localhost').pathname);
+      if (path.startsWith('/v3/files/AbCdEf123456GhIjKl7890'))
+        return json({ type: 'about:blank', status: 404, code: 'file_not_found', title: 'Not found', detail: "No tracked file with key 'AbCdEf123456GhIjKl7890'." }, 404);
+      return api(init?.method ?? 'GET', path);
+    });
+    const router = renderAt('/files/AbCdEf123456GhIjKl7890/nodes');
+    expect(await screen.findByRole('heading', { level: 1, name: 'Files' })).toBeDefined();
+    expect(router.state.location.pathname).toBe('/files');
+    expect(window.localStorage.getItem('rds.portal.lastFile')).toBeNull();
+    expect(sidebar().getByRole('link', { name: 'Nodes' }).getAttribute('href')).toBe('/files');
+  });
+
   it('switches the theme from the sidebar header', async () => {
     renderAt('/files');
     const toggle = await screen.findByRole('switch', { name: 'Dark mode' });

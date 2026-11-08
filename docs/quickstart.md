@@ -128,6 +128,11 @@ From another project:
 claude mcp add rds --scope user --transport http http://localhost:8788/mcp
 ```
 
+Upgrading from a stdio setup? An `rds` server you added earlier at user or local
+scope takes precedence over the repository's `.mcp.json`, and `/mcp` then shows
+it failing (`CONNECTION_CLOSED`). Check with `claude mcp list`, remove the old
+entry (`claude mcp remove rds -s user`, or `-s local`), and restart Claude Code.
+
 **Cursor** — add to `~/.cursor/mcp.json`:
 
 ```json

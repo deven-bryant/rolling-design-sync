@@ -16,3 +16,12 @@ export function rememberFile(fileKey: string): void {
     // Storage can be unavailable (private mode, quota); the sidebar then falls back to Files.
   }
 }
+
+/** Drops the remembered file when it is `fileKey`, e.g. one this server doesn't track (a reset local store). */
+export function forgetFile(fileKey: string): void {
+  try {
+    if (window.localStorage.getItem(KEY) === fileKey) window.localStorage.removeItem(KEY);
+  } catch {
+    // Nothing remembered when storage is unavailable.
+  }
+}
