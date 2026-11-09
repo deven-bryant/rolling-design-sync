@@ -39,6 +39,13 @@ export const routes: RouteObject[] = [
           { path: 'work', element: <WorkPage /> },
         ],
       },
+      {
+        element: <FileLayout />,
+        children: [
+          { path: 'nodes', element: <NodesPage /> },
+          { path: 'work', element: <WorkPage /> },
+        ],
+      },
       { path: 'activity', element: <ActivityPage /> },
       { path: 'claims', element: <ClaimsPage /> },
       { path: 'agents', element: <Redirect to="/claims" /> },

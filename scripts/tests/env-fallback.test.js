@@ -26,10 +26,11 @@ test('warnLegacyEnv: one warning per set FDS_* variable, naming its RDS_* replac
 test('run: FDS_* values are ignored, with the warning on stderr', async () => {
   const chunks = [];
   const stderr = { write: s => chunks.push(s) };
-  const code = await run(['files', 'ls'], { env: { FDS_API_BASE_URL: 'https://api.example.com', FDS_AGENT_TOKEN: 'old' }, stdout: { write() {} }, stderr, fetchImpl: async () => assert.fail('no request') });
+  const env = { FDS_API_BASE_URL: 'https://api.example.com', FDS_AGENT_TOKEN: 'old', RDS_AGENT_TOKEN_FILE: '/nonexistent/rds-tokens.json' };
+  const code = await run(['files', 'ls'], { env, stdout: { write() {} }, stderr, fetchImpl: async () => assert.fail('no request') });
   assert.equal(code, 1);
   const err = chunks.join('');
   assert.match(err, /^rds-agent: FDS_AGENT_TOKEN is no longer read; set RDS_AGENT_TOKEN instead\n/m);
   assert.match(err, /^rds-agent: FDS_API_BASE_URL is no longer read; set RDS_API_BASE_URL instead\n/m);
-  assert.match(err, /RDS_API_BASE_URL is not set/);
+  assert.match(err, /RDS_AGENT_TOKEN is not set/);
 });

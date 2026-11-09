@@ -1,8 +1,8 @@
 {
   "name": "@rolling-design-sync/mcp",
-  "version": "0.14.2",
+  "version": "0.14.3",
   "license": "Apache-2.0",
-  "description": "Local (stdio) MCP server for rolling-design-sync: its tools are generated at startup from the API's /v3/openapi.json (one per x-rds-mcp operation).",
+  "description": "MCP server for rolling-design-sync (stdio, or Streamable HTTP with --http): its tools are generated at startup from the API's /v3/openapi.json (one per x-rds-mcp operation).",
   "keywords": [
     "figma",
     "design-sync",
@@ -32,19 +32,21 @@
   ],
   "scripts": {
     "start": "node bin/rds-mcp.js",
-    "test": "node --test tests/env-fallback.test.js tests/mcp.test.js",
-    "build": "node --check bin/rds-mcp.js && node --check src/server.js && node --check src/config.js && node --check src/client.js && node --check src/tools.js"
+    "test": "node --test tests/env-fallback.test.js tests/mcp.test.js tests/local-setup.test.js",
+    "gen:snapshot": "node scripts/gen-snapshot.js",
+    "gen:snapshot:check": "node scripts/gen-snapshot.js --check",
+    "build": "node --check bin/rds-mcp.js && node --check src/server.js && node --check src/config.js && node --check src/client.js && node --check src/tools.js && node --check scripts/gen-snapshot.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.0",
-    "@rolling-design-sync/core": "^0.14.2",
+    "@rolling-design-sync/core": "^0.14.3",
     "zod": "4.6.5"
   },
   "devDependencies": {
     "@rolling-design-sync/api": "*"
   },
   "engines": {
-    "node": ">=22.22"
+    "node": ">=22.23.4"
   },
   "publishConfig": {
     "access": "public",

@@ -141,7 +141,7 @@ export function ScopePanel({ fileKey, fileName, selected, onSelectionChange, onV
             }
           />
           <Card.Body>
-            {scopes.isPending ? (
+            {fileKey && scopes.isPending ? (
               <Text as="p" color="tertiary" className="px-3xl py-xl">
                 Loading scopes…
               </Text>
