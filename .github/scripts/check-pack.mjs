@@ -20,6 +20,7 @@ const PACKAGES = {
     'package.json',
     'src/client.js',
     'src/config.js',
+    'src/openapi.snapshot.json',
     'src/server.js',
     'src/tools.js',
   ],

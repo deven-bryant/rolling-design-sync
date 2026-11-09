@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rds": {
+      "type": "http",
+      "url": "http://localhost:8788/mcp"
+    }
+  }
+}

@@ -13,10 +13,13 @@
  * Hand-written command: `check` (render checks; loads the optional Playwright peer
  * dependency, nothing else does).
  *
- * Env: RDS_API_BASE_URL, RDS_AGENT_TOKEN, RDS_WORKER. Zero deps (Node >= 20 built-in fetch).
+ * Env: RDS_API_BASE_URL (default http://localhost:8787), RDS_AGENT_TOKEN (else the
+ * `agent` entry of RDS_AGENT_TOKEN_FILE, default /data/tokens.json), RDS_WORKER.
+ * Zero deps (Node >= 20 built-in fetch).
  * Exits 0 on 2xx (and for --help), 1 on API/usage errors; `check`: 0 passed, 1 mismatch, 2 errors.
  */
 
+const fs = require('node:fs');
 const SPEC = require('./commands.generated.json');
 const { version: VERSION } = require('./package.json');
 
@@ -78,7 +81,7 @@ function usage() {
     'File-scoped commands take --file-key <key> or --url <figma link> (the link supplies the file key and node id).',
     'Node ids take 1:2 or 1-2. Global: --format json|table (ndjson|md where the API streams them), --all on paged listings.',
     '',
-    'Env: RDS_API_BASE_URL (required), RDS_AGENT_TOKEN (required), RDS_WORKER (default for --worker)',
+    `Env: RDS_API_BASE_URL (default ${DEFAULT_BASE_URL}), RDS_AGENT_TOKEN (else the agent entry of RDS_AGENT_TOKEN_FILE, default ${DEFAULT_TOKEN_FILE}), RDS_WORKER (default for --worker)`,
   ].join('\n');
 }
 
@@ -319,11 +322,25 @@ function buildRequest(parsed, { env = {}, stdinText } = {}) {
 }
 
 // --- execution -------------------------------------------------------------------
-function readEnv(env) {
-  const baseUrl = (envVar(env, 'API_BASE_URL') || '').trim().replace(/\/+$/, '');
-  const token = (envVar(env, 'AGENT_TOKEN') || '').trim();
-  if (!baseUrl) throw new CliError('RDS_API_BASE_URL is not set');
-  if (!token) throw new CliError('RDS_AGENT_TOKEN is not set');
+const DEFAULT_BASE_URL = 'http://localhost:8787';
+/** Where the API's local mode (Docker: the `rds-data` volume) keeps its generated tokens. */
+const DEFAULT_TOKEN_FILE = '/data/tokens.json';
+
+/** The agent token from `file` (the API's tokens.json), else null. */
+function fileToken(file, readFile) {
+  try {
+    const stored = JSON.parse(String(readFile(file, 'utf8')));
+    return stored && typeof stored.agent === 'string' && stored.agent.trim() ? stored.agent.trim() : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function readEnv(env, { readFile = fs.readFileSync } = {}) {
+  const baseUrl = (envVar(env, 'API_BASE_URL') || '').trim().replace(/\/+$/, '') || DEFAULT_BASE_URL;
+  const file = (envVar(env, 'AGENT_TOKEN_FILE') || '').trim() || DEFAULT_TOKEN_FILE;
+  const token = (envVar(env, 'AGENT_TOKEN') || '').trim() || fileToken(file, readFile);
+  if (!token) throw new CliError(`RDS_AGENT_TOKEN is not set, and ${file} (RDS_AGENT_TOKEN_FILE) has no agent token`);
   return { baseUrl, token };
 }
 
@@ -1071,4 +1088,4 @@ if (require.main === module) {
   run(process.argv.slice(2)).then(code => { process.exitCode = code; });
 }
 
-module.exports = { GALLERY_MARGIN, parseCheckArgs, loadPlaywright, checkUrl, fillTemplate, findStory, resolveComponent, themed, gitHead, envVar, warnLegacyEnv, retrySeconds, parseArgs, buildRequest, buildUrl, execute, perform, run, normalizeNodeId, usage, commandHelp, CliError, CLIENT, COMMANDS };
+module.exports = { GALLERY_MARGIN, parseCheckArgs, loadPlaywright, checkUrl, fillTemplate, findStory, resolveComponent, themed, gitHead, envVar, warnLegacyEnv, readEnv, DEFAULT_BASE_URL, DEFAULT_TOKEN_FILE, retrySeconds, parseArgs, buildRequest, buildUrl, execute, perform, run, normalizeNodeId, usage, commandHelp, CliError, CLIENT, COMMANDS };

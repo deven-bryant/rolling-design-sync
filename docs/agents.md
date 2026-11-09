@@ -6,24 +6,33 @@ it. It assumes an API is already running — `docker compose up -d` from the
 [README](../README.md#get-started), or a team deployment
 ([docs/setup.md](setup.md)).
 
-Agents have two ways in, and both read the same variables:
+Agents have two ways in:
 
-- **The MCP server** (`apps/mcp/bin/rds-mcp.js`, stdio) — tools such as
+- **The MCP server** (`apps/mcp/bin/rds-mcp.js`) — tools such as
   `list_nodes`, `list_work_items`, `list_claims`, `claim_nodes` and `clear_nodes`, generated
   from the API's `GET /v3/openapi.json`. Details: [apps/mcp/README.md](../apps/mcp/README.md).
 - **The CLI** (`node scripts/rds-agent.js`, zero dependencies) — the same
   operations as shell commands (`nodes ls`, `work`, `claim`, `clear`, …).
   Details: [scripts/README.md](../scripts/README.md).
 
-Both need a checkout of this repo with Node 22.23.4+; run `npm install` in it once
-for the MCP server (the CLI needs nothing installed).
+**With the Docker setup, there is nothing to install or copy.** `docker compose
+up -d` also runs the MCP server over HTTP at **`http://localhost:8788/mcp`**
+(loopback only); it reads the agent token from the API's volume, so clients
+connect with just the URL — Claude Code picks it up from the checkout's
+`.mcp.json`. The CLI is in the API container:
+`docker compose exec api rds-agent files ls`.
+
+For a team deployment, or to run the MCP server as a stdio process, you need a
+checkout with Node 22.23.4+ and `npm install` run once in it (the CLI needs
+nothing installed); both then read the variables below.
 
 ## 1. The variables
 
 | Variable | Read by | Required | Meaning |
 |---|---|---|---|
-| `RDS_API_BASE_URL` | MCP, CLI | yes | API origin, e.g. `http://localhost:8787` for the Docker setup. |
-| `RDS_AGENT_TOKEN` | MCP, CLI | yes | An **agent** token (not the plugin or viewer token). |
+| `RDS_API_BASE_URL` | MCP, CLI | no | API origin (default `http://localhost:8787`, the Docker setup). |
+| `RDS_AGENT_TOKEN` | MCP, CLI | yes, unless `RDS_AGENT_TOKEN_FILE` | An **agent** token (not the plugin or viewer token). |
+| `RDS_AGENT_TOKEN_FILE` | MCP, CLI | no | A local-mode `tokens.json` to read the `agent` token from when `RDS_AGENT_TOKEN` is unset (the CLI defaults to `/data/tokens.json`, the Docker volume). |
 | `RDS_FILE_KEY` | MCP | no | Default `fileKey`, so tool calls can omit it. |
 | `RDS_WORKER` | CLI | no | Default `--worker` for `claim`, `block` and `unblock`. |
 | `RDS_MCP_DEFAULT_LIMIT` | MCP | no | Page size when a listing call omits `limit` (default 25). |
@@ -39,7 +48,9 @@ naming its `RDS_` replacement); rename it.
 
 ## 2. Get the agent token (once)
 
-Copy the token into your host's config yourself. Agents are not expected to
+Skip this with the Docker MCP server (`http://localhost:8788/mcp`) or the CLI
+inside the container: they read the token themselves. For a stdio server or a
+CLI outside Docker, copy the token into your host's config yourself. Agents are not expected to
 read `tokens.json` — and many agent harnesses forbid reading secret files — so
 the token has to reach them through the host config below.
 
@@ -94,8 +105,16 @@ token is a secret: put it in **user-level** config, never in a file you commit.
 
 ## 3. Claude Code
 
-Add the MCP server at user scope (stored in `~/.claude.json`, not in the
-project):
+**Docker setup:** run Claude Code in the checkout and approve the `rds` server
+from its `.mcp.json` (no secrets in it), or add it at user scope for every
+project:
+
+```bash
+claude mcp add rds --scope user --transport http http://localhost:8788/mcp
+```
+
+**Stdio** (a team API, or no Docker) — add the server at user scope (stored in
+`~/.claude.json`, not in the project):
 
 ```bash
 claude mcp add rds --scope user --transport stdio \
@@ -136,7 +155,18 @@ then check with `/mcp` (the `rds` server is connected) and by asking it to run
 
 ## 4. Cursor
 
-Add the server to `~/.cursor/mcp.json` (user-level; `.cursor/mcp.json` in a
+**Docker setup:** `~/.cursor/mcp.json` (or the project's `.cursor/mcp.json` —
+there is no secret in it):
+
+```json
+{
+  "mcpServers": {
+    "rds": { "url": "http://localhost:8788/mcp" }
+  }
+}
+```
+
+**Stdio:** add the server to `~/.cursor/mcp.json` (user-level; `.cursor/mcp.json` in a
 project works too, but then keep the token out of it as shown below):
 
 ```json
@@ -179,13 +209,14 @@ local mode on Devin's machine as part of its environment setup.
    transport **STDIO**, command `node`, argument
    `<repo path on Devin's machine>/apps/mcp/bin/rds-mcp.js`, and the
    environment variables `RDS_API_BASE_URL` and `RDS_AGENT_TOKEN` (plus
-   `RDS_FILE_KEY` if you like). If the server can't start it exits with a
-   message naming the missing variable, or `RDS_API_BASE_URL` when the API
-   isn't reachable.
+   `RDS_FILE_KEY` if you like). While the API isn't reachable it starts with
+   its bundled tool list, and tool calls name `RDS_API_BASE_URL` (or the
+   missing token) until it is.
 
 ## 6. Other hosts
 
-Any MCP client that launches stdio servers works: run
+Any MCP client that speaks Streamable HTTP can use the Docker server at
+`http://localhost:8788/mcp`. Any client that launches stdio servers works too: run
 `node /path/to/rolling-design-sync/apps/mcp/bin/rds-mcp.js` with the variables
 above in its environment. [apps/mcp/README.md](../apps/mcp/README.md) has a
 Windsurf snippet. Anything with a shell can use the CLI once

@@ -57,6 +57,7 @@ export function useWorkItems({ page, ...query }: WorkQuery & { page: number }) {
         },
       }),
     getNextPageParam: last => last.nextCursor ?? null,
+    enabled: !!fileKey,
   });
   const { data, hasNextPage, isFetchingNextPage, fetchNextPage } = result;
   const loaded = data?.pages.length ?? 0;
@@ -76,7 +77,7 @@ export function useWorkItems({ page, ...query }: WorkQuery & { page: number }) {
         : undefined,
     hasNext: loaded > page || hasNextPage,
     /** The requested page isn't here yet. */
-    isPageLoading: !current && (result.isPending || needsMore || isFetchingNextPage),
+    isPageLoading: !!fileKey && !current && (result.isPending || needsMore || isFetchingNextPage),
   };
 }
 

@@ -2,15 +2,17 @@
 
 # Neutral by default: no RDS_STORE, HOST, or RDS_DATA_DIR here, so a platform
 # build (e.g. Railway) runs DATABASE_URL mode exactly like `npm start`.
-# Local-mode settings live in compose.yaml.
+# Local-mode settings live in compose.yaml, which also runs the MCP server
+# (apps/mcp, `--http`) from this image. `rds-agent` (the CLI) is on PATH.
 ARG NODE_IMAGE=node:22.23.4-bookworm-slim@sha256:de170b39439eb0e5a3444ad7d60b015614a381e10fecae2e30ec9e735122f38d
 
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
+COPY apps/mcp/package.json apps/mcp/
 COPY packages/core/package.json packages/core/
-RUN npm ci --omit=dev --workspace @rolling-design-sync/api --include-workspace-root=false --no-audit --no-fund \
+RUN npm ci --omit=dev --workspace @rolling-design-sync/api --workspace @rolling-design-sync/mcp --include-workspace-root=false --no-audit --no-fund \
   && npm cache clean --force
 
 FROM ${NODE_IMAGE} AS portal
@@ -29,9 +31,16 @@ COPY package.json ./
 COPY packages/core/package.json packages/core/index.js packages/core/
 COPY apps/api/package.json apps/api/LICENSE.md apps/api/
 COPY apps/api/src apps/api/src
+COPY apps/mcp/package.json apps/mcp/LICENSE apps/mcp/
+COPY apps/mcp/bin apps/mcp/bin
+COPY apps/mcp/src apps/mcp/src
+COPY scripts/package.json scripts/rds-agent.js scripts/commands.generated.json scripts/
 COPY --from=portal /app/apps/portal/dist apps/portal/dist
 COPY supabase/migrations supabase/migrations
-RUN mkdir -p /data && chown node:node /data && chmod 0700 /data
+RUN mkdir -p /data && chown node:node /data && chmod 0700 /data \
+  && chmod 0755 scripts/rds-agent.js apps/mcp/bin/rds-mcp.js \
+  && ln -s /app/scripts/rds-agent.js /usr/local/bin/rds-agent \
+  && ln -s /app/apps/mcp/bin/rds-mcp.js /usr/local/bin/rds-mcp
 USER node
 EXPOSE 8787
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \

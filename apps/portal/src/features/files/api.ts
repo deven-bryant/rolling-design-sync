@@ -20,11 +20,12 @@ export const filesKeys = {
 };
 
 /** `GET /v3/files`: every tracked file with its counts. */
-export function useFiles() {
+export function useFiles({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: filesKeys.list,
     queryFn: ({ signal }) => api.get('/v3/files', { signal }),
     select: data => data.files ?? [],
+    enabled,
   });
 }
 
@@ -42,6 +43,7 @@ export function useFileScopes(fileKey: string) {
     queryKey: filesKeys.scopes(fileKey),
     queryFn: ({ signal }) => api.get('/v3/files/{fileKey}/scopes', { path: { fileKey }, signal }),
     select: data => (data.scopes ?? []).filter(scope => !scope.deleted),
+    enabled: !!fileKey,
   });
 }
 
