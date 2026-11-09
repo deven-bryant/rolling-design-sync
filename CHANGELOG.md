@@ -7,6 +7,16 @@ are cut.
 
 ## [Unreleased]
 
+### Fixed
+
+- Portal **Connect**: on a local API, the setup snippets point agents at the
+  Docker MCP server (`http://localhost:8788/mcp`, no token) and the CLI at
+  `docker compose exec api rds-agent`; snippets for a team API no longer set
+  `RDS_FILE_KEY` from the last file opened.
+- Portal **Copy agent prompt** names the open file (`"Name" (fileKey …)`) and
+  no longer says the CLI needs `RDS_API_BASE_URL` and `RDS_AGENT_TOKEN` — with
+  the Docker setup it needs neither.
+
 ## [0.14.3] - 2026-11-08
 
 ### Added
