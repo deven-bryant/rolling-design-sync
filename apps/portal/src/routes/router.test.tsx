@@ -318,7 +318,8 @@ describe('routes', () => {
   it('marks the current sidebar item and sends Nodes and Work to the last file', async () => {
     renderAt('/activity');
     expect(await sidebar().findByRole('link', { name: 'Nodes' })).toBeDefined();
-    expect(sidebar().getByRole('link', { name: 'Nodes' }).getAttribute('href')).toBe('/files');
+    expect(sidebar().getByRole('link', { name: 'Nodes' }).getAttribute('href')).toBe('/nodes');
+    expect(sidebar().getByRole('link', { name: 'Work Items' }).getAttribute('href')).toBe('/work');
     expect(sidebar().getByRole('link', { name: /Activity/ }).getAttribute('aria-current')).toBe('page');
     expect(sidebar().getByRole('link', { name: 'Claims' }).getAttribute('href')).toBe('/claims');
     expect(sidebar().queryByRole('link', { name: 'Agents' })).toBeNull();
@@ -335,7 +336,7 @@ describe('routes', () => {
     expect(sidebar().getByRole('link', { name: 'Nodes' }).getAttribute('href')).toBe(`/files/${FILE}/nodes`);
   });
 
-  it('forgets a remembered file the server no longer tracks and opens Files', async () => {
+  it('forgets a remembered file the server no longer tracks and opens the latest one', async () => {
     window.localStorage.setItem('rds.portal.lastFile', 'AbCdEf123456GhIjKl7890');
     fetchMock.mockImplementation(async (input, init) => {
       const path = decodeURIComponent(new URL(String(input), 'http://localhost').pathname);
@@ -344,10 +345,32 @@ describe('routes', () => {
       return api(init?.method ?? 'GET', path);
     });
     const router = renderAt('/files/AbCdEf123456GhIjKl7890/nodes');
-    expect(await screen.findByRole('heading', { level: 1, name: 'Files' })).toBeDefined();
-    expect(router.state.location.pathname).toBe('/files');
-    expect(window.localStorage.getItem('rds.portal.lastFile')).toBeNull();
-    expect(sidebar().getByRole('link', { name: 'Nodes' }).getAttribute('href')).toBe('/files');
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/files/${FILE}/nodes`));
+    await waitFor(() => expect(window.localStorage.getItem('rds.portal.lastFile')).toBe(FILE));
+  });
+
+  it.each([
+    ['/nodes', 'Nodes', 'No nodes yet — sync a frame with the Figma plugin.'],
+    ['/work', 'Work Items', 'No work items yet — sync a frame with the Figma plugin.'],
+  ])('%s shows the empty frame before any file is synced', async (url, title, empty) => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const path = decodeURIComponent(new URL(String(input), 'http://localhost').pathname);
+      return path === '/v3/files' ? json({ files: [] }) : api(init?.method ?? 'GET', path);
+    });
+    const router = renderAt(url);
+    expect(await screen.findByRole('heading', { level: 1, name: title })).toBeDefined();
+    expect(await screen.findByText(empty)).toBeDefined();
+    expect(screen.getByText('No files synced yet — run the plugin on a frame')).toBeDefined();
+    expect(screen.getByText('No scopes yet — run the plugin on a frame.')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'File settings' })).toBeNull();
+    expect(sidebar().getByRole('link', { name: title }).getAttribute('aria-current')).toBe('page');
+    expect(router.state.location.pathname).toBe(url);
+    expect(fetchMock.mock.calls.map(([input]) => new URL(String(input), 'http://localhost').pathname).filter(p => p.startsWith('/v3/files/'))).toEqual([]);
+  });
+
+  it('opens the most recently synced file from /work', async () => {
+    const router = renderAt('/work');
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/files/${FILE}/work`));
   });
 
   it('switches the theme from the sidebar header', async () => {
@@ -413,6 +436,8 @@ describe('URL state', () => {
     expect(navItemOf('/files')).toBe('files');
     expect(navItemOf(`/files/${FILE}/nodes`)).toBe('nodes');
     expect(navItemOf(`/files/${FILE}/work`)).toBe('work');
+    expect(navItemOf('/nodes')).toBe('nodes');
+    expect(navItemOf('/work')).toBe('work');
     expect(navItemOf(`/files/${FILE}/scopes`)).toBe('files');
     expect(navItemOf('/claims')).toBe('claims');
     expect(navItemOf('/agents')).toBeNull();

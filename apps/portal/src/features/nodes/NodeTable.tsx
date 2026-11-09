@@ -459,7 +459,8 @@ function PagedRows({ fileKey, scopeId, filters, colSpan }: PagedRowsProps) {
   const queryClient = useQueryClient();
 
   let body: ReactNode;
-  if (query.isPending) body = <StatusRow>Loading nodes…</StatusRow>;
+  if (!fileKey) body = <StatusRow>No nodes yet — sync a frame with the Figma plugin.</StatusRow>;
+  else if (query.isPending) body = <StatusRow>Loading nodes…</StatusRow>;
   else if (query.isError) body = <StatusRow>Couldn’t load nodes: {errorText(query.error)}</StatusRow>;
   else if (!nodes.length) body = <StatusRow>No nodes match the filters.</StatusRow>;
   else if (root) body = <TreeRow node={root} depth={0} preloaded={rest} defaultExpanded />;

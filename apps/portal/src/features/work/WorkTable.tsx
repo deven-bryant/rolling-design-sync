@@ -211,7 +211,7 @@ export function WorkTable({
             {work.isPageLoading && <MessageRow span={heads.length}>Loading work items…</MessageRow>}
             {work.isError && <MessageRow span={heads.length}>Couldn&apos;t load work items.</MessageRow>}
             {!work.isPageLoading && !work.isError && work.items.length === 0 && (
-              <MessageRow span={heads.length}>No work items here.</MessageRow>
+              <MessageRow span={heads.length}>{fileKey ? 'No work items here.' : 'No work items yet — sync a frame with the Figma plugin.'}</MessageRow>
             )}
             {work.items.map((item, i) => (
               <WorkRow
