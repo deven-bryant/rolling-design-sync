@@ -7,6 +7,8 @@ are cut.
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-11-08
+
 ### Added
 
 - **MCP in Docker, zero setup:** `docker compose up -d` also starts the MCP

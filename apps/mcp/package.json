@@ -1,6 +1,6 @@
 {
   "name": "@rolling-design-sync/mcp",
-  "version": "0.14.2",
+  "version": "0.14.3",
   "license": "Apache-2.0",
   "description": "MCP server for rolling-design-sync (stdio, or Streamable HTTP with --http): its tools are generated at startup from the API's /v3/openapi.json (one per x-rds-mcp operation).",
   "keywords": [
@@ -39,7 +39,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.0",
-    "@rolling-design-sync/core": "^0.14.2",
+    "@rolling-design-sync/core": "^0.14.3",
     "zod": "4.6.5"
   },
   "devDependencies": {
