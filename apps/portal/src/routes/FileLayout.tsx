@@ -4,7 +4,7 @@ import { useNow } from '../api/hooks/useNow';
 import { Button, ButtonUtility } from '../components/Button';
 import { Icon } from '../components/primitives';
 import { PageHeader } from '../components/PageHeader';
-import { FileSettingsDrawer, formatCount, timeAgo, useLastSyncClient } from '../features/files';
+import { FileSettingsDrawer, formatCount, timeAgo, useFiles, useLastSyncClient } from '../features/files';
 import { splitUnder, useFile, useScope } from '../features/nodes';
 import { defaultScope, ScopePanel } from '../features/scopes';
 import { useWorkItems } from '../features/work';
@@ -105,7 +105,10 @@ function ScopesMeta({ fileKey, scopes }: { fileKey: string; scopes: readonly Sco
   return <>{[`${scopes.length} scopes`, latest ? `last synced ${timeAgo(latest, now)}` : 'never synced', counts.join(', ')].join(' · ')}</>;
 }
 
-/** The Nodes and Work Items frame: the scope header and actions, then the scope panel bound to `?under=`. */
+/**
+ * The Nodes and Work Items frame: the scope header and actions, then the scope panel bound to `?under=`. Without a
+ * file (`/nodes`, `/work`) it opens the most recently synced file, or shows the empty frame when none is synced yet.
+ */
 export function FileLayout() {
   const { fileKey = '' } = useParams();
   const { pathname } = useLocation();
@@ -114,10 +117,17 @@ export function FileLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const file = useFile(fileKey);
   const scopes = useScope(fileKey, undefined);
+  const files = useFiles({ enabled: !fileKey });
   const untracked = file.error instanceof ApiError && file.error.code === 'file_not_found';
-  useEffect(() => (untracked ? forgetFile(fileKey) : rememberFile(fileKey)), [fileKey, untracked]);
+  useEffect(() => {
+    if (untracked) forgetFile(fileKey);
+    else if (fileKey) rememberFile(fileKey);
+  }, [fileKey, untracked]);
 
-  if (untracked) return <Navigate to="/files" replace />;
+  const onWork = pathname.endsWith('/work');
+  if (untracked) return <Navigate to={onWork ? '/work' : '/nodes'} replace />;
+  const latest = [...(files.data ?? [])].sort((a, b) => (b.lastSyncAt ?? '').localeCompare(a.lastSyncAt ?? ''))[0];
+  if (!fileKey && latest?.fileKey) return <Navigate to={{ pathname: filePath(latest.fileKey, onWork ? 'work' : 'nodes'), search: params.toString() }} replace />;;
   const live = (scopes.data?.scopes ?? []).filter(s => !s.deleted);
   const under = params.get('under') || undefined;
   const fallback = defaultScope(live);
@@ -131,9 +141,8 @@ export function FileLayout() {
   const scope = several ? undefined : (picked[0] ?? fallback);
   const shown = several ? picked : scope ? [scope] : [];
   const title = several ? `${picked.length} scopes` : scope?.name ?? scope?.nodeId ?? undefined;
-  const fileName = file.data?.name ?? fileKey;
+  const fileName = file.data?.name ?? (fileKey || (onWork ? 'Work Items' : 'Nodes'));
   const figmaUrl = scope?.figmaUrl ?? `https://www.figma.com/design/${encodeURIComponent(fileKey)}`;
-  const onWork = pathname.endsWith('/work');
 
   const select = (nodeIds: string[]) =>
     setParams(prev => {
@@ -153,14 +162,16 @@ export function FileLayout() {
             <ScopesMeta fileKey={fileKey} scopes={picked} />
           ) : scope ? (
             <ScopeMeta fileKey={fileKey} scope={scope} />
-          ) : scopes.isPending ? (
+          ) : fileKey && scopes.isPending ? (
             'Loading scopes…'
-          ) : (
+          ) : fileKey ? (
             'No scopes yet — run the plugin on a frame'
+          ) : (
+            'No files synced yet — run the plugin on a frame'
           )}
         </PageHeader.Description>
         <PageHeader.Actions>
-          <ButtonUtility size="md" icon={<Icon name="settings-01" />} tooltip="File settings" onPress={() => setSettingsOpen(true)} />
+          {fileKey && <ButtonUtility size="md" icon={<Icon name="settings-01" />} tooltip="File settings" onPress={() => setSettingsOpen(true)} />}
           {shown.length > 0 && (
             <CopyButton
               hierarchy="secondary"
@@ -173,7 +184,7 @@ export function FileLayout() {
               Copy agent prompt
             </CopyButton>
           )}
-          {!several && (
+          {fileKey && !several && (
             <Button hierarchy="primary" size="md" href={figmaUrl} target="_blank" rel="noreferrer">
               Open in Figma
             </Button>
@@ -182,7 +193,7 @@ export function FileLayout() {
       </PageHeader>
       <ScopePanel
         fileKey={fileKey}
-        fileName={fileName}
+        fileName={fileKey ? fileName : 'Figma'}
         selected={picked.flatMap(s => (s.nodeId ? [s.nodeId] : []))}
         onSelectionChange={select}
         onViewNodes={onWork ? nodeIds => void navigate(`${filePath(fileKey, 'nodes')}${query({ under: nodeIds.join(',') })}`) : undefined}
