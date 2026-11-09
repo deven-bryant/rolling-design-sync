@@ -4,7 +4,7 @@ const { loadConfig, envVar, ensureLocalTokens, checkTokenStrength, EMBEDDED_STOR
 const { buildApp } = require('./app');
 const { PostgresStore } = require('./store/postgres');
 const { MemoryStore } = require('./store/memory');
-const { openLocalStore } = require('./store/pglite');
+const { openLocalStore, summarizeLocalData, existingDataNotice } = require('./store/pglite');
 const { MemoryBus, PostgresBus, startRetention } = require('./events');
 const { runMaintenance } = require('./maintenance');
 const { checkSchema } = require('./schemaCheck');
@@ -37,7 +37,18 @@ async function main() {
   const ssl = process.env.PGSSLMODE === 'disable' ? false : { rejectUnauthorized: false };
   let store;
   if (config.store === 'memory') store = new MemoryStore();
-  else if (config.store === 'local') store = (await openLocalStore({ dataDir: config.dataDir })).store;
+  else if (config.store === 'local') {
+    const local = await openLocalStore({ dataDir: config.dataDir });
+    store = local.store;
+    if (local.existing) {
+      try {
+        console.log(existingDataNotice(config.dataDir, await summarizeLocalData(store.pool)));
+      } catch (err) {
+        await store.close().catch(() => {});
+        throw err;
+      }
+    }
+  }
   else {
     store = PostgresStore.fromUrl(config.databaseUrl, { ssl });
     try {

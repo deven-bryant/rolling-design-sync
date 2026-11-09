@@ -95,7 +95,7 @@ export function targetStatus(target: Pick<CheckTarget, 'status' | 'stale' | 'not
 export function useTargets(fileKey: string, { enabled = true } = {}) {
   return useQuery({
     queryKey: renderKeys.targets(fileKey),
-    enabled,
+    enabled: enabled && !!fileKey,
     queryFn: async ({ signal }) => (await api.get('/v3/files/{fileKey}/targets', { path: { fileKey }, signal })).targets ?? [],
   });
 }
@@ -103,7 +103,7 @@ export function useTargets(fileKey: string, { enabled = true } = {}) {
 function containingQuery(fileKey: string, nodeId: string | null | undefined, enabled: boolean) {
   return {
     queryKey: renderKeys.containing(fileKey, nodeId ?? ''),
-    enabled: enabled && !!nodeId,
+    enabled: enabled && !!fileKey && !!nodeId,
     queryFn: async ({ signal }: { signal: AbortSignal }) =>
       api.get('/v3/files/{fileKey}/targets', { path: { fileKey }, query: { containing: nodeId! }, signal }),
   };

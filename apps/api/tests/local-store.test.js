@@ -12,7 +12,7 @@ const core = require('@rolling-design-sync/core');
 const { buildApp } = require('../src/app');
 const { loadConfig, ensureLocalTokens, checkTokenStrength, TOKENS_FILE } = require('../src/config');
 const { MemoryStore } = require('../src/store/memory');
-const { openLocalStore, DEFAULT_MIGRATIONS_DIR } = require('../src/store/pglite');
+const { openLocalStore, summarizeLocalData, existingDataNotice, DEFAULT_MIGRATIONS_DIR } = require('../src/store/pglite');
 
 const PLUGIN_TOKEN = 'p'.repeat(64);
 const AGENT_TOKEN = 'a'.repeat(64);
@@ -93,6 +93,57 @@ test('local store: migrations apply once on first open, none on reopen', async t
   const second = await openLocalStore({ dataDir });
   assert.deepEqual(second.applied, []);
   await second.store.close();
+});
+
+test('local store: existing data is reported on reopen, with totals only', async t => {
+  const dataDir = tempDir(t);
+  const first = await openApp(t, dataDir);
+  assert.equal((await openLocalStore({ dataDir: tempDir(t) }).then(async o => { await o.store.close(); return o.existing; })), false);
+  const up = await batch(first.app, { upserts: [upsert(ROOT, { width: 800 }, { nodeType: 'SECTION' }), upsert(CHILD, { paddingLeft: 16 }, { parentId: ROOT, path: [ROOT] })] });
+  assert.equal(up.status, 200, JSON.stringify(up.body));
+  await first.close();
+
+  const second = await openLocalStore({ dataDir });
+  onCleanup(t, () => second.store.close());
+  assert.equal(second.existing, true);
+  const summary = await summarizeLocalData(second.store.pool);
+  assert.equal(summary.files, 1);
+  assert.equal(summary.nodes, 2);
+  assert.ok(summary.firstCreated instanceof Date);
+  const day = summary.firstCreated.toISOString().slice(0, 10);
+  const notice = existingDataNotice('/data', summary);
+  assert.equal(notice, `Using existing data in /data: 1 file, 2 nodes, first created ${day}. To start fresh: docker compose down -v (Docker), or stop the API and remove /data.`);
+  assert.ok(!notice.includes(FILE_KEY));
+  assert.equal(existingDataNotice('/d', { files: 0, nodes: 0, firstCreated: null }), 'Using existing data in /d: 0 files, 0 nodes. To start fresh: docker compose down -v (Docker), or stop the API and remove /d.');
+});
+
+test('local mode startup: a fresh data dir logs no existing-data notice; a reused one does', async t => {
+  const dataDir = tempDir(t);
+  const { spawn } = require('node:child_process');
+  const start = () => new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [path.join(__dirname, '..', 'src', 'server.js')], {
+      env: { PATH: process.env.PATH, RDS_STORE: 'local', RDS_DATA_DIR: dataDir, PORT: '0', LOG_LEVEL: 'info' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    const timer = setTimeout(() => { child.kill(); reject(new Error(`no listen line:\n${out}`)); }, 30000);
+    const onData = chunk => {
+      out += chunk;
+      if (/Server listening/.test(out)) {
+        clearTimeout(timer);
+        child.once('exit', () => resolve(out));
+        child.kill('SIGTERM');
+      }
+    };
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
+    child.once('error', reject);
+  });
+  const fresh = await start();
+  assert.match(fresh, /Generated plugin and agent and viewer token\(s\)/);
+  assert.doesNotMatch(fresh, /Using existing data/);
+  const reused = await start();
+  assert.match(reused, new RegExp(`Using existing data in ${dataDir.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}: 0 files, 0 nodes\\. To start fresh: docker compose down -v`));
 });
 
 test('local store: the data directory is private (0700)', { skip: !POSIX }, async t => {

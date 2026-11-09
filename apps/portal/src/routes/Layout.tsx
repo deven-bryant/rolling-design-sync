@@ -38,7 +38,7 @@ type NavId = 'files' | 'nodes' | 'work' | 'activity' | 'claims' | 'connect';
 
 /** The sidebar item a path belongs to. */
 export function navItemOf(pathname: string): NavId | null {
-  const tab = matchPath('/files/:fileKey/:tab/*', pathname)?.params.tab;
+  const tab = (matchPath('/files/:fileKey/:tab/*', pathname) ?? matchPath('/:tab', pathname))?.params.tab;
   if (tab === 'nodes' || tab === 'work') return tab;
   if (pathname === '/files' || pathname.startsWith('/files/')) return 'files';
   const top = pathname.split('/')[1];
@@ -132,10 +132,10 @@ function Sidebar() {
         <SidebarNav.Item href="/files" icon="home-line" current={current === 'files'}>
           Files
         </SidebarNav.Item>
-        <SidebarNav.Item href={fileKey ? filePath(fileKey, 'nodes') : '/files'} icon="bar-chart-square-02" current={current === 'nodes'}>
+        <SidebarNav.Item href={fileKey ? filePath(fileKey, 'nodes') : '/nodes'} icon="bar-chart-square-02" current={current === 'nodes'}>
           Nodes
         </SidebarNav.Item>
-        <SidebarNav.Item href={fileKey ? filePath(fileKey, 'work') : '/files'} icon="rows-01" current={current === 'work'}>
+        <SidebarNav.Item href={fileKey ? filePath(fileKey, 'work') : '/work'} icon="rows-01" current={current === 'work'}>
           Work Items
         </SidebarNav.Item>
         <SidebarNav.Item

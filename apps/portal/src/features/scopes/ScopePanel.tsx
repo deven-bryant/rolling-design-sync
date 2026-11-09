@@ -142,7 +142,7 @@ export function ScopePanel({ fileKey, fileName, selected, onSelectionChange, onV
             }
           />
           <Card.Body>
-            {scopes.isPending ? (
+            {fileKey && scopes.isPending ? (
               <LoadingIndicator size="md" label="Loading scopes…" className="px-3xl py-xl" />
             ) : scopes.error ? (
               <Text as="p" color="error-primary" className="px-3xl py-xl">

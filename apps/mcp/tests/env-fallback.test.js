@@ -23,7 +23,8 @@ test('readConfig ignores every FDS_* variable and warns once for each', () => {
     RDS_API_BASE_URL: 'http://127.0.0.1:8787/', RDS_AGENT_TOKEN: 't', FDS_AGENT_TOKEN: 'old', FDS_FILE_KEY: 'old',
     FDS_MCP_DEFAULT_LIMIT: '10', FDS_EMPTY: '',
   };
-  assert.deepEqual(readConfig(env, options), { baseUrl: 'http://127.0.0.1:8787', token: 't', defaultFileKey: null, defaultLimit: 25, maxResultChars: 50000 });
+  const config = readConfig(env, options);
+  assert.deepEqual([config.baseUrl, config.token, config.defaultFileKey, config.defaultLimit, config.maxResultChars], ['http://127.0.0.1:8787', 't', null, 25, 50000]);
   readConfig(env, options);
   assert.deepEqual(warnings, [
     'rds-mcp: FDS_AGENT_TOKEN is no longer read; set RDS_AGENT_TOKEN instead',
@@ -32,9 +33,11 @@ test('readConfig ignores every FDS_* variable and warns once for each', () => {
   ]);
 });
 
-test('readConfig: FDS_* alone does not satisfy the required RDS_* variables', () => {
+test('readConfig: FDS_* alone sets nothing (the local defaults apply)', () => {
   const { warnings, options } = recorder();
-  assert.throws(() => readConfig({ FDS_API_BASE_URL: 'http://127.0.0.1:8787', FDS_AGENT_TOKEN: 't' }, options),
-    err => err instanceof ConfigError && /RDS_API_BASE_URL, RDS_AGENT_TOKEN/.test(err.message));
+  const config = readConfig({ FDS_API_BASE_URL: 'http://example.test:9999', FDS_AGENT_TOKEN: 't' }, options);
+  assert.equal(config.baseUrl, 'http://localhost:8787');
+  assert.equal(config.token, null);
   assert.equal(warnings.length, 2);
+  assert.throws(() => readConfig({ RDS_API_BASE_URL: 'nope' }, options), err => err instanceof ConfigError);
 });

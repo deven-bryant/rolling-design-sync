@@ -619,12 +619,6 @@ test('startup fails clearly when the API is unreachable or not a v3 API', async 
     fetchImpl: async () => new Response(JSON.stringify({ openapi: '3.1.0', paths: {} }), { headers: { 'content-type': 'application/json' } }),
   });
   assert.match(noTools, /lists no agent operations \(x-rds-mcp\).*RDS_API_BASE_URL/);
-
-  const res = spawnSync(process.execPath, [BIN], {
-    env: { ...process.env, RDS_API_BASE_URL: closed, RDS_AGENT_TOKEN: AGENT_TOKEN }, encoding: 'utf8', timeout: 20000,
-  });
-  assert.equal(res.status, 1, res.stderr);
-  assert.match(res.stderr, /could not reach the rolling-design-sync API at RDS_API_BASE_URL=/);
 });
 
 test('rds-mcp serves the generated tools over stdio', async t => {
@@ -649,10 +643,12 @@ test('a 429 names the retry time (Retry-After), the limit and the hint', async t
   const app = buildApp({ store: new MemoryStore(), config });
   await app.listen({ port, host: '127.0.0.1' });
   t.after(() => app.close());
-  // Startup's GET /v3/openapi.json spends one request of the token's budget.
+  // Startup's GET /v3/openapi.json is sent without the token, so both calls below spend its budget.
   const client = await connect(t, { RDS_API_BASE_URL: `http://127.0.0.1:${port}`, RDS_AGENT_TOKEN: AGENT_TOKEN });
-  const ok = await client.callTool({ name: 'list_files', arguments: {} });
-  assert.equal(ok.isError, undefined, ok.content[0].text);
+  for (let i = 0; i < 2; i++) {
+    const ok = await client.callTool({ name: 'list_files', arguments: {} });
+    assert.equal(ok.isError, undefined, ok.content[0].text);
+  }
   const limited = await client.callTool({ name: 'list_files', arguments: {} });
   assert.equal(limited.isError, true);
   assert.match(limited.content[0].text, /^HTTP 429 GET \/v3\/files — rate limited \(rate_limited\): retry in \d+ s\. This token made more than 2 requests in a minute\.\nHint: Retry in \d+ s/);
@@ -669,13 +665,24 @@ test('a 429 without a problem body or Retry-After still says it was rate limited
   assert.equal(retrySeconds('soon'), null);
 });
 
-test('readConfig requires RDS_API_BASE_URL and RDS_AGENT_TOKEN', () => {
-  assert.throws(() => readConfig({}), err => err instanceof ConfigError && /RDS_API_BASE_URL, RDS_AGENT_TOKEN/.test(err.message));
-  assert.throws(() => readConfig({ RDS_API_BASE_URL: 'http://127.0.0.1:8787' }), /missing .*RDS_AGENT_TOKEN/);
-  assert.throws(() => readConfig({ RDS_API_BASE_URL: 'ftp://x', RDS_AGENT_TOKEN: 't' }), /must be an http\(s\) URL/);
-  assert.deepEqual(readConfig({ RDS_API_BASE_URL: 'http://127.0.0.1:8787/', RDS_AGENT_TOKEN: ' t ', RDS_FILE_KEY: 'k' }), {
-    baseUrl: 'http://127.0.0.1:8787', token: 't', defaultFileKey: 'k', defaultLimit: 25, maxResultChars: 50000,
-  });
+test('readConfig: local defaults, an optional token, tuning and transport', () => {
+  const defaults = readConfig({});
+  assert.equal(defaults.baseUrl, 'http://localhost:8787');
+  assert.equal(defaults.token, null);
+  assert.equal(defaults.tokenFile, null);
+  assert.equal(defaults.transport, 'stdio');
+  assert.equal(defaults.httpPort, 8788);
+  assert.equal(defaults.httpHost, '127.0.0.1');
+  assert.deepEqual(defaults.allowedHosts, ['localhost', '127.0.0.1', '[::1]']);
+  assert.throws(() => readConfig({ RDS_API_BASE_URL: 'ftp://x', RDS_AGENT_TOKEN: 't' }), err => err instanceof ConfigError && /must be an http\(s\) URL/.test(err.message));
+  const set = readConfig({ RDS_API_BASE_URL: 'http://127.0.0.1:8787/', RDS_AGENT_TOKEN: ' t ', RDS_AGENT_TOKEN_FILE: '/data/tokens.json', RDS_FILE_KEY: 'k' });
+  assert.equal(set.baseUrl, 'http://127.0.0.1:8787');
+  assert.equal(set.token, 't');
+  assert.equal(set.tokenFile, null, 'RDS_AGENT_TOKEN wins over the file');
+  assert.equal(set.defaultFileKey, 'k');
+  assert.equal(set.defaultLimit, 25);
+  assert.equal(set.maxResultChars, 50000);
+  assert.equal(readConfig({ RDS_AGENT_TOKEN_FILE: ' /data/tokens.json ' }).tokenFile, '/data/tokens.json');
   const tuned = readConfig({ RDS_API_BASE_URL: 'http://x', RDS_AGENT_TOKEN: 't', RDS_MCP_DEFAULT_LIMIT: '10', RDS_MCP_MAX_RESULT_CHARS: ' 2000 ' });
   assert.equal(tuned.defaultLimit, 10);
   assert.equal(tuned.maxResultChars, 2000);
@@ -683,13 +690,23 @@ test('readConfig requires RDS_API_BASE_URL and RDS_AGENT_TOKEN', () => {
     assert.throws(() => readConfig({ RDS_API_BASE_URL: 'http://x', RDS_AGENT_TOKEN: 't', RDS_MCP_DEFAULT_LIMIT: bad }), /RDS_MCP_DEFAULT_LIMIT must be a positive integer/);
     assert.throws(() => readConfig({ RDS_API_BASE_URL: 'http://x', RDS_AGENT_TOKEN: 't', RDS_MCP_MAX_RESULT_CHARS: bad }), /RDS_MCP_MAX_RESULT_CHARS must be a positive integer/);
   }
+  assert.equal(readConfig({}, {}, ['--http']).transport, 'http');
+  const httpEnv = readConfig({ RDS_MCP_TRANSPORT: 'HTTP', RDS_MCP_PORT: '9000', RDS_MCP_HOST: '0.0.0.0', RDS_MCP_ALLOWED_HOSTS: 'MCP.internal, localhost', RDS_API_HOST: 'localhost:8787' });
+  assert.equal(httpEnv.transport, 'http');
+  assert.equal(httpEnv.httpPort, 9000);
+  assert.equal(httpEnv.httpHost, '0.0.0.0');
+  assert.deepEqual(httpEnv.allowedHosts, ['localhost', '127.0.0.1', '[::1]', 'mcp.internal']);
+  assert.equal(httpEnv.apiHost, 'localhost:8787');
+  assert.throws(() => readConfig({ RDS_MCP_TRANSPORT: 'sse' }), /RDS_MCP_TRANSPORT must be one of stdio, http/);
+  assert.throws(() => readConfig({ RDS_MCP_PORT: 'eighty' }), /RDS_MCP_PORT must be a port number/);
+  assert.throws(() => readConfig({ RDS_MCP_ALLOWED_HOSTS: 'http://evil.example' }), /is not a host name/);
 });
 
-test('rds-mcp exits 1 with a clear message when required env is missing', () => {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^[RF]DS_(API_BASE_URL|AGENT_TOKEN)$/.test(k)));
-  const res = spawnSync(process.execPath, [BIN], { env, encoding: 'utf8', timeout: 10000 });
+test('rds-mcp exits 1 with a clear message when RDS_API_BASE_URL is not http(s)', () => {
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^[RF]DS_/.test(k)));
+  const res = spawnSync(process.execPath, [BIN], { env: { ...env, RDS_API_BASE_URL: 'ftp://example' }, encoding: 'utf8', timeout: 10000 });
   assert.equal(res.status, 1);
-  assert.match(res.stderr, /missing required environment variable\(s\): RDS_API_BASE_URL, RDS_AGENT_TOKEN/);
+  assert.match(res.stderr, /RDS_API_BASE_URL must be an http\(s\) URL, got "ftp:\/\/example"/);
 });
 
 test('screens and render checks; get_attachment returns MCP image content', async t => {
