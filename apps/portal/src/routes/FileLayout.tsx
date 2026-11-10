@@ -39,13 +39,14 @@ export interface PromptScope {
  * A prompt that starts an agent on the work queue of one or more scopes: MCP tools first, the CLI as the
  * fallback. Several scopes are named in order and passed as one comma-separated `under`.
  */
-export function scopePrompt({ fileKey, scopes }: { fileKey: string; scopes: readonly PromptScope[] }): string {
+export function scopePrompt({ fileKey, fileName, scopes }: { fileKey: string; fileName?: string | null; scopes: readonly PromptScope[] }): string {
   const nodeId = scopes.map(s => s.nodeId).join(',');
   const label = scopes.map(({ nodeId: id, name }) => (name ? `"${name}" (${id})` : id)).join(', ');
+  const file = fileName && fileName !== fileKey ? `"${fileName}" (fileKey ${fileKey})` : fileKey;
   const cli = 'node scripts/rds-agent.js';
   return [
-    `Implement the Figma ${scopes.length === 1 ? 'scope' : 'scopes'} ${label} in file ${fileKey}, tracked by Rolling Design Sync.`,
-    'Use the rds MCP tools if you have them; otherwise run the CLI from a checkout of rolling-design-sync (needs RDS_API_BASE_URL and RDS_AGENT_TOKEN).',
+    `Implement the Figma ${scopes.length === 1 ? 'scope' : 'scopes'} ${label} in file ${file}, tracked by Rolling Design Sync.`,
+    `Use the rds MCP tools if you have them; otherwise the rds-agent CLI: with the Docker setup, \`docker compose exec api rds-agent …\` from the rolling-design-sync checkout (no token needed), else \`${cli} …\` from a checkout with RDS_AGENT_TOKEN set (and RDS_API_BASE_URL, unless the API is at http://localhost:8787).`,
     '',
     `1. List the work items under the ${scopes.length === 1 ? 'scope' : 'scopes'}; build leaves first, then the composites that contain them:`,
     `   - MCP: list_work_items { "fileKey": "${fileKey}", "under": "${nodeId}", "expand": "instances" }`,
@@ -180,6 +181,7 @@ export function FileLayout() {
               size="md"
               text={scopePrompt({
                 fileKey,
+                fileName: file.data?.name,
                 scopes: shown.flatMap(s => (s.nodeId ? [{ nodeId: s.nodeId, name: s.name }] : [])),
               })}
             >

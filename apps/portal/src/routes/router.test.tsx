@@ -230,6 +230,14 @@ describe('routes', () => {
     expect(one).toContain('--under 1:2 --expand instances');
   });
 
+  it('names the open file in the agent prompt and needs no variables with the Docker setup', () => {
+    const text = scopePrompt({ fileKey: FILE, fileName: 'Sandbox', scopes: [{ nodeId: '1:2', name: 'Team View' }] });
+    expect(text).toContain('Implement the Figma scope "Team View" (1:2) in file "Sandbox" (fileKey AbC123)');
+    expect(text).toContain('`docker compose exec api rds-agent …` from the rolling-design-sync checkout (no token needed)');
+    expect(text).not.toContain('needs RDS_API_BASE_URL and RDS_AGENT_TOKEN');
+    expect(text).not.toContain('RDS_FILE_KEY');
+  });
+
   it('searches scopes by name or node id', async () => {
     renderAt(`/files/${FILE}/nodes?under=1:2`);
     const user = userEvent.setup();

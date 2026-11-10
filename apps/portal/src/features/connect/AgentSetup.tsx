@@ -2,13 +2,11 @@ import type { ReactNode } from 'react';
 import { Card } from '../../components/Card';
 import { CodeSnippet } from '../../components/CodeSnippet';
 import { Tabs } from '../../components/Tabs';
-import { AGENT_HOSTS, agentSetupSnippets, type AgentHost } from './snippets';
+import { AGENT_HOSTS, agentSetupSnippets, isLocalOrigin, LOCAL_MCP_URL, type AgentHost } from './snippets';
 
 export interface AgentSetupProps {
   /** The API origin agents point at; this server's by default. */
   origin?: string;
-  /** Pre-fills `RDS_FILE_KEY`. */
-  fileKey?: string;
   defaultHost?: AgentHost;
   title?: ReactNode;
   description?: ReactNode;
@@ -18,13 +16,14 @@ export interface AgentSetupProps {
 /** `Connect an agent`: host tabs with the exact setup for this server, the token left as a placeholder. */
 export function AgentSetup({
   origin = window.location.origin,
-  fileKey,
   defaultHost = 'claude-code',
   title = 'Connect an agent',
-  description = 'The MCP server and the rds-agent CLI read the same two variables. Store the token in user-level config, never in a repo.',
+  description = isLocalOrigin(origin)
+    ? `The Docker setup runs the MCP server at ${LOCAL_MCP_URL}: agents on this machine connect with just the URL, no token.`
+    : 'The MCP server and the rds-agent CLI read the same two variables. Store the token in user-level config, never in a repo.',
   className,
 }: AgentSetupProps) {
-  const snippets = agentSetupSnippets(origin, fileKey);
+  const snippets = agentSetupSnippets(origin);
   return (
     <Card className={className}>
       <Card.Header title={title} description={description} />

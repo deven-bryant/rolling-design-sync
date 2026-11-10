@@ -13,7 +13,6 @@ import { ScopeViewedBadge } from '../features/scopes';
 import { useWorkItems, WorkFiltersBar, WorkGroupSwitch, WorkTable } from '../features/work';
 import { CopyButton } from './CopyButton';
 import { useFileOutlet } from './FileLayout';
-import { lastFile } from './lastFile';
 import { REPO_URL } from './links';
 import { filePath, query, readNodeFilters, readWorkState, writeNodeFilters, writeWorkState } from './urlState';
 
@@ -188,7 +187,6 @@ export function ClaimsPage() {
 
 export function ConnectPage() {
   const origin = window.location.origin;
-  const fileKey = lastFile() ?? undefined;
   return (
     <>
       <PageHeader divider>
@@ -198,13 +196,13 @@ export function ConnectPage() {
           <Button hierarchy="secondary" size="md" href={`${REPO_URL}/blob/main/docs/agents.md`} target="_blank" rel="noreferrer">
             Agent docs
           </Button>
-          <CopyButton hierarchy="primary" size="md" text={agentSetupSnippets(origin, fileKey).cursor}>
+          <CopyButton hierarchy="primary" size="md" text={agentSetupSnippets(origin).cursor}>
             Copy MCP config
           </CopyButton>
         </PageHeader.Actions>
       </PageHeader>
       <StatusMetrics />
-      <AgentSetup origin={origin} fileKey={fileKey} />
+      <AgentSetup origin={origin} />
       <TokensTable />
     </>
   );
