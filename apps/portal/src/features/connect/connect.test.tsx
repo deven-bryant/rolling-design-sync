@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '../../test/axe';
 import { FakeEventSource } from '../../test/fake-event-source';
 import { AgentSetup } from './AgentSetup';
-import { AGENT_HOSTS, agentSetupSnippets, TOKEN_PLACEHOLDER } from './snippets';
+import { AGENT_HOSTS, agentSetupSnippets, LOCAL_MCP_URL, TOKEN_PLACEHOLDER } from './snippets';
 import { StatusMetrics } from './StatusMetrics';
 import { TokensTable } from './TokensTable';
 import { serverHealth, useServerStatus } from './useServerStatus';
@@ -112,38 +112,50 @@ describe('StatusMetrics', () => {
 });
 
 describe('AgentSetup', () => {
-  it('gives every host a snippet with this server’s origin and only the token placeholder', () => {
-    const snippets = agentSetupSnippets('https://rds.example.com', 'FILE1');
+  it('gives every host of a team API a snippet with its origin and only the token placeholder', () => {
+    const snippets = agentSetupSnippets('https://rds.example.com');
     for (const host of AGENT_HOSTS) {
       const code = snippets[host.id];
       expect(code).toContain('https://rds.example.com');
       expect(code).toContain(TOKEN_PLACEHOLDER);
+      expect(code).not.toContain('RDS_FILE_KEY');
       for (const [, value] of code.matchAll(/RDS_AGENT_TOKEN["']?\s*[:=]\s*["']?([^"'\s\\,]+[^"'\\,\n]*)/g))
         expect(value?.trim()).toBe(TOKEN_PLACEHOLDER);
     }
     expect(snippets['claude-code']).toContain('claude mcp add rds --scope user --transport stdio');
-    expect(snippets['claude-code']).toContain('--env RDS_FILE_KEY=FILE1');
-    expect(JSON.parse(snippets.cursor).mcpServers.rds.env).toEqual({
-      RDS_API_BASE_URL: 'https://rds.example.com',
-      RDS_AGENT_TOKEN: TOKEN_PLACEHOLDER,
-      RDS_FILE_KEY: 'FILE1',
-    });
+    expect(JSON.parse(snippets.cursor).mcpServers.rds.env).toEqual({ RDS_API_BASE_URL: 'https://rds.example.com', RDS_AGENT_TOKEN: TOKEN_PLACEHOLDER });
     expect(snippets.cli).toContain('node scripts/rds-agent.js');
   });
 
-  it('renders host tabs pointed at the current origin, never a token', async () => {
-    const { container } = render(<AgentSetup />);
+  it.each(['http://localhost:8787', 'http://127.0.0.1:8787'])('points agents of a local API (%s) at the Docker MCP server, with no token', origin => {
+    const snippets = agentSetupSnippets(origin);
+    expect(snippets['claude-code']).toContain(`claude mcp add rds --scope user --transport http ${LOCAL_MCP_URL}`);
+    expect(JSON.parse(snippets.cursor)).toEqual({ mcpServers: { rds: { url: LOCAL_MCP_URL } } });
+    expect(snippets.cli).toContain('docker compose exec api rds-agent files ls');
+    for (const host of ['claude-code', 'cursor', 'cli'] as const) expect(snippets[host]).not.toContain('RDS_AGENT_TOKEN');
+    expect(snippets.devin).toContain("can't reach this machine");
+    for (const code of Object.values(snippets)) expect(code).not.toContain('RDS_FILE_KEY');
+  });
+
+  it('renders host tabs pointed at a team API, never a token', async () => {
+    const { container } = render(<AgentSetup origin="https://rds.example.com" />);
     const user = userEvent.setup({ advanceTimers: () => {} });
     const tabs = within(screen.getByRole('tablist', { name: 'Agent host' })).getAllByRole('tab');
     expect(tabs.map(t => t.textContent)).toEqual(['Claude Code', 'Cursor', 'Devin', 'CLI']);
     for (const name of ['Claude Code', 'Cursor', 'Devin', 'CLI']) {
       await user.click(screen.getByRole('tab', { name }));
       const panel = screen.getByRole('tabpanel');
-      expect(panel.textContent).toContain(window.location.origin);
+      expect(panel.textContent).toContain('https://rds.example.com');
       expect(panel.textContent).not.toContain('/ui');
       expect(panel.textContent).toContain(TOKEN_PLACEHOLDER);
     }
     await expectNoAxeViolations(container);
+  });
+
+  it('describes the tokenless Docker MCP server on a local API', () => {
+    render(<AgentSetup origin="http://localhost:8787" />);
+    expect(screen.getByText(/runs the MCP server at http:\/\/localhost:8788\/mcp/)).toBeDefined();
+    expect(within(screen.getByRole('tabpanel')).getByText(/--transport http http:\/\/localhost:8788\/mcp/)).toBeDefined();
   });
 });
 
