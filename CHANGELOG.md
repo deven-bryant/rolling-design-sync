@@ -7,6 +7,8 @@ are cut.
 
 ## [Unreleased]
 
+## [0.14.4] - 2026-11-10
+
 ### Fixed
 
 - Portal **Connect**: on a local API, the setup snippets point agents at the
